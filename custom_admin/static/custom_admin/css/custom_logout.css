@@ -1,0 +1,40 @@
+/* custom_logout.css */
+body, html {
+    background-color: #e3efcc;
+    color: #1e5421;
+    font-family: "Segoe UI", sans-serif;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.logout-container {
+    text-align: center;
+    padding: 40px;
+    background: #ffffff;
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    max-width: 420px;
+}
+
+.logout-logo {
+    max-width: 160px;
+    margin-bottom: 20px;
+}
+
+.logout-button {
+    display: inline-block;
+    margin-top: 20px;
+    padding: 10px 20px;
+    background-color: #1e5421;
+    color: white;
+    text-decoration: none;
+    border-radius: 6px;
+    font-weight: bold;
+}
+.logout-button:hover {
+    background-color: #153d18;
+}

@@ -1,0 +1,529 @@
+/* Fundo total */
+body, html {
+    background-color: #e3efcc !important;
+    color: #002d00 !important;
+    margin: 0;
+    padding: 0;
+    height: 100%;
+}
+
+/* Título "Sepultados.com Administração" com logo */
+#site-name {
+    font-size: 28px !important;
+    color: #1e5421 !important;
+    font-weight: bold !important;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+#site-name img {
+    height: 70px !important;
+    width: auto !important;
+}
+
+/* Barra superior - remover azul */
+#header {
+    background-color: #e3efcc !important;
+    border: none !important;
+    box-shadow: none !important;
+}
+
+/* Texto do topo */
+#user-tools {
+    color: #002d00 !important;
+}
+
+/* Cabeçalhos dos grupos de apps (sem fundo, só texto verde escuro) */
+.module caption {
+    background-color: transparent !important;
+    color: #1e5421 !important;
+    font-weight: bold !important;
+    font-size: 14px;
+    padding: 6px 10px;
+}
+
+/* Links internos */
+a, a:link, a:visited {
+    color: #1e5421 !important;
+    text-decoration: none !important;
+}
+
+a:hover {
+    color: #3c913c !important;
+}
+
+/* Botões de adicionar/modificar */
+.addlink, .changelink, .button {
+    background-color: #81c784 !important;
+    color: #002d00 !important;
+    border: none !important;
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-weight: bold;
+}
+
+.addlink:hover, .changelink:hover, .button:hover {
+    background-color: #66bb6a !important;
+}
+
+/* Adicionar espaçamento ao "+" */
+.addlink::before {
+    content: "+ ";
+    font-weight: bold;
+    margin-right: 2px;
+}
+
+/* Ações recentes */
+#recent-actions-module {
+    background-color: #e3efcc !important;
+    border: none !important;
+    box-shadow: none !important;
+}
+
+#recent-actions-module h2,
+#recent-actions-module .action-time,
+#recent-actions-module .action-message {
+    color: #002d00 !important;
+}
+
+#recent-actions-module li {
+    background-color: transparent !important;
+    padding: 2px 0;
+    border: none !important;
+}
+
+/* Remover sombras e bordas */
+*, *::before, *::after {
+    box-shadow: none !important;
+    border-color: transparent !important;
+}
+
+/* Esconde qualquer link com classe changelink e texto "Modificar" */
+a.changelink::after {
+    content: 'remover';
+    display: none !important;
+}
+
+a.changelink {
+    display: none !important;
+}
+
+/* Estiliza os botões "+ Adicionar" com fundo claro e borda */
+.addlink {
+    background-color: #f2f8ec !important; /* tom bem claro */
+    color: #1e5421 !important;
+    border: 1px solid #c2d9b2 !important;
+    padding: 5px 12px;
+    border-radius: 5px;
+    font-weight: bold;
+    font-size: 13px;
+}
+
+/* Hover suave */
+.addlink:hover {
+    background-color: #e2f0d9 !important;
+    border-color: #a6c48a !important;
+    color: #0f3d12 !important;
+}
+
+/* Ícone '+' alinhado e com espaçamento */
+.addlink::before {
+    content: "+ ";
+    font-weight: bold;
+    margin-right: 4px;
+}
+
+.addlink::before {
+    content: "+ ";
+    font-weight: bold;
+    margin-right: 4px;
+}
+
+.addlink {
+    background-color: #f2f8ec !important;
+    color: #1e5421 !important;
+    border: 1px solid #c2d9b2 !important;
+    padding: 5px 12px;
+    border-radius: 5px;
+    font-weight: bold;
+    font-size: 13px;
+}
+
+.addlink:hover {
+    background-color: #e2f0d9 !important;
+    border-color: #a6c48a !important;
+    color: #0f3d12 !important;
+}
+
+    /* Remove completamente o "+" extra adicionado via ::before */
+.addlink::before {
+    content: "" !important;
+    margin: 0 !important;
+}
+
+/* Remove o ícone de fundo padrão (+) do Django nos botões Adicionar */
+.addlink {
+    background-image: none !important;
+    padding-left: 12px !important;
+}
+
+/* Texto do topo (Bem-vindo, links, alternar tema) em verde escuro e negrito */
+#user-tools {
+    color: #1e5421 !important;
+    font-weight: bold !important;
+}
+
+/* Links do topo em verde escuro e negrito */
+#user-tools a {
+    color: #1e5421 !important;
+    font-weight: bold !important;
+    text-decoration: none !important;
+}
+
+#user-tools a:hover {
+    color: #3c913c !important;
+}
+
+/* Remove o botão "Alternar tema" do topo */
+.theme-toggle {
+    display: none !important;
+}
+
+/* Corrige o botão "Encerrar sessão" forçando verde escuro */
+#logout-form button {
+    color: #1e5421 !important;
+    font-weight: bold !important;
+    background: none !important;
+    border: none !important;
+    padding: 0 !important;
+    cursor: pointer !important;
+}
+
+/* Corrige o fundo e texto da barra de navegação (breadcrumbs) */
+div.breadcrumbs {
+    background-color: #e3efcc !important; /* MESMA cor do fundo principal */
+    color: #1e5421 !important;            /* Verde escuro */
+    border: none !important;
+}
+
+/* Corrige links dentro da barra de navegação */
+div.breadcrumbs a {
+    color: #1e5421 !important;
+    font-weight: bold !important;
+    text-decoration: none !important;
+}
+
+/* Deixa o fundo do menu lateral igual ao fundo principal */
+#nav-sidebar {
+    background-color: #e3efcc !important;
+    border-right: none !important;
+}
+
+/* Estilo da barrinha de colapsar/expandir o menu lateral */
+.toggle-nav-sidebar {
+    background-color: #e3efcc !important;
+    border-right: none !important;
+    color: #1e5421 !important; /* Ícone de seta em verde escuro */
+}
+
+/* Arredondamento do menu lateral */
+#nav-sidebar {
+    background-color: #e3efcc !important; /* mesma cor do fundo */
+    border-radius: 12px !important;
+    margin: 10px 0 10px 10px !important; /* dá espaço lateral e vertical */
+    border: none !important;
+    overflow: hidden;
+    box-shadow: none !important;
+}
+
+/* Também arredonda os módulos dentro do menu */
+#nav-sidebar .app-auth, 
+#nav-sidebar .app-sepultados_gestao {
+    border-radius: 8px !important;
+    margin-bottom: 10px;
+    padding: 5px;
+}
+
+/* Remove a borda lateral direita da barra que esconde o menu */
+.toggle-nav-sidebar {
+    background-color: #e3efcc !important;
+    border-right: none !important;
+    border-top-left-radius: 10px;
+    border-bottom-left-radius: 10px;
+}
+
+/* Remove o botão "Adicionar Grupo" (ou qualquer botão addlink na listagem) */
+ul.object-tools {
+    display: none !important;
+}
+
+/* Corrige fundo do formulário inteiro */
+#content-main, .flex-container, .inline-group, .inline-related, .module, fieldset, .form-row {
+    background-color: #e3efcc !important;
+    border: none !important;
+}
+
+/* Remove fundo branco de blocos internos */
+fieldset.module.aligned, div.inline-group {
+    background-color: #e3efcc !important;
+}
+
+/* Remove bordas indesejadas */
+fieldset, .form-row, .module {
+    border: none !important;
+    box-shadow: none !important;
+}
+
+/* Campos de texto, seleção e área de texto */
+input[type="text"],
+input[type="email"],
+input[type="number"],
+input[type="password"],
+input[type="url"],
+input[type="tel"],
+select,
+textarea {
+    border: 1px solid #999 !important;            /* Cinza suave */
+    border-radius: 8px !important;
+    background-color: #ffffff !important;
+    padding: 6px 10px !important;
+    font-size: 14px;
+    box-shadow: none !important;
+    color: #002d00 !important;                    /* Texto verde escuro */
+}
+
+/* Estado focado */
+input:focus,
+select:focus,
+textarea:focus {
+    outline: none !important;
+    border-color: #666 !important;                /* Cinza mais escuro no foco */
+    box-shadow: 0 0 0 2px rgba(102, 102, 102, 0.2) !important;
+}
+
+/* Remover borda azul dos selects no Chrome */
+select:focus-visible {
+    outline: none !important;
+}
+
+input[type="submit"],
+.button.default,
+.button,
+input[name="_addanother"],
+input[name="_continue"] {
+    background-color: #1e5421 !important;     /* Verde musgo Sepultados.com */
+    color: #ffffff !important;
+    border: none !important;
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-weight: bold !important;
+    font-size: 14px !important;
+    font-family: "Segoe UI", sans-serif !important;
+    text-transform: none;
+    transition: background-color 0.2s ease;
+}
+
+/* Hover */
+input[type="submit"]:hover,
+.button.default:hover,
+.button:hover,
+input[name="_addanother"]:hover,
+input[name="_continue"]:hover {
+    background-color: #154016 !important;
+    color: #ffffff !important;
+}
+
+.form-row label,
+.inline-group label,
+.aligned label {
+    color: #1e5421 !important;
+    font-weight: bold !important;
+}
+
+.submit-row {
+    background-color: #e3efcc !important;
+    padding: 20px;
+    display: flex;
+    gap: 10px;
+}
+
+.site-title-text {
+  font-size: 1.8rem;
+  font-weight: bold;
+  color: #2e5f2e;
+}
+
+.selector-chosen-title,
+.selector-available-title {
+    background-color: #ffffff !important; /* fundo branco */
+    color: #2e5f2e !important;            /* texto verde musgo */
+    font-weight: bold;
+    padding: 8px;
+    border: 1px solid #c8d6c8 !important; /* borda suave */
+    border-radius: 4px;
+}
+
+#changelist-filter {
+    background-color: #ffffff !important;
+    border: 1px solid #c8d6c8 !important; /* borda suave */
+    border-radius: 4px;
+    padding: 10px;
+    color: #2e5f2e !important; /* texto verde musgo */
+}
+
+#changelist-filter h2 {
+    font-size: 1rem !important;
+    font-weight: bold;
+    color: #2e5f2e !important; /* verde musgo */
+    text-transform: none !important;
+    background: transparent !important;
+    padding-bottom: 6px;
+    border-bottom: 1px solid #c8d6c8;
+    margin-bottom: 10px;
+}
+
+/* Estilização exclusiva para a tela de logout */
+body:has(main#content-start:has(p:only-child)) {
+    display: flex !important;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh !important;
+    text-align: center !important;
+}
+
+body:has(main#content-start:has(p:only-child)) #content {
+    max-width: 500px;
+    margin: auto;
+}
+
+body:has(main#content-start:has(p:only-child)) #content-main {
+    margin-top: 30px;
+}
+
+body:has(main#content-start:has(p:only-child)) p {
+    font-size: 1.2rem;
+    color: #1e5421;
+    margin: 10px 0;
+}
+
+body:has(main#content-start:has(p:only-child)) a {
+    display: inline-block;
+    background-color: #1e5421;
+    color: white;
+    padding: 10px 24px;
+    border-radius: 6px;
+    font-weight: bold;
+    text-decoration: none;
+    transition: background 0.3s ease;
+}
+
+body:has(main#content-start:has(p:only-child)) a:hover {
+    background-color: #153c15;
+}
+
+/* Garante que o painel principal fique relativo */
+.dashboard #content {
+    position: relative;
+}
+
+/* Reposiciona o bloco de Ações Recentes totalmente na lateral direita */
+.dashboard #content-main + .module {
+    position: fixed;
+    top: 80px;
+    right: 20px;
+    width: 280px;
+    background: #ffffff;
+    padding: 16px;
+    border-radius: 10px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    color: #1e5421;
+    z-index: 1000;
+}
+
+
+/* Título da seção */
+.dashboard #content-main + .module h2 {
+    font-size: 16px;
+    font-weight: bold;
+    margin-bottom: 12px;
+    color: #1e5421;
+}
+
+/* Aumenta espaçamento da esquerda para não colar no menu */
+.dashboard #content-main {
+    margin-right: 320px;
+}
+
+/* Estiliza os itens de ação */
+.dashboard #content-main + .module ul.actionlist li {
+    margin-bottom: 8px;
+    padding-left: 6px;
+    border-left: 3px solid #1e5421;
+    font-size: 13px;
+}
+
+/* Elimina azul dos módulos (títulos de seções como "Permissões") */
+.module h2, .module caption {
+    background: #d0e6b2 !important;
+    color: #003300 !important;
+    border: none !important;
+}
+
+/* Fundo e borda dos grupos de campos */
+.fieldset, .inline-group {
+    background-color: #e3efcc !important;
+    border: 1px solid #c9d9b5 !important;
+}
+
+/* Borda e sombra de campos de formulário */
+fieldset .form-row, .form-row {
+    border: none !important;
+    background: transparent !important;
+    box-shadow: none !important;
+}
+
+/* Borda azul de campos com foco */
+input:focus, select:focus, textarea:focus {
+    border: 1px solid #336633 !important;
+    box-shadow: none !important;
+}
+
+/* Corrige botão + de adicionar relacionados (verde escuro com hover) */
+a.related-widget-wrapper-link {
+    background-color: #1a401a !important;
+    border: none !important;
+    color: white !important;
+    padding: 2px 6px;
+    border-radius: 3px;
+}
+
+a.related-widget-wrapper-link:hover {
+    background-color: #2b5d2b !important;
+}
+
+
+
+/* Força a borda visível nos campos de autocomplete e select */
+select,
+select:focus,
+input,
+input:focus,
+select[autocomplete],
+.select2-container--default .select2-selection--single {
+    border: 1px solid #2d572c !important; /* verde escuro ou outro tom que desejar */
+    box-shadow: none !important;
+    background-color: #ffffff !important;
+}
+
+/* Campos de autocomplete que herdam do select2 (caso esteja usando) */
+.select2-selection {
+    border: 1px solid #2d572c !important;
+    background-color: #ffffff !important;
+    height: 38px !important;
+    border-radius: 4px !important;
+    box-shadow: none !important;
+}
+
+

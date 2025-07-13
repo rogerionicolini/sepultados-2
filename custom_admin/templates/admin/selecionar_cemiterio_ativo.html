@@ -1,0 +1,49 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+
+{% block title %}Selecionar Cemitério Ativo{% endblock %}
+
+{% block content %}
+  <div style="display: flex; justify-content: center; align-items: center; min-height: 80vh;">
+    <div style="background: #f8fbe9; padding: 40px 30px; border-radius: 16px; box-shadow: 0 0 8px rgba(0,0,0,0.1); width: 380px;">
+
+      <h2 style="text-align: center; color: #2e5626; margin-bottom: 30px;">Selecionar Cemitério Ativo</h2>
+
+      {% if messages %}
+        <ul class="messagelist">
+          {% for message in messages %}
+            <li class="{{ message.tags }}">{{ message }}</li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+
+      <form method="post" style="display: flex; flex-direction: column; gap: 20px; width: 100%;">
+  {% csrf_token %}
+
+  <div style="width: 100%;">
+    <label for="cemiterio" style="display: block; margin-bottom: 6px;"><strong>Cemitério:</strong></label>
+    <select name="cemiterio_id" id="cemiterio" required
+      style="width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 8px; box-sizing: border-box;">
+      <option value="">Selecione um cemitério</option>
+      {% for cemit in cemiterios %}
+        <option value="{{ cemit.id }}">{{ cemit.nome }}</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <div style="width: 100%;">
+    <label for="senha" style="display: block; margin-bottom: 6px;"><strong>Confirme sua senha:</strong></label>
+    <input type="password" name="senha" id="senha" required
+      style="width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 8px; box-sizing: border-box;">
+  </div>
+
+  <button type="submit"
+    style="width: 100%; padding: 12px; background-color: #4CAF50; color: white; border: none; border-radius: 8px; font-weight: bold;">
+    Confirmar
+  </button>
+</form>
+
+
+    </div>
+  </div>
+{% endblock %}

@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <style>
+        @page {
+            size: A4;
+            margin: 0;
+        }
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+        }
+        .a4-borda {
+            width: 18.5cm;
+            height: 27.7cm;
+            margin: auto;
+            margin-top: 1cm;
+            padding: 2cm;
+            border: 2px solid black;
+            box-sizing: border-box;
+            position: relative;
+        }
+        .cabecalho {
+            display: flex;
+            align-items: flex-start;
+            justify-content: flex-start;
+            margin-bottom: 10px;
+            margin-top: -35px;
+        }
+        .logo img {
+            max-height: 75px;
+        }
+        .dados {
+            margin-left: 12px;
+            font-size: 11pt;
+            line-height: 1.3;
+            text-align: left;
+        }
+        h1 {
+            text-align: center;
+            margin: 10px 0 20px;
+            font-size: 20pt;
+            text-decoration: underline;
+        }
+        .conteudo {
+            font-size: 11pt;
+            line-height: 1.4;
+        }
+        .conteudo p {
+            margin: 3px 0;
+        }
+        .assinaturas {
+            position: absolute;
+            bottom: 40px;
+            left: 2cm;
+            right: 2cm;
+            font-size: 11pt;
+        }
+        .assinatura-bloco {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 30px;
+        }
+        .assinatura {
+            width: 45%;
+            text-align: center;
+        }
+        .assinatura hr {
+            margin-bottom: 4px;
+        }
+        .cpf {
+            font-size: 10pt;
+            margin-top: 2px;
+        }
+    </style>
+</head>
+<body>
+    <div class="a4-borda">
+        <div class="cabecalho">
+            <div class="logo">
+                {% if brasao_path %}
+                    <img src="{{ brasao_path }}" alt="Brasão da Prefeitura">
+                {% endif %}
+            </div>
+            <div class="dados">
+                <strong>{{ movimentacao.prefeitura.nome }}</strong><br>
+                {{ movimentacao.prefeitura.logradouro }}<br>
+                {{ movimentacao.prefeitura.endereco_bairro }} – {{ movimentacao.prefeitura.endereco_cidade }} – {{ movimentacao.prefeitura.endereco_estado }}<br>
+                CEP {{ movimentacao.prefeitura.endereco_cep }}
+            </div>
+        </div>
+
+        <h1>Guia de Translado</h1>
+
+        <div class="conteudo">
+            <p><strong>Número da Movimentação:</strong> {{ movimentacao.numero_movimentacao }}</p>
+            <p><strong>Nome do Sepultado:</strong> {{ movimentacao.sepultado.nome }}</p>
+            <p><strong>Data da movimentação:</strong> {{ movimentacao.data|date:"d/m/Y" }}</p>
+            <p><strong>Motivo:</strong> {{ movimentacao.motivo }}</p>
+            <p><strong>Túmulo de origem:</strong> {{ movimentacao.tumulo_origem.quadra.nome }} - {{ movimentacao.tumulo_origem.identificador }}</p>
+            <p><strong>Tipo de destino:</strong> {{ movimentacao.get_destino_tipo_display }}</p>
+            <p><strong>Túmulo de destino:</strong> {% if movimentacao.tumulo_destino %}{{ movimentacao.tumulo_destino.quadra.nome }} - {{ movimentacao.tumulo_destino.identificador }}{% else %}---{% endif %}</p>
+            <p><strong>Nome do cemitério de destino:</strong> {{ movimentacao.cemiterio_destino_nome }}</p>
+            <p><strong>Cidade de destino:</strong> {{ movimentacao.cidade_destino }}</p>
+            <p><strong>Estado de destino:</strong> {{ movimentacao.estado_destino }}</p>
+            <p><strong>Forma de Pagamento:</strong> {{ movimentacao.get_forma_pagamento_display }}</p>
+            <p><strong>Valor:</strong> R$ {{ movimentacao.valor }}</p>
+            <br>
+            <p><strong>Nome:</strong> {{ movimentacao.nome }}</p>
+            <p><strong>CPF:</strong> {{ movimentacao.cpf }}</p>
+            <p><strong>Endereço:</strong> {{ movimentacao.endereco }}</p>
+            <p><strong>Telefone:</strong> {{ movimentacao.telefone }}</p>
+        </div>
+
+        <div class="assinaturas">
+            <div class="assinatura-bloco">
+                <div class="assinatura">
+                    <hr>
+                    <strong>{{ movimentacao.prefeitura.nome }}</strong><br>
+                    <span class="cpf">CPF/CNPJ: {{ movimentacao.prefeitura.cnpj }}</span>
+                </div>
+                <div class="assinatura">
+                    <hr>
+                    <strong>{{ movimentacao.nome }}</strong><br>
+                    <span class="cpf">CPF: {{ movimentacao.cpf }}</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
