@@ -4,7 +4,16 @@
 {% block title %}Sepultados.com Administração{% endblock %}
 
 {% block extrastyle %}
+  {{ block.super }}
   <link rel="stylesheet" type="text/css" href="{% static 'custom_admin/custom_admin.css' %}">
+{% endblock %}
+
+{% block extrahead %}
+  {{ block.super }}
+{% endblock %}
+
+{% block extra_scripts %}
+  {{ block.super }}
 {% endblock %}
 
 {% block branding %}
@@ -77,4 +86,3 @@
   {{ block.super }}
   <script src="{% static 'custom_admin/js/admin.js' %}"></script>
 {% endblock %}
-

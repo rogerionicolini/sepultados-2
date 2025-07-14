@@ -149,8 +149,8 @@ class QuadraAdmin(admin.ModelAdmin):
 
 @admin.register(Tumulo)
 class TumuloAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
+    search_fields = ['identificacao', 'quadra__nome']
     form = TumuloForm
-
     list_display = (
         "tipo_estrutura", "identificador", "quadra",
         "status_com_cor", "usar_linha", "linha", "reservado"
@@ -201,13 +201,16 @@ from django.contrib import admin
 from django.utils.html import format_html
 from .models import Sepultado, Tumulo
 from .mixins import PrefeituraObrigatoriaAdminMixin
+from .forms import SepultadoForm
 
 
 
 class SepultadoAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
+    form = SepultadoForm
+    autocomplete_fields = ['tumulo']
     list_display = (
         'nome', 'data_nascimento', 'data_falecimento',
-        'idade_ao_falecer', 'tumulo'
+        'idade_ao_falecer', 'tumulo', 'link_pdf'
     )
     list_filter = ('estado_civil',)
     search_fields = (
@@ -248,7 +251,7 @@ class SepultadoAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
         }),
         ('Local de Sepultamento', {
             'fields': (
-                'tumulo', 'ordem_no_tumulo', 'data_sepultamento',
+                'tumulo', 'data_sepultamento',
                 'observacoes',
             )
         }),
@@ -313,8 +316,17 @@ class SepultadoAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
                 kwargs["queryset"] = Tumulo.objects.none()
         return super().formfield_for_foreignkey(db_field, request, **kwargs)
 
+    def link_pdf(self, obj):
+            url = reverse('sepultados_gestao:gerar_guia_sepultamento_pdf', args=[obj.pk])
+            return format_html('<a href="{}" target="_blank">📄 PDF</a>', url)
+
+    link_pdf.short_description = "Guia PDF"
+    
     class Media:
-        js = ('custom_admin/js/sexo_outro.js',)
+        js = (
+            'custom_admin/js/sexo_outro.js',
+            'custom_admin/js/sepultado_pagamento.js',  # novo
+        )
 
 
 

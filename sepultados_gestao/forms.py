@@ -398,3 +398,68 @@ class MovimentacaoSepultadoForm(forms.ModelForm):
                 raise forms.ValidationError("O sepultado selecionado não pertence ao túmulo de origem informado.")
 
         return cleaned_data
+
+
+from django import forms
+from .models import Sepultado
+from decimal import Decimal
+
+
+class SepultadoForm(forms.ModelForm):
+    data_nascimento = forms.DateField(
+        widget=forms.DateInput(attrs={'type': 'date', 'class': 'vDateField'}),
+        required=False,
+        label="Data de Nascimento"
+    )
+    data_falecimento = forms.DateField(
+        widget=forms.DateInput(attrs={'type': 'date', 'class': 'vDateField'}),
+        required=False,
+        label="Data do Falecimento"
+    )
+    data_sepultamento = forms.DateField(
+        widget=forms.DateInput(attrs={'type': 'date', 'class': 'vDateField'}),
+        required=False,
+        label="Data do Sepultamento"
+    )
+    cartorio_data_registro = forms.DateField(
+        widget=forms.DateInput(attrs={'type': 'date', 'class': 'vDateField'}),
+        required=False,
+        label="Data do Registro em Cartório"
+    )
+    hora_falecimento = forms.TimeField(
+        required=False,
+        label="Hora falecimento",
+        widget=forms.TimeInput(attrs={'type': 'time', 'class': 'vTimeField'}),
+    )
+    valor = forms.CharField(
+        label="Valor",
+        required=False,
+        widget=forms.TextInput(attrs={
+            'placeholder': 'R$ 0,00',
+            'data-mask-moeda': 'true'
+        })
+    )
+    quantidade_parcelas = forms.IntegerField(
+        label="Quantidade de Parcelas",
+        required=False,
+        widget=forms.NumberInput(attrs={
+            'data-show-if-parcelado': 'true'
+        })
+    )
+
+
+
+    class Meta:
+        model = Sepultado
+        fields = '__all__'
+
+    def clean_valor(self):
+        valor_str = self.cleaned_data.get('valor')
+        if valor_str:
+            # Remove "R$ ", pontos de milhar e troca vírgula por ponto
+            valor_str = valor_str.replace('R$', '').replace('.', '').replace(',', '.').strip()
+            try:
+                return Decimal(valor_str)
+            except:
+                raise forms.ValidationError("Valor inválido.")
+        return Decimal("0.00")

@@ -3,23 +3,19 @@
 <head>
     <meta charset="UTF-8">
     <style>
-        @page {
-            size: A4;
-            margin: 0;
-        }
+        @page { size: A4; margin: 0; }
         body {
             font-family: Arial, sans-serif;
+            font-size: 10pt;
             margin: 0;
             padding: 0;
-            height: 100vh;
         }
         .a4-borda {
-            width: 18.5cm;
-            min-height: 27.7cm;
-            margin: auto;
-            margin-top: 1cm;
-            padding: 2cm 1.5cm 1.5cm 1.5cm;
-            border: 2px solid black;
+            width: 18cm;
+            min-height: 26.5cm;
+            margin: 0.7cm auto;
+            padding: 1.2cm 1cm;
+            border: 1px solid black;
             box-sizing: border-box;
             display: flex;
             flex-direction: column;
@@ -29,33 +25,29 @@
             display: flex;
             align-items: flex-start;
             justify-content: flex-start;
-            margin-bottom: 10px;
-            margin-top: -35px;
+            margin-bottom: 8px;
         }
         .logo img {
-            max-height: 75px;
+            max-height: 55px;
         }
         .dados {
-            margin-left: 12px;
-            font-size: 11pt;
-            line-height: 1.3;
-            text-align: left;
+            margin-left: 10px;
+            line-height: 1.2;
         }
         h1 {
             text-align: center;
-            margin: 10px 0;
-            font-size: 18pt;
+            margin: 6px 0;
+            font-size: 14pt;
             text-decoration: underline;
         }
         .conteudo {
-            font-size: 11pt;
-            line-height: 1.4;
+            line-height: 1.3;
         }
         .conteudo p {
-            margin: 0 0 6px;
+            margin: 0 0 4px;
         }
         .assinaturas {
-            margin-top: auto;
+            margin-top: 10px;
             display: flex;
             justify-content: space-between;
             padding: 0 20px;
@@ -66,12 +58,12 @@
         }
         .linha {
             border-top: 1px solid #000;
-            padding-top: 3px;
+            padding-top: 2px;
             font-weight: bold;
         }
         .cpf {
-            font-size: 10pt;
-            margin-top: 2px;
+            font-size: 9pt;
+            margin-top: 1px;
         }
     </style>
 </head>
@@ -97,31 +89,30 @@
             <div class="conteudo">
                 <p><strong>Número:</strong> {{ sepultado.numero_controle }}</p>
 
-                <p><strong>Nome:</strong> {{ sepultado.nome }}</p>
+                <p><strong>Nome do Sepultado:</strong> {{ sepultado.nome }}</p>
                 <p><strong>Sexo:</strong> {{ sepultado.get_sexo_display }}</p>
                 <p><strong>Data de Nascimento:</strong> {{ sepultado.data_nascimento|date:"d/m/Y" }}</p>
                 <p><strong>Local de Nascimento:</strong> {{ sepultado.local_nascimento }}</p>
                 <p><strong>Nacionalidade:</strong> {{ sepultado.nacionalidade }}</p>
-                <p><strong>Cor ou Raça:</strong> {{ sepultado.cor_ou_raca }}</p>
-                <p><strong>Estado Civil:</strong> {{ sepultado.estado_civil }}</p>
+                <p><strong>Cor/Raça:</strong> {{ sepultado.cor }}</p>
+                <p><strong>Estado Civil:</strong> {{ sepultado.get_estado_civil_display }}</p>
                 <p><strong>Cônjuge:</strong> {{ sepultado.conjuge }}</p>
                 <p><strong>Profissão:</strong> {{ sepultado.profissao }}</p>
                 <p><strong>Escolaridade:</strong> {{ sepultado.escolaridade }}</p>
 
-                <p><strong>Endereço:</strong> {{ sepultado.logradouro }}, {{ sepultado.numero }} - {{ sepultado.bairro }}, {{ sepultado.cidade }} - {{ sepultado.estado }}</p>
+                <p><strong>Endereço:</strong> {{ sepultado.logradouro }}, Nº {{ sepultado.numero }} – {{ sepultado.bairro }} – {{ sepultado.cidade }} – {{ sepultado.estado }}</p>
 
                 <p><strong>Data do Falecimento:</strong> {{ sepultado.data_falecimento|date:"d/m/Y" }}</p>
-                <p><strong>Hora:</strong> {{ sepultado.hora_falecimento }}</p>
-                <p><strong>Local:</strong> {{ sepultado.local_falecimento }}</p>
-                <p><strong>Causa:</strong> {{ sepultado.causa_mortis }}</p>
-                <p><strong>Médico:</strong> {{ sepultado.nome_medico }}</p>
-                <p><strong>CRM:</strong> {{ sepultado.crm_medico }}</p>
+                <p><strong>Hora do Falecimento:</strong> {{ sepultado.hora_falecimento }}</p>
+                <p><strong>Local do Falecimento:</strong> {{ sepultado.local_falecimento }}</p>
+                <p><strong>Causa da Morte:</strong> {{ sepultado.causa_morte }}</p>
+                <p><strong>Médico:</strong> {{ sepultado.medico }}</p>
+                <p><strong>CRM:</strong> {{ sepultado.crm }}</p>
 
-                <p><strong>Cartório:</strong> {{ sepultado.cartorio }}</p>
-                <p><strong>Nº do Registro:</strong> {{ sepultado.numero_registro }}</p>
-                <p><strong>Livro:</strong> {{ sepultado.livro }}</p>
-                <p><strong>Folha:</strong> {{ sepultado.folha }}</p>
-                <p><strong>Data do Registro:</strong> {{ sepultado.data_registro|date:"d/m/Y" }}</p>
+                <p><strong>Registro em Cartório:</strong> {{ sepultado.registro_cartorio_nome }}</p>
+                <p><strong>Número Registro:</strong> {{ sepultado.registro_cartorio_numero }}</p>
+                <p><strong>Livro:</strong> {{ sepultado.registro_cartorio_livro }} – <strong>Folha:</strong> {{ sepultado.registro_cartorio_folha }}</p>
+                <p><strong>Data do Registro:</strong> {{ sepultado.registro_cartorio_data|date:"d/m/Y" }}</p>
 
                 <p><strong>Túmulo:</strong> {{ sepultado.tumulo.quadra.nome }} - {{ sepultado.tumulo.identificador }}</p>
                 <p><strong>Ordem no Túmulo:</strong> {{ sepultado.ordem }}</p>
@@ -129,10 +120,10 @@
                 <p><strong>Observações:</strong> {{ sepultado.observacoes }}</p>
 
                 <p><strong>Forma de Pagamento:</strong> {{ sepultado.get_forma_pagamento_display }}</p>
-                <p><strong>Parcelas:</strong> {{ sepultado.quantidade_parcelas }}</p>
+                <p><strong>Quantidade de Parcelas:</strong> {{ sepultado.quantidade_parcelas }}</p>
                 <p><strong>Valor:</strong> R$ {{ sepultado.valor }}</p>
 
-                <p><strong>Nome do Responsável:</strong> {{ sepultado.nome_responsavel }}</p>
+                <p><strong>Responsável:</strong> {{ sepultado.nome_responsavel }}</p>
                 <p><strong>CPF:</strong> {{ sepultado.cpf_responsavel }}</p>
                 <p><strong>Endereço:</strong> {{ sepultado.endereco_responsavel }}</p>
                 <p><strong>Telefone:</strong> {{ sepultado.telefone_responsavel }}</p>

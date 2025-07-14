@@ -203,3 +203,37 @@ def pdf_translado(request, pk):
 
     pdf = HTML(string=html).write_pdf()
     return HttpResponse(pdf, content_type='application/pdf')
+
+
+from django.template.loader import render_to_string
+from django.http import HttpResponse
+from weasyprint import HTML
+import os
+from django.conf import settings
+from .models import Sepultado
+from django.contrib.admin.views.decorators import staff_member_required
+from django.shortcuts import get_object_or_404
+
+@staff_member_required
+def gerar_guia_sepultamento_pdf(request, pk):
+    sepultado = get_object_or_404(
+        Sepultado.objects.select_related(
+            'tumulo__quadra__cemiterio__prefeitura'
+        ),
+        pk=pk
+    )
+
+    prefeitura = sepultado.tumulo.quadra.cemiterio.prefeitura
+
+    brasao_path = ""
+    if prefeitura and prefeitura.brasao:
+        brasao_absoluto = os.path.join(settings.MEDIA_ROOT, prefeitura.brasao.name)
+        brasao_path = f"file:///{brasao_absoluto.replace(os.sep, '/')}"
+
+    html = render_to_string("pdf/guia_sepultamento.html", {
+        "sepultado": sepultado,
+        "brasao_path": brasao_path,
+    })
+
+    pdf = HTML(string=html).write_pdf()
+    return HttpResponse(pdf, content_type='application/pdf')
