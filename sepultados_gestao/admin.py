@@ -157,6 +157,14 @@ class QuadraAdmin(admin.ModelAdmin):
 
 
 
+from django.contrib import admin
+from django.utils.safestring import mark_safe
+from django.utils.html import format_html
+from datetime import date
+from dateutil.relativedelta import relativedelta
+from .models import Tumulo
+from .forms import TumuloForm
+from .mixins import PrefeituraObrigatoriaAdminMixin
 
 @admin.register(Tumulo)
 class TumuloAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
@@ -168,10 +176,10 @@ class TumuloAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
     )
     list_filter = ("status", "quadra", "usar_linha", "reservado")
     search_fields = ("identificador", "linha", "quadra__numero", "quadra__cemiterio__nome")
-    readonly_fields = ("status",)
+    readonly_fields = ("status", "painel_sepultados")
     fields = (
         "tipo_estrutura", "identificador", "capacidade", "quadra",
-        "usar_linha", "linha", "reservado", "motivo_reserva", "status"
+        "usar_linha", "linha", "reservado", "motivo_reserva", "status", "painel_sepultados"
     )
 
     def get_queryset(self, request):
@@ -205,6 +213,66 @@ class TumuloAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
                 kwargs2['request'] = request
                 super().__init__(*args, **kwargs2)
         return FormComRequest
+    from django.utils.safestring import mark_safe
+    from dateutil.relativedelta import relativedelta
+    from datetime import date
+
+    def painel_sepultados(self, obj):
+        if not obj:
+            return ""
+
+        sepultados = obj.sepultado_set.all().order_by('-data_sepultamento')
+        if not sepultados.exists():
+            return "<i>Não há sepultados neste túmulo.</i>"
+
+        tempo_minimo_meses = obj.quadra.cemiterio.tempo_minimo_exumacao or 0
+        linhas = ""
+        for s in sepultados:
+            status = "Sepultado"
+            if s.trasladado:
+                status = "Trasladado"
+            elif s.exumado:
+                status = "Exumado"
+
+            if s.data_sepultamento:
+                data_permitida = s.data_sepultamento + relativedelta(months=tempo_minimo_meses)
+                if date.today() >= data_permitida:
+                    exumacao_info = "<span style='color: #006600; font-weight: bold;'>Exumação liberada</span>"
+                else:
+                    faltam = (data_permitida - date.today()).days
+                    exumacao_info = f"<span style='color: #cc6600;'>Exumação permitida em {faltam} dia(s)</span>"
+            else:
+                exumacao_info = "<span style='color: #999;'>Sem data</span>"
+
+            linhas += f"""
+            <tr>
+                <td style='padding: 6px 10px; border-bottom: 1px solid #c3d9af;'>{s.nome}</td>
+                <td style='padding: 6px 10px; border-bottom: 1px solid #c3d9af;'>{s.data_sepultamento.strftime('%d/%m/%Y') if s.data_sepultamento else '-'}</td>
+                <td style='padding: 6px 10px; border-bottom: 1px solid #c3d9af;'>{status}</td>
+                <td style='padding: 6px 10px; border-bottom: 1px solid #c3d9af;'>{exumacao_info}</td>
+            </tr>
+            """
+
+        return mark_safe(f"""
+        <div style='margin-top: 20px; background: #f5fbe9; padding: 20px 25px; border-radius: 12px;
+                        border: 2px solid #006600; box-shadow: 2px 2px 6px rgba(0, 0, 0, 0.1);'>
+            <h3 style='color: #003300; margin-top: 0; font-size: 18px;'>Sepultados neste Túmulo</h3>
+            <table style='width: 100%; border-collapse: collapse; font-size: 14px; margin-top: 10px;'>
+                <thead>
+                    <tr style='background-color: #dceacb;'>
+                        <th style='text-align: left; padding: 8px 10px; border-bottom: 2px solid #006600;'>Nome</th>
+                        <th style='text-align: left; padding: 8px 10px; border-bottom: 2px solid #006600;'>Data do Sepultamento</th>
+                        <th style='text-align: left; padding: 8px 10px; border-bottom: 2px solid #006600;'>Status</th>
+                        <th style='text-align: left; padding: 8px 10px; border-bottom: 2px solid #006600;'>Exumação</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {linhas}
+                </tbody>
+            </table>
+        </div>
+        """)
+    painel_sepultados.short_description = "Sepultados neste Túmulo"
 
 
 
