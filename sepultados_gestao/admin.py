@@ -23,6 +23,17 @@ from .forms import TumuloForm
 from django import forms
 from django.db import models
 
+from django.contrib.contenttypes.admin import GenericTabularInline
+from .models import Anexo
+
+class AnexoInline(GenericTabularInline):
+    model = Anexo
+    extra = 1
+    verbose_name = "Anexo"
+    verbose_name_plural = "Arquivos Anexados"
+
+
+
 @admin.register(Prefeitura)
 class PrefeituraAdmin(admin.ModelAdmin):
     list_display = ('nome', 'endereco_cidade', 'cnpj', 'usuario')
@@ -207,6 +218,7 @@ from .forms import SepultadoForm
 
 class SepultadoAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
     form = SepultadoForm
+    inlines = [AnexoInline]
     autocomplete_fields = ['tumulo']
     list_display = (
         'nome', 'data_nascimento', 'data_falecimento',
@@ -343,6 +355,7 @@ from .mixins import PrefeituraObrigatoriaAdminMixin
 @admin.register(ConcessaoContrato)
 class ConcessaoContratoAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
     form = ConcessaoContratoForm
+    inlines = [AnexoInline]
     autocomplete_fields = ['tumulo']
     list_display = (
         'numero_contrato', 'nome', 'cpf',
@@ -466,6 +479,7 @@ from .forms import MovimentacaoSepultadoForm
 
 class MovimentacaoSepultadoAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
     form = MovimentacaoSepultadoForm
+    inlines = [AnexoInline]
     autocomplete_fields = ['sepultado', 'tumulo_origem', 'tumulo_destino']
     readonly_fields = ['tumulo_origem_exibicao', 'numero_movimentacao']
     list_display = (
@@ -991,3 +1005,5 @@ class ReceitaAdmin(admin.ModelAdmin):
         if db_field.name in ['prefeitura']:
             kwargs['disabled'] = True
         return super().formfield_for_foreignkey(db_field, request, **kwargs)
+
+

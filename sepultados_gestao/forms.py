@@ -327,7 +327,12 @@ class MovimentacaoSepultadoForm(forms.ModelForm):
             'data-show-if-parcelado': 'true'
         })
     )
-
+    data = forms.DateField(
+        widget=forms.DateInput(attrs={'type': 'date', 'class': 'vDateField'}),
+        required=False,
+        label="Data da Movimentação"
+    )
+    
     class Meta:
         model = MovimentacaoSepultado
         fields = '__all__'

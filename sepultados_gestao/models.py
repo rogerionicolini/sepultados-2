@@ -8,6 +8,9 @@ from django.utils import timezone
 from datetime import timedelta
 from decimal import Decimal
 from django.core.validators import FileExtensionValidator
+from django.contrib.contenttypes.models import ContentType
+from django.contrib.contenttypes.fields import GenericForeignKey
+
 
 
 
@@ -1048,3 +1051,25 @@ class Receita(models.Model):
     class Meta:
         verbose_name = "Receita"
         verbose_name_plural = "Receitas"
+
+
+from django.db import models
+from django.contrib.contenttypes.models import ContentType
+from django.contrib.contenttypes.fields import GenericForeignKey
+
+class Anexo(models.Model):
+    arquivo = models.FileField(upload_to='anexos/%Y/%m/', verbose_name="Arquivo")
+    nome = models.CharField("Descrição ou Nome do Arquivo", max_length=255, blank=True, null=True)
+    data_upload = models.DateTimeField(auto_now_add=True, verbose_name="Data do Envio")
+
+    # Relacionamento genérico com qualquer modelo
+    content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)
+    object_id = models.PositiveIntegerField()
+    content_object = GenericForeignKey("content_type", "object_id")  # ← Corrigido aqui
+
+    def __str__(self):
+        return self.nome or self.arquivo.name
+
+    class Meta:
+        verbose_name = "Anexo"
+        verbose_name_plural = "Anexos"
