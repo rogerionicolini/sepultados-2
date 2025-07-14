@@ -957,13 +957,14 @@ class CustomAdminSite(AdminSite):
             self.register(model, model_admin.__class__)
 
 
-
 from django.contrib import admin
 from django.utils.html import format_html
 from .models import Receita
+from .forms import ReceitaForm
 
 @admin.register(Receita)
 class ReceitaAdmin(admin.ModelAdmin):
+    form = ReceitaForm
     list_display = (
         'numero_documento',
         'descricao',
@@ -971,9 +972,9 @@ class ReceitaAdmin(admin.ModelAdmin):
         'cpf',
         'data_vencimento',
         'status_colorido',
-        'valor_total',
-        'valor_pago',
-        'valor_em_aberto',
+        'valor_total_formatado',
+        'valor_pago_formatado',
+        'valor_em_aberto_formatado',
     )
 
     readonly_fields = (
@@ -981,12 +982,12 @@ class ReceitaAdmin(admin.ModelAdmin):
         'descricao',
         'nome',
         'cpf',
-        'valor_total',
-        'valor_em_aberto',
+        'valor_total_formatado',
+        'valor_em_aberto_formatado',
+        'multa_formatada',
+        'juros_formatado',
+        'mora_diaria_formatada',
         'status',
-        'multa',
-        'juros',
-        'mora_diaria',
         'data_vencimento',
         'data_pagamento',
     )
@@ -1006,10 +1007,10 @@ class ReceitaAdmin(admin.ModelAdmin):
         }),
         ("Valores", {
             'fields': (
-                'valor_total',
+                'valor_total_formatado',
                 'desconto',
                 'valor_pago',
-                'valor_em_aberto',
+                'valor_em_aberto_formatado',
             )
         }),
         ("Vencimento e Pagamento", {
@@ -1021,24 +1022,57 @@ class ReceitaAdmin(admin.ModelAdmin):
         ("Status e Juros", {
             'fields': (
                 'status',
-                'multa',
-                'juros',
-                'mora_diaria',
+                'multa_formatada',
+                'juros_formatado',
+                'mora_diaria_formatada',
             )
         }),
     )
+
 
     search_fields = ('numero_documento', 'descricao', 'nome', 'cpf')
     list_filter = ('status', 'data_vencimento')
     ordering = ('-data_vencimento',)
 
+    class Media:
+        js = ('custom_admin/js/moeda.js',)
+
+    def moeda(self, valor):
+        if valor is None:
+            return "R$ 0,00"
+        return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+    def valor_total_formatado(self, obj):
+        return self.moeda(obj.valor_total)
+    valor_total_formatado.short_description = "Valor total"
+
+    def valor_em_aberto_formatado(self, obj):
+        return self.moeda(obj.valor_em_aberto)
+    valor_em_aberto_formatado.short_description = "Valor em aberto"
+
+    def multa_formatada(self, obj):
+        return self.moeda(obj.multa)
+    multa_formatada.short_description = "Multa"
+
+    def juros_formatado(self, obj):
+        return self.moeda(obj.juros)
+    juros_formatado.short_description = "Juros"
+
+    def mora_diaria_formatada(self, obj):
+        return self.moeda(obj.mora_diaria)
+    mora_diaria_formatada.short_description = "Mora diária"
+
+    def valor_pago_formatado(self, obj):
+        return self.moeda(obj.valor_pago)
+    valor_pago_formatado.short_description = "Valor pago"
+
     def status_colorido(self, obj):
         cor = {
-            'Aberto': 'red',
-            'Parcial': 'blue',
-            'Pago': 'green'
+            'aberto': 'red',
+            'parcial': 'blue',
+            'pago': 'green'
         }.get(obj.status, 'black')
-        return format_html('<strong style="color: {};">{}</strong>', cor, obj.status)
+        return format_html('<strong style="color: {};">{}</strong>', cor, obj.get_status_display())
     status_colorido.short_description = "Status"
 
 
@@ -1073,5 +1107,3 @@ class ReceitaAdmin(admin.ModelAdmin):
         if db_field.name in ['prefeitura']:
             kwargs['disabled'] = True
         return super().formfield_for_foreignkey(db_field, request, **kwargs)
-
-

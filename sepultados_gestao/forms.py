@@ -468,3 +468,44 @@ class SepultadoForm(forms.ModelForm):
             except:
                 raise forms.ValidationError("Valor inválido.")
         return Decimal("0.00")
+
+from django import forms
+from decimal import Decimal, InvalidOperation
+from .models import Receita
+
+class ReceitaForm(forms.ModelForm):
+    # Força os campos como texto para aceitar entrada "R$ 1.000,00"
+    desconto = forms.CharField(
+        required=False,
+        widget=forms.TextInput(attrs={
+            'placeholder': 'R$ 0,00',
+            'data-mask-moeda': 'true'
+        })
+    )
+    valor_pago = forms.CharField(
+        required=False,
+        widget=forms.TextInput(attrs={
+            'placeholder': 'R$ 0,00',
+            'data-mask-moeda': 'true'
+        })
+    )
+
+    class Meta:
+        model = Receita
+        fields = '__all__'
+
+    def clean_desconto(self):
+        valor = self.cleaned_data.get('desconto') or '0'
+        valor = str(valor).replace('R$', '').replace('.', '').replace(',', '.').strip()
+        try:
+            return Decimal(valor)
+        except InvalidOperation:
+            raise forms.ValidationError('Informe um valor numérico válido para o desconto.')
+
+    def clean_valor_pago(self):
+        valor = self.cleaned_data.get('valor_pago') or '0'
+        valor = str(valor).replace('R$', '').replace('.', '').replace(',', '.').strip()
+        try:
+            return Decimal(valor)
+        except InvalidOperation:
+            raise forms.ValidationError('Informe um valor numérico válido para o valor pago.')

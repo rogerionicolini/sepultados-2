@@ -14,8 +14,6 @@ from django.contrib.contenttypes.fields import GenericForeignKey
 
 
 
-
-
 def data_hoje():
     return timezone.now().date()
 
@@ -874,9 +872,10 @@ class Licenca(models.Model):
         if self.anos_contratados == 0:
             return False
         return timezone.now().date() > self.data_fim
-    
-from django.db import models
-from django.utils import timezone
+
+
+
+from django.db import models, transaction
 from decimal import Decimal
 from datetime import date
 from .utils import gerar_numero_sequencial_global
@@ -1012,16 +1011,10 @@ class Receita(models.Model):
             self.multa = (base * multa_percentual / 100).quantize(Decimal("0.01"))
             self.juros = (base * juros_percentual / 100).quantize(Decimal("0.01"))
             self.mora_diaria = (mora_diaria * dias_atraso).quantize(Decimal("0.01"))
-
-    def atualizar_status(self):
-        total_com_juros = self.valor_total + self.multa + self.juros + self.mora_diaria - self.desconto
-        self.valor_em_aberto = max(total_com_juros - self.valor_pago, Decimal("0.00"))
-        if self.valor_em_aberto <= 0:
-            self.status = 'pago'
-        elif self.valor_pago > 0:
-            self.status = 'parcial'
         else:
-            self.status = 'aberto'
+            self.multa = Decimal("0.00")
+            self.juros = Decimal("0.00")
+            self.mora_diaria = Decimal("0.00")
 
     def save(self, *args, **kwargs):
         if not self.numero_documento:
@@ -1036,17 +1029,58 @@ class Receita(models.Model):
                 self.numero_documento = gerar_numero_sequencial_global(self.prefeitura)
                 self.descricao = "Receita Diversa"
 
-        self.valor_em_aberto = self.valor_total - (self.valor_pago or 0)
-        if self.valor_em_aberto <= 0:
-            self.status = 'Pago'
-            self.valor_em_aberto = 0
-        elif self.valor_pago:
-            self.status = 'Parcial'
+        self.calcular_multa_juros()
+
+        total_corrigido = (
+            self.valor_total + self.multa + self.juros + self.mora_diaria - self.desconto
+        ).quantize(Decimal('0.01'))
+
+        valor_pago = (self.valor_pago or Decimal("0.00")).quantize(Decimal('0.01'))
+        self.valor_em_aberto = max(total_corrigido - valor_pago, Decimal("0.00")).quantize(Decimal('0.01'))
+
+        # Status e pagamento
+        if valor_pago >= total_corrigido:
+            self.status = 'pago'
+            self.data_pagamento = date.today()
+        elif valor_pago > 0:
+            self.status = 'pago'  # pago parcial — gera nova receita
+            self.data_pagamento = date.today()
         else:
-            self.status = 'Aberto'
+            self.status = 'aberto'
+            self.data_pagamento = None
 
-        super().save(*args, **kwargs)
+        criar_nova = False
+        valor_restante = self.valor_em_aberto
 
+        if self.pk and valor_restante > 0 and valor_pago > 0:
+            from .models import Receita
+            existe = Receita.objects.filter(
+                numero_documento=self.numero_documento,
+                status="aberto",
+                valor_total=valor_restante
+            ).exists()
+            if not existe:
+                criar_nova = True
+                self.valor_em_aberto = Decimal("0.00")  # ← zera aqui
+
+        with transaction.atomic():
+            super().save(*args, **kwargs)
+
+            if criar_nova:
+                Receita.objects.create(
+                    prefeitura=self.prefeitura,
+                    numero_documento=self.numero_documento,
+                    descricao=self.descricao,
+                    valor_total=valor_restante,
+                    valor_pago=Decimal("0.00"),
+                    desconto=Decimal("0.00"),
+                    data_vencimento=self.data_vencimento,
+                    status="aberto",
+                    nome=self.nome,
+                    cpf=self.cpf,
+                    contrato=self.contrato,
+                    movimentacao=self.movimentacao,
+                )
 
     class Meta:
         verbose_name = "Receita"
