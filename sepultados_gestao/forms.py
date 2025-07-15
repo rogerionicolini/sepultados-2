@@ -412,30 +412,36 @@ from decimal import Decimal
 
 class SepultadoForm(forms.ModelForm):
     data_nascimento = forms.DateField(
-        widget=forms.DateInput(attrs={'type': 'date', 'class': 'vDateField'}),
+        widget=forms.DateInput(format='%Y-%m-%d', attrs={'type': 'date', 'class': 'vDateField'}),
+        input_formats=['%Y-%m-%d', '%d/%m/%Y'],
         required=False,
         label="Data de Nascimento"
     )
     data_falecimento = forms.DateField(
-        widget=forms.DateInput(attrs={'type': 'date', 'class': 'vDateField'}),
+        widget=forms.DateInput(format='%Y-%m-%d', attrs={'type': 'date', 'class': 'vDateField'}),
+        input_formats=['%Y-%m-%d', '%d/%m/%Y'],
         required=False,
         label="Data do Falecimento"
     )
     data_sepultamento = forms.DateField(
-        widget=forms.DateInput(attrs={'type': 'date', 'class': 'vDateField'}),
+        widget=forms.DateInput(format='%Y-%m-%d', attrs={'type': 'date', 'class': 'vDateField'}),
+        input_formats=['%Y-%m-%d', '%d/%m/%Y'],
         required=False,
         label="Data do Sepultamento"
     )
     cartorio_data_registro = forms.DateField(
-        widget=forms.DateInput(attrs={'type': 'date', 'class': 'vDateField'}),
+        widget=forms.DateInput(format='%Y-%m-%d', attrs={'type': 'date', 'class': 'vDateField'}),
+        input_formats=['%Y-%m-%d', '%d/%m/%Y'],
         required=False,
         label="Data do Registro em Cartório"
     )
+
     hora_falecimento = forms.TimeField(
         required=False,
         label="Hora falecimento",
-        widget=forms.TimeInput(attrs={'type': 'time', 'class': 'vTimeField'}),
+        widget=forms.TimeInput(format='%H:%M', attrs={'type': 'time', 'class': 'vTimeField'}),
     )
+
     valor = forms.CharField(
         label="Valor",
         required=False,
@@ -444,6 +450,7 @@ class SepultadoForm(forms.ModelForm):
             'data-mask-moeda': 'true'
         })
     )
+
     quantidade_parcelas = forms.IntegerField(
         label="Quantidade de Parcelas",
         required=False,
@@ -452,8 +459,6 @@ class SepultadoForm(forms.ModelForm):
         })
     )
 
-
-
     class Meta:
         model = Sepultado
         fields = '__all__'
@@ -461,7 +466,6 @@ class SepultadoForm(forms.ModelForm):
     def clean_valor(self):
         valor_str = self.cleaned_data.get('valor')
         if valor_str:
-            # Remove "R$ ", pontos de milhar e troca vírgula por ponto
             valor_str = valor_str.replace('R$', '').replace('.', '').replace(',', '.').strip()
             try:
                 return Decimal(valor_str)

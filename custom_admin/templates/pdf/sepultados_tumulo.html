@@ -66,6 +66,15 @@
         th {
             background-color: #e3efcc;
         }
+        .subtabela {
+            width: 100%;
+            border: none;
+            font-size: 10pt;
+        }
+        .subtabela td {
+            border: none;
+            padding: 3px 6px;
+        }
     </style>
 </head>
 <body>
@@ -78,9 +87,9 @@
         </div>
         <div class="dados">
             <strong>Prefeitura Municipal de {{ prefeitura.nome }}</strong><br>
-            {{ prefeitura.logradouro }}, {{ prefeitura.numero }}<br>
-            {{ prefeitura.bairro }} – {{ prefeitura.cidade }} – {{ prefeitura.estado }}<br>
-            CEP {{ prefeitura.cep }}
+            {{ prefeitura.logradouro }}, {{ prefeitura.endereco_numero }}<br>
+            {{ prefeitura.endereco_bairro }} – {{ prefeitura.endereco_cidade }} – {{ prefeitura.endereco_estado }}<br>
+            CEP {{ prefeitura.endereco_cep }}
         </div>
     </div>
 
@@ -88,70 +97,62 @@
 
     <div class="info">
         <p><strong>Cemitério:</strong> {{ cemiterio.nome }}</p>
-        <p><strong>Endereço:</strong>
-            {{ cemiterio.rua }}, {{ cemiterio.numero }} –
-            {{ cemiterio.bairro }} –
-            {{ cemiterio.cidade }} / {{ cemiterio.estado }} –
-            CEP {{ cemiterio.cep }}
-        </p>
+        <p><strong>Endereço:</strong> {{ cemiterio.endereco|default:"Endereço não informado" }} – {{ cemiterio.cidade|default:"Cidade" }} / {{ cemiterio.estado|default:"UF" }}</p>
     </div>
 
     <table>
         <thead>
-        <tr>
-            <th>Nome</th>
-            <th>Data de Falecimento</th>
-            <th>Data de Sepultamento</th>
-            <th>Quadra</th>
-            <th>Linha</th>
-            <th>Túmulo</th>
-            <th>Status</th>
-            <th>Exumação</th>
-            <th>Translado</th>
-        </tr>
+            <tr>
+                <th>Nome do Sepultado</th>
+            </tr>
         </thead>
         <tbody>
-        {% for s in sepultados %}
-        <tr>
-            <td>{{ s.nome }}</td>
-            <td>{{ s.data_falecimento|date:"d/m/Y" }}</td>
-            <td>{{ s.data_sepultamento|date:"d/m/Y" }}</td>
-            <td>{{ s.tumulo.quadra.numero }}</td>
-            <td>{{ s.tumulo.linha|default:"-" }}</td>
-            <td>{{ s.tumulo.identificador }}</td>
-            <td>
-                {% with movimentacoes=s.movimentacaosepultado_set.all %}
-                    {% if movimentacoes %}
-                        {% with ultima=movimentacoes.last %}
-                            {% if ultima.tipo == "EXUMACAO" %}
-                                Exumado
-                            {% elif ultima.tipo == "TRANSLADO" %}
-                                Trasladado
-                            {% else %}
-                                Sepultado
-                            {% endif %}
-                        {% endwith %}
-                    {% else %}
-                        Sepultado
-                    {% endif %}
-                {% endwith %}
-            </td>
-            <td>
-                {% for mov in s.movimentacaosepultado_set.all %}
-                    {% if mov.tipo == "EXUMACAO" %}
-                        {{ mov.data|date:"d/m/Y" }}
-                    {% endif %}
-                {% endfor %}
-            </td>
-            <td>
-                {% for mov in s.movimentacaosepultado_set.all %}
-                    {% if mov.tipo == "TRANSLADO" %}
-                        {{ mov.data|date:"d/m/Y" }}
-                    {% endif %}
-                {% endfor %}
-            </td>
-        </tr>
-        {% endfor %}
+            {% for s in sepultados %}
+            <tr>
+                <td><strong>{{ s.nome }}</strong></td>
+            </tr>
+            <tr>
+                <td>
+                    <table class="subtabela">
+                        <tr>
+                            <td><strong>Nascimento:</strong> {{ s.data_nascimento|date:"d/m/Y" }}</td>
+                            <td><strong>Falecimento:</strong> {{ s.data_falecimento|date:"d/m/Y" }}</td>
+                            <td><strong>Sepultamento:</strong> {{ s.data_sepultamento|date:"d/m/Y" }}</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Quadra:</strong> {{ s.tumulo.quadra|default:"–" }}</td>
+                            <td><strong>Linha:</strong> {{ s.tumulo.linha|default:"–" }}</td>
+                            <td><strong>Túmulo:</strong> {{ s.tumulo.identificador }}</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Status:</strong>
+                                {% if s.data_translado %}
+                                    Transladado
+                                {% elif s.data_exumacao %}
+                                    Exumado
+                                {% else %}
+                                    Sepultado
+                                {% endif %}
+                            </td>
+                            <tr>
+                                <td><strong>Status:</strong>
+                                    {% if s.data_translado %}
+                                        Transladado
+                                    {% elif s.data_exumacao %}
+                                        Exumado
+                                    {% else %}
+                                        Sepultado
+                                    {% endif %}
+                                </td>
+                                <td><strong>Exumação:</strong> {{ s.data_exumacao|date:"d/m/Y"|default:"–" }}</td>
+                                <td><strong>Translado:</strong> {{ s.data_translado|date:"d/m/Y"|default:"–" }}</td>
+                            </tr>
+
+                        </tr>
+                    </table>
+                </td>
+            </tr>
+            {% endfor %}
         </tbody>
     </table>
 </div>
