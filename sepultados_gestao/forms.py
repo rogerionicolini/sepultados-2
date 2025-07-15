@@ -154,15 +154,16 @@ class SelecionarPrefeituraForm(forms.Form):
             raise forms.ValidationError("Senha incorreta. Tente novamente.")
 
         return cleaned_data
-
 from django import forms
 from .models import Licenca
 from dateutil.relativedelta import relativedelta
 
 class LicencaForm(forms.ModelForm):
     data_inicio = forms.DateField(
-        widget=forms.DateInput(attrs={'type': 'date', 'class': 'vDateField'}),
-        label="Data de Início"
+        widget=forms.DateInput(format='%Y-%m-%d', attrs={'type': 'date', 'class': 'vDateField'}),
+        input_formats=['%Y-%m-%d', '%d/%m/%Y'],
+        required=True,
+        label="Início"
     )
 
     class Meta:
@@ -189,20 +190,35 @@ class LicencaForm(forms.ModelForm):
         }
 
     def __init__(self, *args, **kwargs):
-        self.current_user = kwargs.pop('user', None)  # <-- Aqui definimos a variável
+        self.current_user = kwargs.pop('user', None)
         super().__init__(*args, **kwargs)
 
-    # Esconde campos técnicos para usuários que não são superusuários
+        self.fields['valor_mensal_atual'].widget.attrs.update({
+            'placeholder': 'R$ 0,00',
+            'data-mask-moeda': 'true'
+        })
+
         if self.current_user and not self.current_user.is_superuser:
-              for field in ['usuarios_min', 'usuarios_max', 'sepultados_max',
-                      'inclui_api', 'inclui_erp', 'inclui_suporte_prioritario']:
-                  self.fields.pop(field, None)
+            for field in [
+                'usuarios_min', 'usuarios_max', 'sepultados_max',
+                'inclui_api', 'inclui_erp', 'inclui_suporte_prioritario'
+            ]:
+                self.fields.pop(field, None)
+
+    def clean_valor_mensal_atual(self):
+        valor_str = self.cleaned_data.get('valor_mensal_atual')
+        if valor_str:
+            valor_str = str(valor_str).replace('R$', '').replace('.', '').replace(',', '.').strip()
+            try:
+                return Decimal(valor_str)
+            except:
+                raise forms.ValidationError("Valor inválido.")
+        return Decimal("0.00")
 
 
     def save(self, commit=True):
         licenca = super().save(commit=False)
 
-        # Se for uma nova licença, herda os dados do plano
         if not licenca.pk:
             licenca.usuarios_min = licenca.plano.usuarios_min
             licenca.usuarios_max = licenca.plano.usuarios_max
@@ -216,18 +232,7 @@ class LicencaForm(forms.ModelForm):
         return licenca
 
     def set_user(self, user):
-        """Método para passar o usuário logado dinamicamente."""
         self.current_user = user
-
-# forms.py
-
-
-
-
-
-
-from django import forms
-from .models import Tumulo, Quadra
 
 class TumuloForm(forms.ModelForm):
     class Meta:
@@ -513,3 +518,25 @@ class ReceitaForm(forms.ModelForm):
             return Decimal(valor)
         except InvalidOperation:
             raise forms.ValidationError('Informe um valor numérico válido para o valor pago.')
+
+from django import forms
+from .models import Plano
+
+class PlanoForm(forms.ModelForm):
+    preco_mensal = forms.CharField(
+        label="Preço mensal",
+        widget=forms.TextInput(attrs={
+            'data-mask-moeda': 'true',
+            'class': 'vTextField',
+            'placeholder': 'R$ 0,00'
+        })
+    )
+
+    class Meta:
+        model = Plano
+        fields = '__all__'
+
+    def clean_preco_mensal(self):
+        valor = self.cleaned_data['preco_mensal']
+        valor = valor.replace('R$', '').replace('.', '').replace(',', '.').strip()
+        return float(valor)

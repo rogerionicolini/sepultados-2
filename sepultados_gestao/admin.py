@@ -26,6 +26,8 @@ from django.db import models
 from django.contrib.contenttypes.admin import GenericTabularInline
 from .models import Anexo
 from .views import gerar_recibo_pdf
+from .forms import PlanoForm
+
 
 
 class AnexoInline(GenericTabularInline):
@@ -60,7 +62,7 @@ class PrefeituraAdmin(admin.ModelAdmin):
             )
         }),
         ('Imagens', {
-            'fields': ('logo', 'brasao')
+            'fields': ('brasao',)
         }),
         ('Configurações financeiras', {
             'fields': ('multa_percentual', 'juros_mensal_percentual'),
@@ -730,6 +732,7 @@ class MovimentacaoSepultadoAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdm
 
 @admin.register(Plano)
 class PlanoAdmin(admin.ModelAdmin):
+    form = PlanoForm
     list_display = (
         'nome', 'preco_mensal', 'usuarios_min', 'usuarios_max',
         'sepultados_max', 'inclui_api', 'inclui_erp', 'inclui_suporte_prioritario'
@@ -751,7 +754,8 @@ class PlanoAdmin(admin.ModelAdmin):
             return JsonResponse({'preco_mensal': str(plano.preco_mensal)})
         return JsonResponse({'erro': 'Plano não encontrado'}, status=404)
 
-
+    class Media:
+        js = ('custom_admin/js/moeda.js',)
 
 @admin.register(Licenca)
 class LicencaAdmin(admin.ModelAdmin):
