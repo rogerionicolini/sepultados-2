@@ -18,4 +18,5 @@ urlpatterns = [
     path("pdf/exumacao/<int:pk>/", views.pdf_exumacao, name="pdf_exumacao"),
     path("pdf/translado/<int:pk>/", views.pdf_translado, name="pdf_translado"),
     path('sepultado/<int:pk>/guia_sepultamento/', views.gerar_guia_sepultamento_pdf, name='gerar_guia_sepultamento_pdf'),
+    path('tumulo/<int:pk>/pdf_sepultados/', views.gerar_pdf_sepultados_tumulo, name='gerar_pdf_sepultados_tumulo'),
 ]

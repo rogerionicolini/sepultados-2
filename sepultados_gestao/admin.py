@@ -167,6 +167,7 @@ from dateutil.relativedelta import relativedelta
 from .models import Tumulo
 from .forms import TumuloForm
 from .mixins import PrefeituraObrigatoriaAdminMixin
+from django.urls import reverse
 
 @admin.register(Tumulo)
 class TumuloAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
@@ -174,7 +175,7 @@ class TumuloAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
     form = TumuloForm
     list_display = (
         "tipo_estrutura", "identificador", "quadra",
-        "status_com_cor", "usar_linha", "linha", "reservado"
+        "status_com_cor", "usar_linha", "linha", "reservado", "link_pdf"
     )
     list_filter = ("status", "quadra", "usar_linha", "reservado")
     search_fields = ("identificador", "linha", "quadra__numero", "quadra__cemiterio__nome")
@@ -184,6 +185,13 @@ class TumuloAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
         "usar_linha", "linha", "reservado", "motivo_reserva", "status", "painel_sepultados"
     )
 
+    def link_pdf(self, obj):
+        url = reverse('sepultados_gestao:gerar_pdf_sepultados_tumulo', args=[obj.pk])
+        return format_html('<a href="{}" target="_blank">📄 PDF</a>', url)
+
+    link_pdf.short_description = "Lista de Sepultados (PDF)"
+
+    
     def get_queryset(self, request):
         qs = super().get_queryset(request)
         if not request.cemiterio_ativo:
@@ -307,7 +315,7 @@ class SepultadoAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
         }),
         ('Dados do Sepultado', {
             'fields': (
-                'nome', 'sexo', 'sexo_outro_descricao', 'data_nascimento', 'local_nascimento',
+                'nome', 'cpf_sepultado', 'sexo', 'sexo_outro_descricao', 'data_nascimento', 'local_nascimento',
                 'nacionalidade', 'cor_pele', 'estado_civil', 'nome_conjuge',
                 'profissao', 'grau_instrucao', 'informacoes_movimentacoes'
             )

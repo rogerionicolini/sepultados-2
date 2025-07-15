@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -85,68 +86,39 @@
                     {% endif %}
                 </div>
                 <div class="dados">
-                    <strong>{{ sepultado.tumulo.quadra.cemiterio.prefeitura.nome }}</strong><br>
-                    {{ sepultado.tumulo.quadra.cemiterio.prefeitura.logradouro }}<br>
-                    {{ sepultado.tumulo.quadra.cemiterio.prefeitura.endereco_bairro }} – {{ sepultado.tumulo.quadra.cemiterio.prefeitura.endereco_cidade }} – {{ sepultado.tumulo.quadra.cemiterio.prefeitura.endereco_estado }}<br>
-                    CEP {{ sepultado.tumulo.quadra.cemiterio.prefeitura.endereco_cep }}
+                    <strong>{{ movimentacao.prefeitura.nome }}</strong><br>
+                    {{ movimentacao.prefeitura.logradouro }}<br>
+                    {{ movimentacao.prefeitura.endereco_bairro }} – {{ movimentacao.prefeitura.endereco_cidade }} – {{ movimentacao.prefeitura.endereco_estado }}<br>
+                    CEP {{ movimentacao.prefeitura.endereco_cep }}
                 </div>
             </div>
 
-            <h1>Guia de Sepultamento</h1>
+            <h1>Guia de Exumação</h1>
 
             <div class="conteudo">
-                <p><strong>Número:</strong> {{ sepultado.numero_controle }}</p>
-
-                <p><strong>Nome:</strong> {{ sepultado.nome }}</p>
-                <p><strong>Sexo:</strong> {{ sepultado.get_sexo_display }}</p>
-                <p><strong>Data de Nascimento:</strong> {{ sepultado.data_nascimento|date:"d/m/Y" }}</p>
-                <p><strong>Local de Nascimento:</strong> {{ sepultado.local_nascimento }}</p>
-                <p><strong>Nacionalidade:</strong> {{ sepultado.nacionalidade }}</p>
-                <p><strong>Cor ou Raça:</strong> {{ sepultado.cor_ou_raca }}</p>
-                <p><strong>Estado Civil:</strong> {{ sepultado.estado_civil }}</p>
-                <p><strong>Cônjuge:</strong> {{ sepultado.conjuge }}</p>
-                <p><strong>Profissão:</strong> {{ sepultado.profissao }}</p>
-                <p><strong>Escolaridade:</strong> {{ sepultado.escolaridade }}</p>
-
-                <p><strong>Endereço:</strong> {{ sepultado.logradouro }}, {{ sepultado.numero }} - {{ sepultado.bairro }}, {{ sepultado.cidade }} - {{ sepultado.estado }}</p>
-
-                <p><strong>Data do Falecimento:</strong> {{ sepultado.data_falecimento|date:"d/m/Y" }}</p>
-                <p><strong>Hora:</strong> {{ sepultado.hora_falecimento }}</p>
-                <p><strong>Local:</strong> {{ sepultado.local_falecimento }}</p>
-                <p><strong>Causa:</strong> {{ sepultado.causa_mortis }}</p>
-                <p><strong>Médico:</strong> {{ sepultado.nome_medico }}</p>
-                <p><strong>CRM:</strong> {{ sepultado.crm_medico }}</p>
-
-                <p><strong>Cartório:</strong> {{ sepultado.cartorio }}</p>
-                <p><strong>Nº do Registro:</strong> {{ sepultado.numero_registro }}</p>
-                <p><strong>Livro:</strong> {{ sepultado.livro }}</p>
-                <p><strong>Folha:</strong> {{ sepultado.folha }}</p>
-                <p><strong>Data do Registro:</strong> {{ sepultado.data_registro|date:"d/m/Y" }}</p>
-
-                <p><strong>Túmulo:</strong> {{ sepultado.tumulo.quadra.nome }} - {{ sepultado.tumulo.identificador }}</p>
-                <p><strong>Ordem no Túmulo:</strong> {{ sepultado.ordem }}</p>
-                <p><strong>Data do Sepultamento:</strong> {{ sepultado.data_sepultamento|date:"d/m/Y" }}</p>
-                <p><strong>Observações:</strong> {{ sepultado.observacoes }}</p>
-
-                <p><strong>Forma de Pagamento:</strong> {{ sepultado.get_forma_pagamento_display }}</p>
-                <p><strong>Parcelas:</strong> {{ sepultado.quantidade_parcelas }}</p>
-                <p><strong>Valor:</strong> R$ {{ sepultado.valor }}</p>
-
-                <p><strong>Nome do Responsável:</strong> {{ sepultado.nome_responsavel }}</p>
-                <p><strong>CPF:</strong> {{ sepultado.cpf_responsavel }}</p>
-                <p><strong>Endereço:</strong> {{ sepultado.endereco_responsavel }}</p>
-                <p><strong>Telefone:</strong> {{ sepultado.telefone_responsavel }}</p>
+                <p><strong>Número da Movimentação:</strong> {{ movimentacao.numero_movimentacao }}</p>
+                <p><strong>Nome do Sepultado:</strong> {{ movimentacao.sepultado.nome }}</p>
+                <p><strong>Data da movimentação:</strong> {{ movimentacao.data|date:"d/m/Y" }}</p>
+                <p><strong>Motivo:</strong> {{ movimentacao.motivo }}</p>
+                <p><strong>Túmulo de origem:</strong> {{ movimentacao.tumulo_origem.quadra.nome }} - {{ movimentacao.tumulo_origem.identificador }}</p>
+                <p><strong>Forma de Pagamento:</strong> {{ movimentacao.get_forma_pagamento_display }}</p>
+                <p><strong>Valor:</strong> R$ {{ movimentacao.valor }}</p>
+                <br>
+                <p><strong>Nome:</strong> {{ movimentacao.nome }}</p>
+                <p><strong>CPF:</strong> {{ movimentacao.cpf }}</p>
+                <p><strong>Endereço:</strong> {{ movimentacao.endereco }}</p>
+                <p><strong>Telefone:</strong> {{ movimentacao.telefone }}</p>
             </div>
         </div>
 
         <div class="assinaturas">
             <div class="assinatura">
-                <div class="linha">{{ sepultado.tumulo.quadra.cemiterio.prefeitura.nome }}</div>
-                <div class="cpf">CPF/CNPJ: {{ sepultado.tumulo.quadra.cemiterio.prefeitura.cnpj }}</div>
+                <div class="linha">{{ movimentacao.prefeitura.nome }}</div>
+                <div class="cpf">CPF/CNPJ: {{ movimentacao.prefeitura.cnpj }}</div>
             </div>
             <div class="assinatura">
-                <div class="linha">{{ sepultado.nome_responsavel }}</div>
-                <div class="cpf">CPF: {{ sepultado.cpf_responsavel }}</div>
+                <div class="linha">{{ movimentacao.nome }}</div>
+                <div class="cpf">CPF: {{ movimentacao.cpf }}</div>
             </div>
         </div>
     </div>

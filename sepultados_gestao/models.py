@@ -283,6 +283,7 @@ class Sepultado(models.Model):
     )
 
     nome = models.CharField(max_length=255)
+    cpf_sepultado = models.CharField("CPF", max_length=18, blank=True, null=True)
     sexo = models.CharField(max_length=2, choices=SEXO_CHOICES, default='NI', verbose_name='Sexo')
     sexo_outro_descricao = models.CharField("Descrição do Sexo (se Outro)", max_length=100, blank=True, null=True)
 

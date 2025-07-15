@@ -262,3 +262,32 @@ def gerar_recibo_pdf(request, receita_id):
     response['Content-Disposition'] = f'inline; filename=recibo_{receita.numero_documento}.pdf'
     return response
 
+
+# sepultados_gestao/views.py
+from django.shortcuts import get_object_or_404
+from django.http import HttpResponse
+from django.template.loader import get_template
+from weasyprint import HTML
+from .models import Tumulo
+
+def gerar_pdf_sepultados_tumulo(request, pk):
+    tumulo = get_object_or_404(Tumulo, pk=pk)
+    sepultados = tumulo.sepultado_set.all().order_by('data_sepultamento')
+
+    brasao_url = tumulo.quadra.cemiterio.prefeitura.brasao.url if tumulo.quadra.cemiterio.prefeitura.brasao else None
+
+    context = {
+        'tumulo': tumulo,
+        'sepultados': sepultados,
+        'cemiterio': tumulo.quadra.cemiterio,
+        'prefeitura': tumulo.quadra.cemiterio.prefeitura,
+        'brasao_url': brasao_url,
+    }
+
+    template = get_template('pdf/sepultados_tumulo.html')  # ✅ aqui estava o erro
+    html_content = template.render(context)
+    pdf_file = HTML(string=html_content, base_url=request.build_absolute_uri()).write_pdf()
+
+    response = HttpResponse(pdf_file, content_type='application/pdf')
+    response['Content-Disposition'] = f'inline; filename="sepultados_tumulo_{tumulo.identificador}.pdf"'
+    return response
