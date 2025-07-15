@@ -25,6 +25,8 @@ from django.db import models
 
 from django.contrib.contenttypes.admin import GenericTabularInline
 from .models import Anexo
+from .views import gerar_recibo_pdf
+
 
 class AnexoInline(GenericTabularInline):
     model = Anexo
@@ -958,16 +960,19 @@ class CustomAdminSite(AdminSite):
 
 
 from django.contrib import admin
+from django.urls import path, reverse
 from django.utils.html import format_html
+from django.utils.encoding import force_str
 from .models import Receita
 from .forms import ReceitaForm
+from .views import gerar_recibo_pdf  # Certifique-se que essa view está definida
 
 @admin.register(Receita)
 class ReceitaAdmin(admin.ModelAdmin):
     form = ReceitaForm
     list_display = (
         'numero_documento',
-        'descricao',
+        'descricao_segura',
         'nome',
         'cpf',
         'data_vencimento',
@@ -975,6 +980,7 @@ class ReceitaAdmin(admin.ModelAdmin):
         'valor_total_formatado',
         'valor_pago_formatado',
         'valor_em_aberto_formatado',
+        'link_pdf',
     )
 
     readonly_fields = (
@@ -1029,7 +1035,6 @@ class ReceitaAdmin(admin.ModelAdmin):
         }),
     )
 
-
     search_fields = ('numero_documento', 'descricao', 'nome', 'cpf')
     list_filter = ('status', 'data_vencimento')
     ordering = ('-data_vencimento',)
@@ -1071,10 +1076,29 @@ class ReceitaAdmin(admin.ModelAdmin):
             'aberto': 'red',
             'parcial': 'blue',
             'pago': 'green'
-        }.get(obj.status, 'black')
+        }.get(obj.status.lower(), 'black')
         return format_html('<strong style="color: {};">{}</strong>', cor, obj.get_status_display())
     status_colorido.short_description = "Status"
 
+    def descricao_segura(self, obj):
+        return force_str(obj.descricao, errors='ignore')
+    descricao_segura.short_description = "Descrição"
+
+    def link_pdf(self, obj):
+        url = reverse('admin:gerar_recibo_pdf', args=[obj.pk])
+        return format_html('<a href="{}" target="_blank">📄 PDF</a>', url)
+    link_pdf.short_description = "Recibo"
+
+    def get_urls(self):
+        urls = super().get_urls()
+        custom_urls = [
+            path(
+                'recibo/<int:receita_id>/pdf/',
+                self.admin_site.admin_view(gerar_recibo_pdf),
+                name='gerar_recibo_pdf',
+            ),
+        ]
+        return custom_urls + urls
 
     def has_delete_permission(self, request, obj=None):
         return request.user.is_superuser or getattr(request.user, 'is_master', False)
@@ -1090,9 +1114,7 @@ class ReceitaAdmin(admin.ModelAdmin):
         if request.user.is_superuser:
             return True
         prefeitura_id = request.session.get("prefeitura_ativa_id")
-        if not prefeitura_id:
-            return False
-        return self.model.objects.filter(prefeitura_id=prefeitura_id).exists()
+        return bool(prefeitura_id and self.model.objects.filter(prefeitura_id=prefeitura_id).exists())
 
     def has_view_permission(self, request, obj=None):
         return request.user.is_superuser or bool(request.session.get("prefeitura_ativa_id"))
@@ -1104,6 +1126,6 @@ class ReceitaAdmin(admin.ModelAdmin):
         return False
 
     def formfield_for_foreignkey(self, db_field, request, **kwargs):
-        if db_field.name in ['prefeitura']:
+        if db_field.name == 'prefeitura':
             kwargs['disabled'] = True
         return super().formfield_for_foreignkey(db_field, request, **kwargs)

@@ -1081,6 +1081,8 @@ class Receita(models.Model):
                     contrato=self.contrato,
                     movimentacao=self.movimentacao,
                 )
+    def __str__(self):
+        return str(self.numero_documento)
 
     class Meta:
         verbose_name = "Receita"

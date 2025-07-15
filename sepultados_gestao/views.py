@@ -237,3 +237,28 @@ def gerar_guia_sepultamento_pdf(request, pk):
 
     pdf = HTML(string=html).write_pdf()
     return HttpResponse(pdf, content_type='application/pdf')
+
+
+from django.shortcuts import get_object_or_404
+from django.template.loader import render_to_string
+from django.http import HttpResponse
+from weasyprint import HTML, CSS
+from datetime import date
+from .models import Receita
+
+def gerar_recibo_pdf(request, receita_id):
+    receita = get_object_or_404(Receita, id=receita_id)
+
+    html_string = render_to_string('pdf/recibo_pagamento.html', {
+        'receita': receita,
+        'hoje': date.today(),
+    })
+
+    pdf_file = HTML(string=html_string, base_url=request.build_absolute_uri()).write_pdf(
+        stylesheets=[CSS(string='body { font-family: Arial, sans-serif; }')]
+    )
+
+    response = HttpResponse(pdf_file, content_type='application/pdf')
+    response['Content-Disposition'] = f'inline; filename=recibo_{receita.numero_documento}.pdf'
+    return response
+
