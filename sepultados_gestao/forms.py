@@ -517,12 +517,15 @@ class SepultadoForm(forms.ModelForm):
                 raise forms.ValidationError("Valor inválido.")
         return Decimal("0.00")
     
+    class Media:
+        js = ('custom_admin/js/sexo_outro.js',)
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
         # Aplica máscara ao CPF do SEPULTADO
-        if 'cpf' in self.fields:
-            self.fields['cpf'].widget.attrs.update({
+        if 'cpf_sepultado' in self.fields:
+            self.fields['cpf_sepultado'].widget.attrs.update({
                 'data-mask-cpf': 'true',
                 'placeholder': '000.000.000-00'
             })

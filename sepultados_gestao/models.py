@@ -153,6 +153,12 @@ class Quadra(models.Model):
 
 
 
+from django.db import models
+from django.core.exceptions import ValidationError
+from django.utils.functional import cached_property
+from .utils import validar_prefeitura_obrigatoria
+
+
 class Tumulo(models.Model):
     STATUS_CHOICES = (
         ('disponivel', 'Disponível'),
@@ -171,11 +177,15 @@ class Tumulo(models.Model):
     cemiterio = models.ForeignKey(
         Cemiterio,
         on_delete=models.CASCADE,
-        verbose_name="Cemiterio"
+        verbose_name="Cemitério"
     )
 
-
-    tipo_estrutura = models.CharField(max_length=20, choices=TIPO_ESTRUTURA_CHOICES, default='tumulo', verbose_name="Tipo de estrutura")
+    tipo_estrutura = models.CharField(
+        max_length=20,
+        choices=TIPO_ESTRUTURA_CHOICES,
+        default='tumulo',
+        verbose_name="Tipo de estrutura"
+    )
     identificador = models.CharField(max_length=50)
     quadra = models.ForeignKey(Quadra, on_delete=models.CASCADE)
     usar_linha = models.BooleanField(default=False, verbose_name="Usar linha")
@@ -184,22 +194,25 @@ class Tumulo(models.Model):
     motivo_reserva = models.CharField(max_length=255, blank=True, verbose_name="Motivo da reserva")
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='disponivel', editable=False)
 
+    capacidade = models.PositiveIntegerField(
+        default=1,
+        verbose_name="Capacidade de sepultamentos",
+        help_text="Número máximo de sepultamentos simultâneos neste túmulo."
+    )
+
     @cached_property
     def prefeitura(self):
         return self.quadra.cemiterio.prefeitura if self.quadra and self.quadra.cemiterio else None
 
     def clean(self):
-    # Validações já existentes
         if self.usar_linha and not self.linha:
             raise ValidationError({'linha': 'Informe o número da linha.'})
 
         if self.reservado and not self.motivo_reserva:
             raise ValidationError({'motivo_reserva': 'Informe o motivo da reserva.'})
 
-        # Validação da prefeitura obrigatória (mantida)
         validar_prefeitura_obrigatoria(self)
 
-        # 🆕 Validação segura: quadra deve pertencer ao mesmo cemitério
         if self.quadra_id and self.cemiterio_id:
             try:
                 if self.quadra.cemiterio_id != self.cemiterio_id:
@@ -207,26 +220,27 @@ class Tumulo(models.Model):
             except Quadra.DoesNotExist:
                 raise ValidationError({'quadra': 'A quadra informada não foi encontrada.'})
 
+    def calcular_status_dinamico(self):
+        if self.reservado:
+            return 'reservado'
 
+        sepultados_ativos = Sepultado.objects.filter(
+            tumulo=self,
+            status='sepultado'
+        ).count()
+
+        return 'ocupado' if sepultados_ativos >= self.capacidade else 'disponivel'
 
     def save(self, *args, **kwargs):
-        self.full_clean()  # garante que clean() será chamado com tudo isso
-        super().save(*args, **kwargs)  # salva o objeto gerando ID
+        self.full_clean()
+        super().save(*args, **kwargs)
 
-        # Atualização do status com base nos sepultados e reserva
-        status_novo = (
-            'reservado' if self.reservado else
-            'ocupado' if Sepultado.objects.filter(tumulo=self, exumado=False).exists()
-            else 'disponivel'
-        )
+        novo_status = self.calcular_status_dinamico()
 
-        # Atualiza o campo status se tiver mudado
-        if self.status != status_novo:
-            self.status = status_novo
+        if self.status != novo_status:
+            self.status = novo_status
             super().save(update_fields=["status"])
 
-   
-    
     def __str__(self):
         identificador = self.identificador
         if not identificador.upper().startswith("T"):
@@ -238,19 +252,10 @@ class Tumulo(models.Model):
 
         return f"{identificador} - {quadra_codigo}"
 
-
-
-
     class Meta:
         verbose_name = "Túmulo"
         verbose_name_plural = "Túmulos"
         app_label = "sepultados_gestao"
-
-    capacidade = models.PositiveIntegerField(
-        default=1,
-        verbose_name="Capacidade de sepultamentos",
-        help_text="Número máximo de sepultamentos simultâneos neste túmulo."
-    )
     
 from django.db import models
 from django.core.exceptions import ValidationError

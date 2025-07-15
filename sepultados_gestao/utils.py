@@ -93,3 +93,12 @@ def obter_prefeitura_ativa_do_request(request):
         except Prefeitura.DoesNotExist:
             return None
     return None
+
+from django.core.exceptions import ValidationError
+
+def validar_prefeitura_obrigatoria(instance):
+    """
+    Garante que o objeto tenha uma prefeitura vinculada.
+    """
+    if not hasattr(instance, 'prefeitura') or not instance.prefeitura:
+        raise ValidationError("A prefeitura vinculada é obrigatória para este registro.")
