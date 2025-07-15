@@ -234,6 +234,9 @@ class LicencaForm(forms.ModelForm):
     def set_user(self, user):
         self.current_user = user
 
+from django import forms
+from .models import Tumulo
+
 class TumuloForm(forms.ModelForm):
     class Meta:
         model = Tumulo
@@ -244,14 +247,8 @@ class TumuloForm(forms.ModelForm):
         self.request = request  # necessário para usar no save()
         super().__init__(*args, **kwargs)
 
-        # ✅ Força a exibição como <select> com rolagem vertical
-        self.fields['quadra'].widget = forms.Select(attrs={
-            'size': 10,
-            'style': 'min-width: 300px; height: auto; font-size: 14px; padding: 6px;',
-        })
-
-
-
+        # ✅ Remove o widget Select customizado para permitir autocomplete
+        # self.fields['quadra'].widget = forms.Select(...)  <-- REMOVIDO
 
         # ✅ Filtra as quadras com base no cemitério ativo
         if request and hasattr(request, 'cemiterio_ativo') and request.cemiterio_ativo:
@@ -414,6 +411,16 @@ from django import forms
 from .models import Sepultado
 from decimal import Decimal
 
+ESTADOS_BRASILEIROS = [
+    ('', '---'),
+    ('AC', 'Acre'), ('AL', 'Alagoas'), ('AP', 'Amapá'), ('AM', 'Amazonas'),
+    ('BA', 'Bahia'), ('CE', 'Ceará'), ('DF', 'Distrito Federal'), ('ES', 'Espírito Santo'),
+    ('GO', 'Goiás'), ('MA', 'Maranhão'), ('MT', 'Mato Grosso'), ('MS', 'Mato Grosso do Sul'),
+    ('MG', 'Minas Gerais'), ('PA', 'Pará'), ('PB', 'Paraíba'), ('PR', 'Paraná'),
+    ('PE', 'Pernambuco'), ('PI', 'Piauí'), ('RJ', 'Rio de Janeiro'), ('RN', 'Rio Grande do Norte'),
+    ('RS', 'Rio Grande do Sul'), ('RO', 'Rondônia'), ('RR', 'Roraima'),
+    ('SC', 'Santa Catarina'), ('SP', 'São Paulo'), ('SE', 'Sergipe'), ('TO', 'Tocantins'),
+]
 
 class SepultadoForm(forms.ModelForm):
     data_nascimento = forms.DateField(
@@ -447,6 +454,38 @@ class SepultadoForm(forms.ModelForm):
         widget=forms.TimeInput(format='%H:%M', attrs={'type': 'time', 'class': 'vTimeField'}),
     )
 
+    cpf_sepultado = forms.CharField(
+        label="CPF do Sepultado",
+        required=False,
+        widget=forms.TextInput(attrs={
+            'placeholder': '000.000.000-00',
+            'data-mask-cpf-sepultado': 'true'
+        })
+    )
+
+    cpf_responsavel = forms.CharField(
+        label="CPF do Responsável",
+        required=False,
+        widget=forms.TextInput(attrs={
+            'placeholder': '000.000.000-00',
+            'data-mask-cpf-responsavel': 'true'
+        })
+    )
+
+
+
+    estado = forms.ChoiceField(
+        choices=ESTADOS_BRASILEIROS,
+        required=False,
+        label="Estado (UF)"
+    )
+
+    estado_responsavel = forms.ChoiceField(
+        choices=ESTADOS_BRASILEIROS,
+        required=False,
+        label="Estado do Responsável (UF)"
+    )
+
     valor = forms.CharField(
         label="Valor",
         required=False,
@@ -477,6 +516,27 @@ class SepultadoForm(forms.ModelForm):
             except:
                 raise forms.ValidationError("Valor inválido.")
         return Decimal("0.00")
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        # Aplica máscara ao CPF do SEPULTADO
+        if 'cpf' in self.fields:
+            self.fields['cpf'].widget.attrs.update({
+                'data-mask-cpf': 'true',
+                'placeholder': '000.000.000-00'
+            })
+
+        # Já havia o campo do responsável com CPF mascarado
+        if 'cpf_responsavel' in self.fields:
+            self.fields['cpf_responsavel'].widget.attrs.update({
+                'data-mask-cpf': 'true',
+                'placeholder': '000.000.000-00'
+            })
+
+
+
+
 
 from django import forms
 from decimal import Decimal, InvalidOperation

@@ -113,7 +113,7 @@ class QuadraAdmin(admin.ModelAdmin):
     form = QuadraForm
     list_display = ("codigo", "cemiterio")
     list_filter = ("cemiterio",)
-    search_fields = ("codigo",)
+    search_fields = ("codigo", "cemiterio__nome")
 
     def get_form(self, request, obj=None, **kwargs):
         class CustomForm(self.form):
@@ -175,6 +175,7 @@ from django.urls import reverse
 class TumuloAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
     search_fields = ['identificacao', 'quadra__nome']
     form = TumuloForm
+    autocomplete_fields = ['quadra']
     list_display = (
         "tipo_estrutura", "identificador", "quadra",
         "status_com_cor", "usar_linha", "linha", "reservado", "link_pdf"
@@ -225,17 +226,45 @@ class TumuloAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
                 kwargs2['request'] = request
                 super().__init__(*args, **kwargs2)
         return FormComRequest
+    
+    
     from django.utils.safestring import mark_safe
-    from dateutil.relativedelta import relativedelta
     from datetime import date
+    from dateutil.relativedelta import relativedelta
+    from .models import ConcessaoContrato
 
     def painel_sepultados(self, obj):
         if not obj:
             return ""
 
+        # Verifica contrato de concessão
+        contrato = ConcessaoContrato.objects.filter(tumulo=obj).first()
+        if contrato:
+            contrato_html = f"""
+            <div style='margin-bottom: 15px; background: #e6f5e2; padding: 20px 25px;
+                        border-radius: 12px; border: 2px solid #4CAF50;
+                        box-shadow: 1px 1px 5px rgba(0,0,0,0.05);'>
+                <strong style='color: #003300;'>Contrato de Concessão:</strong> Nº {contrato.numero_contrato}
+            </div>
+            """
+        else:
+            contrato_html = """
+            <div style='margin-bottom: 15px; background: #fff8e1; padding: 20px 25px;
+                        border-radius: 12px; border: 2px solid #ffa500;
+                        box-shadow: 1px 1px 5px rgba(0,0,0,0.05);'>
+                <strong style='color: #996600;'>Atenção:</strong> Este túmulo não possui contrato de concessão registrado.
+            </div>
+            """
         sepultados = obj.sepultado_set.all().order_by('-data_sepultamento')
         if not sepultados.exists():
-            return "<i>Não há sepultados neste túmulo.</i>"
+            return mark_safe(f"""
+                {contrato_html}
+                <div style='margin-top: 20px; background: #eafbe4; padding: 20px 25px; border-radius: 12px;
+                            border: 2px solid #339933; box-shadow: 1px 1px 5px rgba(0,0,0,0.05);'>
+                    <h3 style='color: #006600; margin-top: 0; font-size: 16px;'>✅ Este túmulo está livre, sem sepultados.</h3>
+                    <p style='color: #004400;'>Nenhum sepultamento registrado até o momento.</p>
+                </div>
+            """)
 
         tempo_minimo_meses = obj.quadra.cemiterio.tempo_minimo_exumacao or 0
         linhas = ""
@@ -266,24 +295,26 @@ class TumuloAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
             """
 
         return mark_safe(f"""
-        <div style='margin-top: 20px; background: #f5fbe9; padding: 20px 25px; border-radius: 12px;
+            {contrato_html}
+            <div style='margin-top: 20px; background: #f5fbe9; padding: 20px 25px; border-radius: 12px;
                         border: 2px solid #006600; box-shadow: 2px 2px 6px rgba(0, 0, 0, 0.1);'>
-            <h3 style='color: #003300; margin-top: 0; font-size: 18px;'>Sepultados neste Túmulo</h3>
-            <table style='width: 100%; border-collapse: collapse; font-size: 14px; margin-top: 10px;'>
-                <thead>
-                    <tr style='background-color: #dceacb;'>
-                        <th style='text-align: left; padding: 8px 10px; border-bottom: 2px solid #006600;'>Nome</th>
-                        <th style='text-align: left; padding: 8px 10px; border-bottom: 2px solid #006600;'>Data do Sepultamento</th>
-                        <th style='text-align: left; padding: 8px 10px; border-bottom: 2px solid #006600;'>Status</th>
-                        <th style='text-align: left; padding: 8px 10px; border-bottom: 2px solid #006600;'>Exumação</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {linhas}
-                </tbody>
-            </table>
-        </div>
+                <h3 style='color: #003300; margin-top: 0; font-size: 18px;'>Sepultados neste Túmulo</h3>
+                <table style='width: 100%; border-collapse: collapse; font-size: 14px; margin-top: 10px;'>
+                    <thead>
+                        <tr style='background-color: #dceacb;'>
+                            <th style='text-align: left; padding: 8px 10px; border-bottom: 2px solid #006600;'>Nome</th>
+                            <th style='text-align: left; padding: 8px 10px; border-bottom: 2px solid #006600;'>Data do Sepultamento</th>
+                            <th style='text-align: left; padding: 8px 10px; border-bottom: 2px solid #006600;'>Status</th>
+                            <th style='text-align: left; padding: 8px 10px; border-bottom: 2px solid #006600;'>Exumação</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {linhas}
+                    </tbody>
+                </table>
+            </div>
         """)
+
     painel_sepultados.short_description = "Sepultados neste Túmulo"
 
 

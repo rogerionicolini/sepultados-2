@@ -425,6 +425,13 @@ class Sepultado(models.Model):
         if not self.tumulo_id:
             return
 
+        from .models import ConcessaoContrato
+        contrato_existente = ConcessaoContrato.objects.filter(tumulo=self.tumulo).exists()
+        if not contrato_existente:
+            raise ValidationError({
+                'tumulo': "Este túmulo não possui contrato de concessão. O sepultamento não é permitido."
+            })
+
         tumulo = self.tumulo
         capacidade = tumulo.capacidade
 
