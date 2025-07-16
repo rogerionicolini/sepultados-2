@@ -99,6 +99,18 @@ class NumeroSequencialGlobal(models.Model):
         return f"{self.numero}/{self.ano} - {self.prefeitura}"
 
 
+from django.db import models
+from django.utils.functional import cached_property
+from .utils import validar_prefeitura_obrigatoria
+
+
+
+from django.db import models
+from django.core.exceptions import ValidationError
+from django.utils.functional import cached_property
+from .utils import validar_prefeitura_obrigatoria
+
+
 class Cemiterio(models.Model):
     nome = models.CharField(max_length=100)
     endereco = models.CharField(max_length=255, blank=True, null=True)
@@ -118,16 +130,30 @@ class Cemiterio(models.Model):
     )
 
     def clean(self):
-        validar_prefeitura_obrigatoria(self)
+        # Mantém a validação obrigatória da prefeitura
+        if not self.prefeitura:
+            raise ValidationError("A prefeitura vinculada é obrigatória para este registro.")
 
     def __str__(self):
         return self.nome
 
+    def delete(self, *args, **kwargs):
+        if self.quadra_set.exists():
+            raise ValidationError("Não é possível excluir este cemitério. Existem quadras vinculadas.")
+        super().delete(*args, **kwargs)
+
+    
     class Meta:
         verbose_name = "Cemitério"
         verbose_name_plural = "Cemitérios"
         app_label = "sepultados_gestao"
 
+
+from django.db import models
+from django.core.exceptions import ValidationError
+from django.utils.functional import cached_property
+from .models import Cemiterio  # ajuste conforme estrutura real
+from .utils import validar_prefeitura_obrigatoria
 
 
 class Quadra(models.Model):
@@ -136,20 +162,28 @@ class Quadra(models.Model):
 
     @cached_property
     def prefeitura(self):
-        return self.cemiterio.prefeitura if self.cemiterio else None
+        return self.cemiterio.prefeitura if self.cemiterio_id else None
 
     def clean(self):
-        # Não valida mais o campo 'cemiterio' aqui
-        validar_prefeitura_obrigatoria(self)
+        if not self.cemiterio_id:
+            raise ValidationError("Selecione um cemitério válido.")
+        if not self.cemiterio.prefeitura_id:
+            raise ValidationError("O cemitério selecionado não está vinculado a uma prefeitura.")
+        self.prefeitura = self.cemiterio.prefeitura
+
+    def delete(self, *args, **kwargs):
+        if self.tumulo_set.exists():
+            raise ValidationError("Não é possível excluir esta quadra. Existem túmulos vinculados.")
+        super().delete(*args, **kwargs)
+
 
     def __str__(self):
-        return f"{self.codigo}"
-
-
-
+        return self.codigo
 
     class Meta:
         app_label = "sepultados_gestao"
+
+
 
 
 

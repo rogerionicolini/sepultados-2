@@ -102,21 +102,30 @@ class ConcessaoContratoForm(forms.ModelForm):
 
 from django import forms
 from .models import Quadra
+from django.core.exceptions import ValidationError
+from crum import get_current_request
+from .models import Cemiterio
 
 class QuadraForm(forms.ModelForm):
     class Meta:
         model = Quadra
-        fields = ['codigo']  # campo cemiterio será preenchido automaticamente
+        fields = ['codigo']  # cemiterio não está aqui, será setado automaticamente
 
     def __init__(self, *args, **kwargs):
-        self.request = kwargs.pop('request', None)
+        self.request = kwargs.pop('request', get_current_request())
         super().__init__(*args, **kwargs)
 
-    def add_error(self, field, error):
-        # Evita quebrar ao tentar adicionar erro em campo oculto
-        if field == 'cemiterio' and 'cemiterio' not in self.fields:
-            return super().add_error(None, error)
-        return super().add_error(field, error)
+    def clean(self):
+        cleaned_data = super().clean()
+        cemiterio_id = self.request.session.get("cemiterio_ativo_id")
+        if not cemiterio_id:
+            raise ValidationError("Selecione um cemitério antes de cadastrar a quadra.")
+        try:
+            self.instance.cemiterio = Cemiterio.objects.get(id=cemiterio_id)
+        except Cemiterio.DoesNotExist:
+            raise ValidationError("Cemitério selecionado não encontrado.")
+        return cleaned_data
+
 
 
 
@@ -329,12 +338,23 @@ class MovimentacaoSepultadoForm(forms.ModelForm):
             'data-show-if-parcelado': 'true'
         })
     )
+
     data = forms.DateField(
-        widget=forms.DateInput(attrs={'type': 'date', 'class': 'vDateField'}),
+        widget=forms.DateInput(format='%Y-%m-%d', attrs={'type': 'date', 'class': 'vDateField'}),
+        input_formats=['%Y-%m-%d', '%d/%m/%Y'],
         required=False,
         label="Data da Movimentação"
     )
-    
+
+    cpf = forms.CharField(
+        label="CPF do Responsável",
+        required=False,
+        widget=forms.TextInput(attrs={
+            'placeholder': '000.000.000-00',
+            'data-mask-cpf': 'true'
+        })
+    )
+
     class Meta:
         model = MovimentacaoSepultado
         fields = '__all__'
@@ -345,7 +365,6 @@ class MovimentacaoSepultadoForm(forms.ModelForm):
         request = get_current_request()
         prefeitura_id = getattr(request, "prefeitura_ativa_id", None)
 
-        # Campos de túmulo com filtro por prefeitura ativa
         if prefeitura_id:
             base_queryset = Tumulo.objects.filter(quadra__cemiterio__prefeitura_id=prefeitura_id)
         else:
@@ -370,7 +389,6 @@ class MovimentacaoSepultadoForm(forms.ModelForm):
                     'class': 'vForeignKeyRawIdAdminField'
                 })
 
-        # Campo valor não obrigatório no form (mas validado abaixo)
         self.fields['valor'].required = False
 
     def clean_valor(self):

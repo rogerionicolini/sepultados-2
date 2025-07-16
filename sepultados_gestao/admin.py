@@ -77,6 +77,12 @@ class PrefeituraAdmin(admin.ModelAdmin):
 
 
 
+from django.contrib import admin, messages
+from .models import Cemiterio, Quadra
+from .forms import QuadraForm
+from .mixins import PrefeituraObrigatoriaAdminMixin
+
+
 @admin.register(Cemiterio)
 class CemiterioAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
     list_display = ("nome", "cidade", "estado", "telefone", "tempo_minimo_exumacao")
@@ -100,16 +106,42 @@ class CemiterioAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
         prefeitura_id = request.session.get("prefeitura_ativa_id")
         return qs.filter(prefeitura_id=prefeitura_id)
 
+    def get_form(self, request, obj=None, **kwargs):
+        form = super().get_form(request, obj, **kwargs)
 
+        class CustomForm(form):
+            def __init__(self_inner, *args, **kwargs_inner):
+                super().__init__(*args, **kwargs_inner)
+                self_inner.instance.prefeitura = request.prefeitura_ativa  # força atribuição no form
 
+        return CustomForm
 
-# sepultados_gestao/admin.py
+    def save_model(self, request, obj, form, change):
+        obj.prefeitura = request.prefeitura_ativa  # garante que sempre vai ter prefeitura
+        super().save_model(request, obj, form, change)
+
+    def delete_model(self, request, obj):
+        if obj.quadra_set.exists():
+            self.message_user(request, "Não é possível excluir este cemitério. Existem quadras vinculadas.", level=messages.ERROR)
+            return
+        super().delete_model(request, obj)
+
+    def delete_queryset(self, request, queryset):
+        for obj in queryset:
+            if obj.quadra_set.exists():
+                self.message_user(request, f"Cemitério {obj} não pôde ser excluído: há quadras vinculadas.", level=messages.ERROR)
+            else:
+                obj.delete()
+
 
 from django.contrib import admin, messages
 from .models import Quadra
 from .forms import QuadraForm
+from .mixins import PrefeituraObrigatoriaAdminMixin
 
-class QuadraAdmin(admin.ModelAdmin):
+
+
+class QuadraAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
     form = QuadraForm
     list_display = ("codigo", "cemiterio")
     list_filter = ("cemiterio",)
@@ -121,8 +153,12 @@ class QuadraAdmin(admin.ModelAdmin):
                 kwargs_inner['request'] = request
                 super().__init__(*args, **kwargs_inner)
 
+                # Oculta o campo cemitério do formulário
+                if 'cemiterio' in self_inner.fields:
+                    self_inner.fields['cemiterio'].required = False
+                    self_inner.fields['cemiterio'].widget.attrs['hidden'] = True
+
             def add_error(self_inner, field, error):
-                # Garante que erros em campos ocultos não gerem ValueError
                 if field and field not in self_inner.fields:
                     field = None
                 super().add_error(field, error)
@@ -131,18 +167,17 @@ class QuadraAdmin(admin.ModelAdmin):
         return super().get_form(request, obj, **kwargs)
 
     def save_model(self, request, obj, form, change):
+        # Define a prefeitura com base na sessão
         obj.prefeitura = request.prefeitura_ativa
 
-        # Define o cemitério ativo da sessão
+        # Define o cemitério com base na sessão
         cemiterio_id = request.session.get("cemiterio_ativo_id")
         if not cemiterio_id:
-            messages.error(request, "Selecione um cemitério antes de cadastrar.")
+            messages.error(request, "Selecione um cemitério antes de cadastrar a quadra.")
             return
 
         obj.cemiterio_id = cemiterio_id
         super().save_model(request, obj, form, change)
-
-
 
     def get_queryset(self, request):
         qs = super().get_queryset(request)
@@ -156,9 +191,18 @@ class QuadraAdmin(admin.ModelAdmin):
             return {}
         return super().get_model_perms(request)
 
+    def delete_model(self, request, obj):
+        if obj.tumulo_set.exists():
+            self.message_user(request, "Não é possível excluir esta quadra. Existem túmulos vinculados.", level=messages.ERROR)
+            return
+        super().delete_model(request, obj)
 
-
-
+    def delete_queryset(self, request, queryset):
+        for obj in queryset:
+            if obj.tumulo_set.exists():
+                self.message_user(request, f"Quadra {obj} não pôde ser excluída: há túmulos vinculados.", level=messages.ERROR)
+            else:
+                obj.delete()
 
 
 from django.contrib import admin
