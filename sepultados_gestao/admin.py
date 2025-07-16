@@ -540,16 +540,13 @@ class ConcessaoContratoAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
     from django.contrib import messages
 
     def delete_model(self, request, obj):
-        from .models import Receita
-        existe_receita = Receita.objects.filter(contrato=obj).exists()
-        if existe_receita:
-            self.message_user(
-                request,
-                "Este contrato possui receita vinculada e não pode ser excluído.",
-                level=messages.ERROR
-            )
-            return
-        super().delete_model(request, obj)
+        try:
+            obj.delete()
+            self.message_user(request, "Contrato excluído com sucesso.", level=messages.SUCCESS)
+        except ValidationError as e:
+            self.message_user(request, str(e.message), level=messages.ERROR)
+
+
 
     def delete_queryset(self, request, queryset):
         from .models import Receita
@@ -564,11 +561,21 @@ class ConcessaoContratoAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
         super().delete_queryset(request, queryset)
 
     def has_delete_permission(self, request, obj=None):
-        from .models import Receita
+        from .models import Receita, Sepultado
+
+        # Bloqueia exclusão para usuários comuns
         if not request.user.is_superuser and not getattr(request.user, "is_master", False):
             return False
+
         if obj:
-            return not Receita.objects.filter(contrato=obj).exists()
+            # Se houver receitas associadas, bloqueia
+            if Receita.objects.filter(contrato=obj).exists():
+                return False
+
+            # Se houver sepultados ainda no túmulo (não exumados nem trasladados), bloqueia
+            if Sepultado.objects.filter(tumulo=obj.tumulo, exumado=False, trasladado=False).exists():
+                return False
+
         return True
 
 

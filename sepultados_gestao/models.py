@@ -248,6 +248,11 @@ class Tumulo(models.Model):
 
         return f"{identificador} - {quadra_codigo}"
 
+    def atualizar_status(self):
+        self.status = self.calcular_status_dinamico()
+        self.save(update_fields=["status"])
+
+
     class Meta:
         verbose_name = "Túmulo"
         verbose_name_plural = "Túmulos"
@@ -472,6 +477,13 @@ class Sepultado(models.Model):
                 f"É necessário que pelo menos uma exumação tenha ocorrido há mais de {meses_minimos} meses."
             )
 
+    def delete(self, *args, **kwargs):
+        tumulo = self.tumulo
+        super().delete(*args, **kwargs)
+        if tumulo:
+            tumulo.status = tumulo.calcular_status_dinamico()
+            tumulo.save(update_fields=["status"])
+
     class Meta:
         verbose_name = "Sepultado"
         verbose_name_plural = "Sepultados"
@@ -582,10 +594,23 @@ class ConcessaoContrato(models.Model):
             )
 
     def delete(self, *args, **kwargs):
-        from .models import Receita
-        if Receita.objects.filter(servico_id=self.id, tipo_servico='concessao').exists():
-            raise ValidationError("Não é possível excluir este contrato pois há receitas vinculadas.")
+        from .models import Receita, Sepultado
+
+        if Receita.objects.filter(contrato=self).exists():
+            raise Exception("Não é possível excluir este contrato. Existem receitas vinculadas.")
+
+        sepultados_ativos = Sepultado.objects.filter(tumulo=self.tumulo, exumado=False, trasladado=False)
+        if sepultados_ativos.exists():
+            raise Exception("Não é possível excluir este contrato. Há sepultados no túmulo que ainda não foram trasladados.")
+
         super().delete(*args, **kwargs)
+
+        # ✅ Atualiza o status do túmulo após exclusão do contrato
+        self.tumulo.status = self.tumulo.calcular_status_dinamico()
+        self.tumulo.save(update_fields=["status"])
+
+        
+
 
 
     def __str__(self):
@@ -699,12 +724,13 @@ class MovimentacaoSepultado(models.Model):
 
         validar_prefeitura_obrigatoria(self)
 
+        sepultado = self.sepultado
+
+        if not sepultado:
+            raise ValidationError("Sepultado não informado.")
+
+        # ✅ Regra de exumação: só uma permitida
         if self.tipo == 'EXUMACAO':
-            sepultado = self.sepultado
-
-            if not sepultado:
-                raise ValidationError("Sepultado não informado.")
-
             sepultado_fresh = type(sepultado).objects.get(pk=sepultado.pk)
 
             existe_exumacao = MovimentacaoSepultado.objects.filter(
@@ -729,6 +755,11 @@ class MovimentacaoSepultado(models.Model):
             if timezone.now().date() < limite_data:
                 raise ValidationError(f"A exumação só será permitida após {meses_minimos} meses do falecimento.")
 
+        # ✅ Regra de translado: só se já estiver exumado
+        elif self.tipo == 'TRANSLADO':
+            if not sepultado.exumado:
+                raise ValidationError("Só é possível realizar translado de um sepultado que já foi exumado.")
+
     def save(self, *args, **kwargs):
         from django.utils import timezone
         from .models import Sepultado
@@ -737,24 +768,39 @@ class MovimentacaoSepultado(models.Model):
 
         criando = self.pk is None
 
+        # Define tumulo de origem automaticamente a partir do sepultado
         if self.sepultado and hasattr(self.sepultado, 'tumulo'):
             self.tumulo_origem = self.sepultado.tumulo
 
+        # Gera número de movimentação se estiver criando
         if criando and not self.numero_movimentacao:
             self.numero_movimentacao = gerar_numero_sequencial_global(self.prefeitura)
 
         self.full_clean()
         super().save(*args, **kwargs)
 
+        # Atualiza status do sepultado
         if self.tipo == 'EXUMACAO':
             self.sepultado.exumado = True
             self.sepultado.save()
 
+            # Verifica se todos os sepultados foram exumados
             tumulo = self.sepultado.tumulo
-            if tumulo and not Sepultado.objects.filter(tumulo=tumulo, exumado=False).exists():
+            if tumulo and not Sepultado.objects.filter(tumulo=tumulo, exumado=False, trasladado=False).exists():
                 tumulo.status = 'disponivel'
                 tumulo.save()
 
+        elif self.tipo == 'TRANSLADO':
+            self.sepultado.trasladado = True
+            self.sepultado.save()
+
+            # Verifica se todos os sepultados já foram trasladados
+            tumulo = self.sepultado.tumulo
+            if tumulo and not Sepultado.objects.filter(tumulo=tumulo, trasladado=False).exists():
+                tumulo.status = 'disponivel'
+                tumulo.save()
+
+        # Gera receita apenas ao criar
         if criando:
             gerar_receitas_para_servico(
                 servico=self,
