@@ -158,7 +158,6 @@ from django.core.exceptions import ValidationError
 from django.utils.functional import cached_property
 from .utils import validar_prefeitura_obrigatoria
 
-
 class Tumulo(models.Model):
     STATUS_CHOICES = (
         ('disponivel', 'Disponível'),
@@ -175,11 +174,10 @@ class Tumulo(models.Model):
     ]
 
     cemiterio = models.ForeignKey(
-        Cemiterio,
+        'Cemiterio',
         on_delete=models.CASCADE,
         verbose_name="Cemitério"
     )
-
     tipo_estrutura = models.CharField(
         max_length=20,
         choices=TIPO_ESTRUTURA_CHOICES,
@@ -187,7 +185,7 @@ class Tumulo(models.Model):
         verbose_name="Tipo de estrutura"
     )
     identificador = models.CharField(max_length=50)
-    quadra = models.ForeignKey(Quadra, on_delete=models.CASCADE)
+    quadra = models.ForeignKey('Quadra', on_delete=models.CASCADE)
     usar_linha = models.BooleanField(default=False, verbose_name="Usar linha")
     linha = models.PositiveIntegerField(null=True, blank=True, verbose_name="Linha")
     reservado = models.BooleanField(default=False, verbose_name="Reservar este túmulo")
@@ -217,29 +215,27 @@ class Tumulo(models.Model):
             try:
                 if self.quadra.cemiterio_id != self.cemiterio_id:
                     raise ValidationError({'quadra': 'A quadra selecionada não pertence ao cemitério informado.'})
-            except Quadra.DoesNotExist:
+            except:
                 raise ValidationError({'quadra': 'A quadra informada não foi encontrada.'})
 
     def calcular_status_dinamico(self):
+        from .models import Sepultado
+
         if self.reservado:
             return 'reservado'
 
         sepultados_ativos = Sepultado.objects.filter(
             tumulo=self,
-            status='sepultado'
+            exumado=False,
+            trasladado=False
         ).count()
 
         return 'ocupado' if sepultados_ativos >= self.capacidade else 'disponivel'
 
     def save(self, *args, **kwargs):
         self.full_clean()
+        self.status = self.calcular_status_dinamico()
         super().save(*args, **kwargs)
-
-        novo_status = self.calcular_status_dinamico()
-
-        if self.status != novo_status:
-            self.status = novo_status
-            super().save(update_fields=["status"])
 
     def __str__(self):
         identificador = self.identificador
@@ -256,7 +252,7 @@ class Tumulo(models.Model):
         verbose_name = "Túmulo"
         verbose_name_plural = "Túmulos"
         app_label = "sepultados_gestao"
-    
+
 from django.db import models
 from django.core.exceptions import ValidationError
 from django.utils import timezone
@@ -382,6 +378,7 @@ class Sepultado(models.Model):
 
     def save(self, *args, **kwargs):
         from .utils import gerar_receitas_para_servico, gerar_numero_sequencial_global
+        from .models import Sepultado
 
         criando = self.pk is None
 
@@ -406,6 +403,12 @@ class Sepultado(models.Model):
                 cpf=self.cpf,
                 numero_documento=self.numero_sepultamento
             )
+
+        # ✅ Atualiza o status do túmulo de forma correta
+        if self.tumulo:
+            self.tumulo.status = self.tumulo.calcular_status_dinamico()
+            self.tumulo.save(update_fields=["status"])
+
 
     def __str__(self):
         return self.nome
@@ -535,8 +538,6 @@ class ConcessaoContrato(models.Model):
     usuario_registro = models.ForeignKey(get_user_model(), on_delete=models.SET_NULL, null=True, verbose_name="Usuário responsável")
 
     def clean(self):
-        validar_prefeitura_obrigatoria(self)
-
         if not self.tumulo_id:
             raise ValidationError({"tumulo": "Selecione um túmulo para o contrato."})
 
@@ -566,17 +567,8 @@ class ConcessaoContrato(models.Model):
             if not self.numero_contrato:
                 self.numero_contrato = gerar_numero_sequencial_global(self.prefeitura)
 
-        self.full_clean()
         super().save(*args, **kwargs)
 
-        if criando:
-            if not self.numero_contrato:
-                self.numero_contrato = gerar_numero_sequencial_global(self.prefeitura)
-
-        self.full_clean()
-        super().save(*args, **kwargs)
-
-        # ⚠️ Agora o contrato já está salvo e tem número — podemos gerar a receita com segurança
         if criando:
             gerar_receitas_para_servico(
                 servico=self,
@@ -586,7 +578,7 @@ class ConcessaoContrato(models.Model):
                 parcelas=self.quantidade_parcelas or 1,
                 nome=self.nome,
                 cpf=self.cpf,
-                numero_documento=self.numero_contrato  # AGORA PASSANDO O NÚMERO CERTO
+                numero_documento=self.numero_contrato
             )
 
     def delete(self, *args, **kwargs):
