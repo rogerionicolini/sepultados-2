@@ -314,115 +314,8 @@ class SelecionarCemiterioForm(forms.Form):
 
 
 
-from django import forms
-from decimal import Decimal
-from django.db.models import Q
-from crum import get_current_request
-from .models import MovimentacaoSepultado, Tumulo
 
 
-class MovimentacaoSepultadoForm(forms.ModelForm):
-    valor = forms.CharField(
-        label="Valor",
-        required=False,
-        widget=forms.TextInput(attrs={
-            'placeholder': 'R$ 0,00',
-            'data-mask-moeda': 'true'
-        })
-    )
-
-    quantidade_parcelas = forms.IntegerField(
-        label="Quantidade de Parcelas",
-        required=False,
-        widget=forms.NumberInput(attrs={
-            'data-show-if-parcelado': 'true'
-        })
-    )
-
-    data = forms.DateField(
-        widget=forms.DateInput(format='%Y-%m-%d', attrs={'type': 'date', 'class': 'vDateField'}),
-        input_formats=['%Y-%m-%d', '%d/%m/%Y'],
-        required=False,
-        label="Data da Movimentação"
-    )
-
-    cpf = forms.CharField(
-        label="CPF do Responsável",
-        required=False,
-        widget=forms.TextInput(attrs={
-            'placeholder': '000.000.000-00',
-            'data-mask-cpf': 'true'
-        })
-    )
-
-    class Meta:
-        model = MovimentacaoSepultado
-        fields = '__all__'
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-        request = get_current_request()
-        prefeitura_id = getattr(request, "prefeitura_ativa_id", None)
-
-        if prefeitura_id:
-            base_queryset = Tumulo.objects.filter(quadra__cemiterio__prefeitura_id=prefeitura_id)
-        else:
-            base_queryset = Tumulo.objects.none()
-
-        for campo in ['tumulo_origem', 'tumulo_destino']:
-            if campo in self.fields:
-                valor_inicial = (
-                    self.initial.get(campo)
-                    or self.data.get(campo)
-                    or getattr(self.instance, campo, None)
-                )
-                if valor_inicial:
-                    self.fields[campo].queryset = Tumulo.objects.filter(
-                        Q(pk=valor_inicial) | Q(pk__in=base_queryset)
-                    )
-                else:
-                    self.fields[campo].queryset = base_queryset
-
-                self.fields[campo].widget.attrs.update({
-                    'data-autocomplete': 'true',
-                    'class': 'vForeignKeyRawIdAdminField'
-                })
-
-        self.fields['valor'].required = False
-
-    def clean_valor(self):
-        valor_str = self.cleaned_data.get('valor', '').strip()
-        forma = self.cleaned_data.get('forma_pagamento')
-
-        if not valor_str:
-            valor_str = '0,00'
-
-        valor_str = valor_str.replace('R$', '').replace('.', '').replace(',', '.').strip()
-
-        try:
-            valor = Decimal(valor_str)
-        except:
-            raise forms.ValidationError("Valor inválido.")
-
-        if forma == 'gratuito' and valor != Decimal('0.00'):
-            raise forms.ValidationError("Para pagamentos gratuitos, o valor deve ser R$ 0,00.")
-
-        if forma != 'gratuito' and valor <= Decimal('0.00'):
-            raise forms.ValidationError("Informe um valor maior que zero.")
-
-        return valor
-
-    def clean(self):
-        cleaned_data = super().clean()
-        sepultado = cleaned_data.get('sepultado')
-        tumulo_origem = cleaned_data.get('tumulo_origem')
-
-        if sepultado and tumulo_origem:
-            if hasattr(sepultado, 'tumulo') and sepultado.tumulo != tumulo_origem:
-                raise forms.ValidationError("O sepultado selecionado não pertence ao túmulo de origem informado.")
-
-        return cleaned_data
 
 
 from django import forms
@@ -621,3 +514,132 @@ class PlanoForm(forms.ModelForm):
         valor = self.cleaned_data['preco_mensal']
         valor = valor.replace('R$', '').replace('.', '').replace(',', '.').strip()
         return float(valor)
+
+
+
+
+
+from decimal import Decimal
+from django import forms
+from django.core.exceptions import ValidationError
+from .models import Exumacao, Tumulo, Translado
+
+class ExumacaoForm(forms.ModelForm):
+    data = forms.DateField(
+        widget=forms.DateInput(
+            format='%Y-%m-%d',
+            attrs={'type': 'date', 'class': 'vDateField'}
+        ),
+        input_formats=['%Y-%m-%d', '%d/%m/%Y'],
+        required=True,
+        label="Data"
+    )
+
+    class Meta:
+        model = Exumacao
+        fields = '__all__'
+        widgets = {
+            'motivo': forms.TextInput(attrs={
+                'placeholder': 'Informe o motivo',
+                'style': 'width: 400px;'
+            }),
+            'observacoes': forms.Textarea(attrs={
+                'rows': 4,
+                'style': 'width: 400px;'
+            }),
+            'quantidade_parcelas': forms.NumberInput(attrs={
+                'style': 'width: 400px;',
+            }),
+            'nome_responsavel': forms.TextInput(attrs={
+                'style': 'width: 400px;'
+            }),
+            'cpf': forms.TextInput(attrs={
+                'class': 'cpf',
+                'data-mask-cpf-cnpj': 'true',
+                'style': 'width: 400px;'
+            }),
+            'endereco': forms.TextInput(attrs={
+                'style': 'width: 400px;'
+            }),
+            'telefone': forms.TextInput(attrs={
+                'style': 'width: 400px;'
+            }),
+        }
+
+    class Media:
+        js = ('custom_admin/js/formulario_exumacao_translado.js',)
+
+    def __init__(self, *args, **kwargs):
+        request = kwargs.pop('request', None)
+        super().__init__(*args, **kwargs)
+
+        # Sepultado com autocomplete
+        self.fields['sepultado'].widget.attrs.update({
+            'class': 'admin-autocomplete',
+            'data-autocomplete-light-function': 'select2',
+            'style': 'width: 400px;'
+        })
+
+        # Tumulo com select tradicional (sem autocomplete)
+        from sepultados_gestao.models import Tumulo
+        if request and hasattr(request, 'cemiterio_ativo'):
+            self.fields['tumulo'].queryset = Tumulo.objects.filter(quadra__cemiterio=request.cemiterio_ativo)
+        else:
+            self.fields['tumulo'].queryset = Tumulo.objects.none()
+
+        self.fields['tumulo'].widget.attrs.update({
+            'style': 'width: 400px;'
+        })
+
+    def clean_valor(self):
+        valor_str = self.cleaned_data.get('valor')
+        forma_pagamento = self.cleaned_data.get('forma_pagamento')
+
+        if isinstance(valor_str, str):
+            valor_str = valor_str.replace("R$", "").replace(".", "").replace(",", ".").strip()
+
+        try:
+            valor = float(valor_str)
+        except (ValueError, TypeError):
+            raise forms.ValidationError("Informe um valor válido.")
+
+        if forma_pagamento == 'gratuito' and valor != 0.00:
+            raise forms.ValidationError("Exumações gratuitas devem ter valor R$ 0,00.")
+
+        if forma_pagamento != 'gratuito' and valor <= 0.00:
+            raise forms.ValidationError("O valor deve ser maior que R$ 0,00.")
+
+        return Decimal(str(round(valor, 2)))
+
+    def clean(self):
+        cleaned_data = super().clean()
+        sepultado = cleaned_data.get('sepultado')
+        data_exumacao = cleaned_data.get('data')
+
+        if not sepultado or not data_exumacao:
+            return
+
+        sepultamento_data = sepultado.data_sepultamento
+        if sepultamento_data and sepultado.tumulo:
+            cemit = sepultado.tumulo.quadra.cemiterio
+            minimo_meses = cemit.tempo_minimo_exumacao or 0
+
+            if (data_exumacao - sepultamento_data).days < minimo_meses * 30:
+                raise ValidationError(
+                    f"É necessário aguardar no mínimo {minimo_meses} meses após o sepultamento para realizar a exumação."
+                )
+
+        # Preenche o campo 'tumulo' automaticamente com base no sepultado
+        if not cleaned_data.get('tumulo') and sepultado.tumulo:
+            self.cleaned_data['tumulo'] = sepultado.tumulo
+
+class TransladoForm(forms.ModelForm):
+    class Meta:
+        model = Translado
+        exclude = []
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.instance.forma_pagamento != 'parcelado':
+            self.fields['quantidade_parcelas'].widget.attrs['style'] = 'display:none;'
+

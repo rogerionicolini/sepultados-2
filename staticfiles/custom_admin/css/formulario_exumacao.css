@@ -1,0 +1,30 @@
+fieldset.module {
+    border: 1px solid #A1C98F;
+    padding: 15px;
+    background-color: #e3efcc;
+    margin-bottom: 25px;
+    border-radius: 6px;
+}
+
+fieldset.module h2 {
+    font-size: 16px;
+    color: #2c512d;
+    font-weight: bold;
+}
+
+.form-row input,
+.form-row select,
+.form-row textarea {
+    max-width: 100%;
+    border: 1px solid #4b8a3f;
+    border-radius: 5px;
+    padding: 6px 8px;
+    font-size: 14px;
+    box-sizing: border-box;
+    width: 100%;
+}
+
+.form-row label {
+    font-weight: bold;
+    color: #2d472b;
+}

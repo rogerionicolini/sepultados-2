@@ -357,7 +357,14 @@ class Sepultado(models.Model):
     cartorio_folha = models.CharField(max_length=50, blank=True, null=True)
     cartorio_data_registro = models.DateField(null=True, blank=True)
 
-    tumulo = models.ForeignKey('Tumulo', on_delete=models.PROTECT)
+    tumulo = models.ForeignKey(
+        'Tumulo',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        verbose_name="Túmulo"
+    )
+
     ordem_no_tumulo = models.PositiveIntegerField(null=True, blank=True)
     data_sepultamento = models.DateField(null=True, blank=True)
     observacoes = models.TextField(blank=True, null=True)
@@ -418,16 +425,18 @@ class Sepultado(models.Model):
     def save(self, *args, **kwargs):
         from .utils import gerar_receitas_para_servico, gerar_numero_sequencial_global
         from .models import Sepultado
+        from django.core.exceptions import ValidationError
 
         criando = self.pk is None
 
         if criando and not self.numero_sepultamento:
             self.numero_sepultamento = gerar_numero_sequencial_global(self.tumulo.quadra.cemiterio.prefeitura)
 
-        self.full_clean()
+        self.full_clean()  # Executa o clean completo
         self.idade_ao_falecer = self.calcular_idade()
         super().save(*args, **kwargs)
 
+        # Validação final para gratuito
         if criando:
             if self.forma_pagamento == 'gratuito' and self.valor > 0:
                 raise ValidationError("Sepultamento gratuito deve ter valor 0,00.")
@@ -443,26 +452,30 @@ class Sepultado(models.Model):
                 numero_documento=self.numero_sepultamento
             )
 
-        # ✅ Atualiza o status do túmulo de forma correta
+        # Atualiza o status do túmulo
         if self.tumulo:
             self.tumulo.status = self.tumulo.calcular_status_dinamico()
             self.tumulo.save(update_fields=["status"])
+
 
 
     def __str__(self):
         return self.nome
 
     def clean(self):
-        super().clean()
+        from django.core.exceptions import ValidationError
+        from .models import ConcessaoContrato, Exumacao, Translado    
+        from django.utils import timezone
+        from dateutil.relativedelta import relativedelta
 
+        super().clean()
         erros = {}
 
+        # Campos obrigatórios
         if not self.tumulo_id:
             erros['tumulo'] = 'O campo túmulo é obrigatório.'
-
         if not self.data_falecimento:
             erros['data_falecimento'] = 'A data do falecimento é obrigatória.'
-
         if not self.data_sepultamento:
             erros['data_sepultamento'] = 'A data do sepultamento é obrigatória.'
 
@@ -472,23 +485,31 @@ class Sepultado(models.Model):
         if not self.tumulo_id:
             return
 
-        from .models import ConcessaoContrato
+        # Verifica se o túmulo possui contrato de concessão
         contrato_existente = ConcessaoContrato.objects.filter(tumulo=self.tumulo).exists()
         if not contrato_existente:
             raise ValidationError({
                 'tumulo': "Este túmulo não possui contrato de concessão. O sepultamento não é permitido."
             })
 
+        # Verifica a capacidade do túmulo
         tumulo = self.tumulo
         capacidade = tumulo.capacidade
 
-        sepultados_atuais = Sepultado.objects.filter(
-            tumulo=tumulo
-        ).exclude(id=self.id).count()
+        # Filtra apenas os sepultados ainda ativos
+        sepultados_ativos = Sepultado.objects.filter(
+            tumulo=tumulo,
+            exumado=False,
+            trasladado=False
+        )
 
-        if sepultados_atuais < capacidade:
-            return
+        if self.pk:
+            sepultados_ativos = sepultados_ativos.exclude(pk=self.pk)
 
+        if sepultados_ativos.count() < capacidade:
+            return  # Ainda há espaço
+
+        # Capacidade já está cheia — verifica se há exumação antiga
         try:
             cemit = tumulo.quadra.cemiterio
         except Exception:
@@ -496,8 +517,6 @@ class Sepultado(models.Model):
 
         meses_minimos = cemit.tempo_minimo_exumacao or 36
         data_limite = timezone.now().date() - relativedelta(months=meses_minimos)
-
-        from .models import MovimentacaoSepultado
 
         exumacoes_validas = MovimentacaoSepultado.objects.filter(
             sepultado__tumulo=tumulo,
@@ -657,76 +676,137 @@ class ConcessaoContrato(models.Model):
     
               
 
-# models.py (trecho relevante para MovimentacaoSepultado)
+from django.db import models
+from django.utils import timezone
+from django.core.exceptions import ValidationError
+from sepultados_gestao.utils import gerar_numero_sequencial_global, gerar_receitas_para_servico
+from sepultados_gestao.models import Prefeitura
 
-class MovimentacaoSepultado(models.Model):
-    TIPO_CHOICES = [('EXUMACAO', 'Exumação'), ('TRANSLADO', 'Translado')]
-    DESTINO_TIPO_CHOICES = [
-        ('INTERNO', 'Outro túmulo no mesmo cemitério'),
-        ('EXTERNO', 'Outro cemitério'),
-        ('OSSARIO', 'Ossário'),
-        ('NAO_INFORMADO', 'Não informado'),
-    ]
-
-    numero_movimentacao = models.CharField(
-        max_length=20,
-        verbose_name="Número da movimentação",
-        editable=False,
-        null=True,
-        blank=True
-    )
-
-    sepultado = models.ForeignKey('Sepultado', on_delete=models.CASCADE)
-    tipo = models.CharField(max_length=10, choices=TIPO_CHOICES, verbose_name="Tipo da movimentação")
-    data = models.DateField(verbose_name="Data da movimentação")
-    motivo = models.CharField(
-        max_length=255,
-        help_text="Ex: Liberação do túmulo, Compartilhamento, Transferência etc."
-    )
-    tumulo_origem = models.ForeignKey(
+class Exumacao(models.Model):
+    prefeitura = models.ForeignKey(Prefeitura, on_delete=models.CASCADE)
+    sepultado = models.ForeignKey("Sepultado", on_delete=models.PROTECT)
+    tumulo = models.ForeignKey(
         'Tumulo',
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        related_name='movimentacoes_origem',
-        verbose_name="Túmulo de origem"
+        verbose_name="Túmulo de Origem"
     )
-    tumulo_destino = models.ForeignKey(
-        'Tumulo',
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='movimentacoes_destino',
-        verbose_name="Túmulo de destino"
-    )
-    destino_tipo = models.CharField(
-        max_length=20,
-        choices=DESTINO_TIPO_CHOICES,
-        default='NAO_INFORMADO',
-        verbose_name="Tipo de destino"
-    )
-    cemiterio_destino_nome = models.CharField(max_length=100, blank=True, verbose_name="Nome do cemitério de destino")
-    cidade_destino = models.CharField(max_length=100, blank=True, verbose_name="Cidade de destino")
-    estado_destino = models.CharField(
-        max_length=2,
-        choices=Prefeitura._meta.get_field('endereco_estado').choices,
-        blank=True,
-        verbose_name="Estado de destino"
-    )
-    observacoes = models.TextField(blank=True, verbose_name="Observações")
+    data = models.DateField(default=timezone.now)
+    motivo = models.TextField(blank=True, null=True)
+    observacoes = models.TextField(blank=True, null=True)
 
-    nome = models.CharField("Nome", max_length=255, blank=True, null=True)
+    # Dados do responsável
+    nome_responsavel = models.CharField("Nome", max_length=255, blank=True, null=True)
     cpf = models.CharField("CPF", max_length=18, blank=True, null=True)
     endereco = models.CharField("Endereço", max_length=255, blank=True, null=True)
     telefone = models.CharField("Telefone", max_length=20, blank=True, null=True)
 
     forma_pagamento = models.CharField(
         max_length=10,
-        choices=[
-            ('gratuito', 'Gratuito'),
-            ('avista', 'À Vista'),
-            ('parcelado', 'Parcelado')
-        ],
+        choices=[('gratuito', 'Gratuito'), ('avista', 'À Vista'), ('parcelado', 'Parcelado')],
+        default='gratuito',
+        verbose_name="Forma de Pagamento"
+    )
+    quantidade_parcelas = models.PositiveIntegerField("Quantidade de Parcelas", null=True, blank=True)
+    valor = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Valor", default=0.00)
+
+    numero_documento = models.CharField(max_length=20, blank=True, editable=False)
+
+    def clean(self):
+        super().clean()
+        if self.sepultado and self.sepultado.exumado and not self.pk:
+            raise ValidationError("Este sepultado já foi exumado. Não é possível registrar outra exumação.")
+        sepultado = getattr(self, 'sepultado', None)
+        if not sepultado:
+            return
+
+        sepultamento_data = sepultado.data_sepultamento
+        tumulo = getattr(sepultado, 'tumulo', None)
+        quadra = getattr(tumulo, 'quadra', None)
+        cemiterio = getattr(quadra, 'cemiterio', None)
+
+        if not cemiterio:
+            raise ValidationError("Não foi possível identificar o cemitério do sepultado para validar o tempo mínimo.")
+
+        minimo_meses = cemiterio.tempo_minimo_exumacao or 0
+
+        if self.data and sepultamento_data:
+            dias_entre = (self.data - sepultamento_data).days
+            if dias_entre < minimo_meses * 30:
+                raise ValidationError(
+                    f"É necessário aguardar no mínimo {minimo_meses} meses após o sepultamento para realizar a exumação."
+                )
+
+
+    def save(self, *args, **kwargs):
+        criando = self.pk is None
+
+        # SEMPRE força prefeitura com base no sepultado
+        if self.sepultado and self.sepultado.tumulo:
+            self.prefeitura = self.sepultado.tumulo.quadra.cemiterio.prefeitura
+        elif not self.prefeitura:
+            raise ValidationError("Não foi possível determinar a prefeitura para esta exumação.")
+
+        # Geração de número
+        if criando and not self.numero_documento:
+            self.numero_documento = gerar_numero_sequencial_global(self.prefeitura)
+
+        super().save(*args, **kwargs)
+
+        # Geração da receita e atualização do sepultado
+        if criando:
+            if self.forma_pagamento == 'gratuito' and self.valor > 0:
+                raise ValidationError("Exumação gratuita deve ter valor R$ 0,00.")
+            if self.forma_pagamento != 'gratuito' and self.valor <= 0:
+                raise ValidationError("Informe um valor válido para exumação paga.")
+
+            gerar_receitas_para_servico(
+                servico=self,
+                descricao="Taxa de Exumação",
+                forma_pagamento=self.forma_pagamento,
+                valor_total=self.valor,
+                parcelas=self.quantidade_parcelas or 1,
+                nome=self.nome_responsavel,
+                cpf=self.cpf,
+                numero_documento=self.numero_documento
+            )
+
+            self.sepultado.exumado = True
+            self.sepultado.data_exumacao = self.data
+            self.sepultado.save()
+
+   
+    def __str__(self):
+        return f"Exumação de {self.sepultado.nome}"
+
+    class Meta:
+        verbose_name = "Exumação"
+        verbose_name_plural = "Exumações"
+
+class Translado(models.Model):
+    sepultado = models.ForeignKey("Sepultado", on_delete=models.PROTECT)
+    data = models.DateField(default=timezone.now)
+    motivo = models.TextField(blank=True, null=True)
+    observacoes = models.TextField(blank=True, null=True)
+
+    DESTINOS = [
+        ('outro_tumulo', 'Outro Túmulo'),
+        ('outro_cemiterio', 'Outro Cemitério'),
+        ('ossario', 'Ossário'),
+    ]
+    destino = models.CharField(max_length=20, choices=DESTINOS)
+    tumulo_destino = models.ForeignKey("Tumulo", on_delete=models.SET_NULL, null=True, blank=True)
+
+    # Dados do responsável pela solicitação
+    nome_responsavel = models.CharField("Nome", max_length=255, blank=True, null=True)
+    cpf = models.CharField("CPF", max_length=18, blank=True, null=True)
+    endereco = models.CharField("Endereço", max_length=255, blank=True, null=True)
+    telefone = models.CharField("Telefone", max_length=20, blank=True, null=True)
+
+    forma_pagamento = models.CharField(
+        max_length=10,
+        choices=[('gratuito', 'Gratuito'), ('avista', 'À Vista'), ('parcelado', 'Parcelado')],
         default='gratuito',
         verbose_name="Forma de Pagamento"
     )
@@ -735,142 +815,55 @@ class MovimentacaoSepultado(models.Model):
         null=True,
         blank=True
     )
-    valor = models.DecimalField(
-        max_digits=10,
-        decimal_places=2,
-        verbose_name="Valor",
-        default=0.00
-    )
+    valor = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Valor", default=0.00)
 
-    from functools import cached_property
-
-    @cached_property
-    def prefeitura(self):
-        try:
-            return self.sepultado.tumulo.quadra.cemiterio.prefeitura
-        except AttributeError:
-            return None
-
-    def clean(self):
-        from datetime import timedelta
-        from django.utils import timezone
-        from django.core.exceptions import ValidationError
-
-        validar_prefeitura_obrigatoria(self)
-
-        sepultado = self.sepultado
-
-        if not sepultado:
-            raise ValidationError("Sepultado não informado.")
-
-        # ✅ Regra de exumação: só uma permitida
-        if self.tipo == 'EXUMACAO':
-            sepultado_fresh = type(sepultado).objects.get(pk=sepultado.pk)
-
-            existe_exumacao = MovimentacaoSepultado.objects.filter(
-                sepultado=sepultado_fresh,
-                tipo='EXUMACAO'
-            ).exclude(pk=self.pk).exists()
-
-            if existe_exumacao:
-                raise ValidationError("Este sepultado já foi exumado anteriormente.")
-
-            if not sepultado_fresh.data_falecimento:
-                raise ValidationError("Data de falecimento do sepultado não está informada.")
-
-            if not sepultado_fresh.tumulo or not sepultado_fresh.tumulo.quadra or not sepultado_fresh.tumulo.quadra.cemiterio:
-                raise ValidationError("Não foi possível identificar o cemitério do sepultado.")
-
-            cemit = sepultado_fresh.tumulo.quadra.cemiterio
-            meses_minimos = cemit.tempo_minimo_exumacao or 36
-            dias_minimos = meses_minimos * 30
-            limite_data = sepultado_fresh.data_falecimento + timedelta(days=dias_minimos)
-
-            if timezone.now().date() < limite_data:
-                raise ValidationError(f"A exumação só será permitida após {meses_minimos} meses do falecimento.")
-
-        # ✅ Regra de translado: só se já estiver exumado
-        elif self.tipo == 'TRANSLADO':
-            if not sepultado.exumado:
-                raise ValidationError("Só é possível realizar translado de um sepultado que já foi exumado.")
+    numero_documento = models.CharField(max_length=20, blank=True, editable=False)
 
     def save(self, *args, **kwargs):
-        from django.utils import timezone
-        from .models import Sepultado
         from .utils import gerar_receitas_para_servico, gerar_numero_sequencial_global
-        from decimal import Decimal
 
         criando = self.pk is None
 
-        # Define tumulo de origem automaticamente a partir do sepultado
-        if self.sepultado and hasattr(self.sepultado, 'tumulo'):
-            self.tumulo_origem = self.sepultado.tumulo
+        if criando and not self.numero_documento:
+            self.numero_documento = gerar_numero_sequencial_global(self.prefeitura)
 
-        # Gera número de movimentação se estiver criando
-        if criando and not self.numero_movimentacao:
-            self.numero_movimentacao = gerar_numero_sequencial_global(self.prefeitura)
-
-        self.full_clean()
         super().save(*args, **kwargs)
 
-        # Atualiza status do sepultado
-        if self.tipo == 'EXUMACAO':
-            self.sepultado.exumado = True
-            self.sepultado.save()
-
-            # Verifica se todos os sepultados foram exumados
-            tumulo = self.sepultado.tumulo
-            if tumulo and not Sepultado.objects.filter(tumulo=tumulo, exumado=False, trasladado=False).exists():
-                tumulo.status = 'disponivel'
-                tumulo.save()
-
-        elif self.tipo == 'TRANSLADO':
-            self.sepultado.trasladado = True
-            self.sepultado.save()
-
-            # Verifica se todos os sepultados já foram trasladados
-            tumulo = self.sepultado.tumulo
-            if tumulo and not Sepultado.objects.filter(tumulo=tumulo, trasladado=False).exists():
-                tumulo.status = 'disponivel'
-                tumulo.save()
-
-        # Gera receita apenas ao criar
         if criando:
+            if self.forma_pagamento == 'gratuito' and self.valor > 0:
+                raise ValidationError("Translado gratuito deve ter valor 0,00.")
+
             gerar_receitas_para_servico(
                 servico=self,
-                descricao=self.get_tipo_display(),
+                descricao="Taxa de Translado",
                 forma_pagamento=self.forma_pagamento,
                 valor_total=self.valor,
                 parcelas=self.quantidade_parcelas or 1,
-                nome=self.nome,
+                nome=self.nome_responsavel,
                 cpf=self.cpf,
-                numero_documento=self.numero_movimentacao
+                numero_documento=self.numero_documento
             )
 
-    def delete(self, *args, **kwargs):
-        sepultado_id = self.sepultado_id
-        tipo_original = self.tipo
-        super().delete(*args, **kwargs)
+            # Atualiza o sepultado como trasladado
+            self.sepultado.trasladado = True
+            self.sepultado.data_translado = self.data
+            self.sepultado.save()
 
-        if tipo_original == 'EXUMACAO' and sepultado_id:
-            ainda_tem_exumacao = MovimentacaoSepultado.objects.filter(
-                sepultado_id=sepultado_id,
-                tipo='EXUMACAO'
-            ).exists()
+            # Se for para outro túmulo, atualiza o campo
+            if self.destino == 'outro_tumulo' and self.tumulo_destino:
+                self.sepultado.tumulo = self.tumulo_destino
+                self.sepultado.save()
 
-            if not ainda_tem_exumacao:
-                from sepultados_gestao.models import Sepultado
-                sepultado = Sepultado.objects.get(id=sepultado_id)
-                sepultado.exumado = False
-                sepultado.save()
+    @property
+    def prefeitura(self):
+        return self.sepultado.tumulo.quadra.cemiterio.prefeitura
 
     def __str__(self):
-        return f"{self.get_tipo_display()} de {self.sepultado.nome} em {self.data}"
+        return f"Translado de {self.sepultado.nome}"
 
     class Meta:
-        verbose_name = "Exumação/Translado"
-        verbose_name_plural = "Exumações/Translados"
-        app_label = "sepultados_gestao"
+        verbose_name = "Translado"
+        verbose_name_plural = "Traslados"
 
 class Plano(models.Model):
     nome = models.CharField(max_length=50, unique=True)
@@ -981,12 +974,21 @@ class Receita(models.Model):
         blank=True,
         editable=False
     )
-    movimentacao = models.ForeignKey(
-        'MovimentacaoSepultado',
+    exumacao = models.ForeignKey(
+        'Exumacao',
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        verbose_name="Movimentação",
+        verbose_name="Exumação",
+        related_name='receitas'
+    )
+
+    translado = models.ForeignKey(
+        'Translado',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        verbose_name="Translado",
         related_name='receitas'
     )
     prefeitura = models.ForeignKey(
@@ -1103,10 +1105,12 @@ class Receita(models.Model):
 
     def save(self, *args, **kwargs):
         if not self.numero_documento:
-            if self.movimentacao:
-                self.numero_documento = self.movimentacao.numero_movimentacao
-                tipo = self.movimentacao.get_tipo_display()
-                self.descricao = tipo
+            if self.exumacao:
+                self.numero_documento = self.exumacao.numero_documento
+                self.descricao = "Exumação"
+            elif self.translado:
+                self.numero_documento = self.translado.numero_documento
+                self.descricao = "Translado"
             elif self.contrato:
                 self.numero_documento = self.contrato.numero_contrato
                 self.descricao = "Contrato de Concessão"
@@ -1146,7 +1150,7 @@ class Receita(models.Model):
             ).exists()
             if not existe:
                 criar_nova = True
-                self.valor_em_aberto = Decimal("0.00")  # ← zera aqui
+                self.valor_em_aberto = Decimal("0.00")
 
         with transaction.atomic():
             super().save(*args, **kwargs)
@@ -1164,8 +1168,10 @@ class Receita(models.Model):
                     nome=self.nome,
                     cpf=self.cpf,
                     contrato=self.contrato,
-                    movimentacao=self.movimentacao,
+                    exumacao=self.exumacao,
+                    translado=self.translado,
                 )
+
     def __str__(self):
         return str(self.numero_documento)
 

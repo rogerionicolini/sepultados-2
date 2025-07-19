@@ -7,7 +7,7 @@ from datetime import date
 
 from .models import (
     Prefeitura, Cemiterio, Quadra, Tumulo,
-    Sepultado, ConcessaoContrato, MovimentacaoSepultado,
+    Sepultado, ConcessaoContrato, 
     Plano, Licenca, Receita
 )
 from .forms import LicencaForm
@@ -580,17 +580,14 @@ class ConcessaoContratoAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
         obj.usuario_registro = request.user
         super().save_model(request, obj, form, change)
 
-    
-    from django.contrib import messages
-
     def delete_model(self, request, obj):
         try:
             obj.delete()
             self.message_user(request, "Contrato excluído com sucesso.", level=messages.SUCCESS)
         except ValidationError as e:
             self.message_user(request, str(e.message), level=messages.ERROR)
-
-
+        except Exception as e:
+            self.message_user(request, str(e), level=messages.ERROR)
 
     def delete_queryset(self, request, queryset):
         from .models import Receita
@@ -607,22 +604,17 @@ class ConcessaoContratoAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
     def has_delete_permission(self, request, obj=None):
         from .models import Receita, Sepultado
 
-        # Bloqueia exclusão para usuários comuns
         if not request.user.is_superuser and not getattr(request.user, "is_master", False):
             return False
 
         if obj:
-            # Se houver receitas associadas, bloqueia
             if Receita.objects.filter(contrato=obj).exists():
                 return False
 
-            # Se houver sepultados ainda no túmulo (não exumados nem trasladados), bloqueia
             if Sepultado.objects.filter(tumulo=obj.tumulo, exumado=False, trasladado=False).exists():
                 return False
 
         return True
-
-
 
     def link_pdf(self, obj):
         url = reverse('sepultados_gestao:gerar_contrato_pdf', args=[obj.pk])
@@ -631,185 +623,110 @@ class ConcessaoContratoAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
 
     class Media:
         js = ('custom_admin/js/contrato.js',)
-    
 
 
+from django.contrib import admin
+from django.utils.html import format_html
+from .models import Exumacao
+from .forms import ExumacaoForm, TransladoForm
+from .mixins import PrefeituraObrigatoriaAdminMixin
+from .models import Exumacao, Translado, Sepultado, Receita  # etc.
+from django.db.models import Q
 
-from .forms import MovimentacaoSepultadoForm
 
-
-
-class MovimentacaoSepultadoAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
-    form = MovimentacaoSepultadoForm
-    inlines = [AnexoInline]
-    autocomplete_fields = ['sepultado', 'tumulo_origem', 'tumulo_destino']
-    readonly_fields = ['tumulo_origem_exibicao', 'numero_movimentacao']
-    list_display = (
-        "sepultado", "tipo", "data", "motivo", "tumulo_origem_exibicao",
-        "tipo_destino_formatado", "tumulo_destino", "destino_resumido", "botao_pdf"
-    )
-    list_filter = ("tipo", "data", "destino_tipo")
+@admin.register(Exumacao)
+class ExumacaoAdmin(admin.ModelAdmin):
+    form = ExumacaoForm
+    autocomplete_fields = ['sepultado', 'tumulo']
+    readonly_fields = ['numero_documento']
+    list_display = [
+        'numero_documento', 'data', 'get_nome_sepultado',
+        'valor_formatado', 'forma_pagamento', 'status_receita'
+    ]
+    list_filter = ['forma_pagamento']
+    search_fields = ['sepultado__nome', 'numero_documento', 'nome_responsavel', 'cpf']
+    ordering = ['-data']
 
     fieldsets = (
-        ("Dados da Movimentação", {
-            'fields': (
-                "numero_movimentacao",
-                "sepultado",
-                "tipo",
-                "data",
-                "motivo",
-                "tumulo_origem",
-                "observacoes",
-                "destino_tipo",
-                "tumulo_destino",
-                "cemiterio_destino_nome",
-                "cidade_destino",
-                "estado_destino",
-                "forma_pagamento",
-                "quantidade_parcelas",
-                "valor",             
-            )
+        ("Informações da Exumação", {
+            'fields': ('numero_documento', 'data', 'sepultado', 'tumulo', 'motivo', 'observacoes')
         }),
-        ("Responsável", {
-            'fields': (
-                "nome",
-                "cpf",
-                "endereco",
-                "telefone",
-            )
+        ("Pagamento", {
+            'fields': ('forma_pagamento', 'quantidade_parcelas', 'valor')
+        }),
+        ("Responsável pela Solicitação", {
+            'fields': ('nome_responsavel', 'cpf', 'endereco', 'telefone')
         }),
     )
-
-    
-    def tumulo_origem_exibicao(self, obj):
-        if obj.sepultado and obj.sepultado.tumulo:
-            return str(obj.sepultado.tumulo)
-        return "-"
-    tumulo_origem_exibicao.short_description = "Túmulo de Origem"
-
-    def receita_associada(self, obj):
-        if hasattr(obj, 'receita'):
-            url = reverse('admin:sepultados_gestao_receita_change', args=[obj.receita.id])
-            return format_html('<a href="{}">Ver Receita</a>', url)
-        return "-"
-    receita_associada.short_description = "Receita Gerada"
 
     def get_queryset(self, request):
         qs = super().get_queryset(request)
         prefeitura_id = request.session.get("prefeitura_ativa_id")
-        if not prefeitura_id:
-            return qs.none()
-        return qs.select_related(
-            'sepultado__tumulo__quadra__cemiterio',
-            'tumulo_destino__quadra__cemiterio',
-        ).filter(
-            sepultado__tumulo__quadra__cemiterio__prefeitura_id=prefeitura_id
-        )
+        return qs.filter(prefeitura_id=prefeitura_id) if prefeitura_id else qs.none()
 
+    def get_nome_sepultado(self, obj):
+        return obj.sepultado.nome if obj.sepultado else "-"
+    get_nome_sepultado.short_description = "Sepultado"
 
-    def get_model_perms(self, request):
-        if not request.session.get("prefeitura_ativa_id"):
-            return {}
-        return super().get_model_perms(request)
+    def valor_formatado(self, obj):
+        return f"R$ {obj.valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    valor_formatado.short_description = "Valor"
 
-    def tipo_destino_formatado(self, obj):
-        return obj.get_destino_tipo_display() if obj.destino_tipo != "NAO_INFORMADO" else "-"
-    tipo_destino_formatado.short_description = "Tipo de Destino"
-
-    def destino_resumido(self, obj):
-        if obj.destino_tipo == 'EXTERNO':
-            if obj.cemiterio_destino_nome or obj.cidade_destino or obj.estado_destino:
-                return f"{obj.cemiterio_destino_nome or 'Outro cemitério'} ({obj.cidade_destino}-{obj.estado_destino})"
-            return "Outro cemitério"
-        elif obj.destino_tipo == 'INTERNO':
-            return f"Túmulo {obj.tumulo_destino}" if obj.tumulo_destino else "Túmulo não informado"
-        elif obj.destino_tipo == 'OSSARIO':
-            return "Ossário"
-        return "-"
-    destino_resumido.short_description = "Destino"
-
-    def delete_model(self, request, obj):
-        obj.delete()
-
-    def formfield_for_foreignkey(self, db_field, request, **kwargs):
-        if db_field.name in ['tumulo_origem', 'tumulo_destino']:
-            cemiterio_id = request.session.get("cemiterio_ativo_id")
-
-            if not cemiterio_id:
-                sepultado_id = request.POST.get("sepultado")
-                if sepultado_id:
-                    try:
-                        sepultado = Sepultado.objects.get(pk=sepultado_id)
-                        if sepultado.tumulo and sepultado.tumulo.quadra:
-                            cemiterio_id = sepultado.tumulo.quadra.cemiterio_id
-                    except Sepultado.DoesNotExist:
-                        pass
-
-            kwargs["queryset"] = Tumulo.objects.filter(
-                quadra__cemiterio_id=cemiterio_id
-            ) if cemiterio_id else Tumulo.objects.none()
-
-        elif db_field.name == 'sepultado':
-            prefeitura_id = request.session.get("prefeitura_ativa_id")
-            cemiterio_id = request.session.get("cemiterio_ativo_id")
-            if prefeitura_id and cemiterio_id:
-                kwargs["queryset"] = Sepultado.objects.filter(
-                    tumulo__quadra__cemiterio__prefeitura_id=prefeitura_id,
-                    tumulo__quadra__cemiterio_id=cemiterio_id
-                )
-            else:
-                kwargs["queryset"] = Sepultado.objects.none()
-
-        return super().formfield_for_foreignkey(db_field, request, **kwargs)
-
-    def render_change_form(self, request, context, *args, **kwargs):
-        sepultado_id = request.GET.get('sepultado') or ''
-        context['adminform'].form.fields['sepultado'].widget.attrs['data-url'] = '/admin/obter-tumulo-origem/'
-        context['additional_html'] = f'''
-            <div id="tumulo-origem-info" style="margin-top: 10px; font-weight: bold; color: #003300;"></div>
-            <script>
-                document.addEventListener("DOMContentLoaded", function () {{
-                    const sepultadoField = document.getElementById("id_sepultado");
-                    const tumuloDiv = document.getElementById("tumulo-origem-info");
-                    function atualizarTumulo() {{
-                        const id = sepultadoField.value;
-                        const url = sepultadoField.dataset.url;
-                        if (id) {{
-                            fetch(`${{url}}?id=${{id}}`)
-                                .then(response => response.json())
-                                .then(data => {{
-                                    tumuloDiv.textContent = data.tumulo || "Nenhum túmulo encontrado";
-                                }});
-                        }} else {{
-                            tumuloDiv.textContent = "";
-                        }}
-                    }}
-                    sepultadoField.addEventListener("change", atualizarTumulo);
-                    atualizarTumulo();
-                }});
-            </script>
-        '''
-        context['additional_form_content'] = context.get('additional_html', '')
-        return super().render_change_form(request, context, *args, **kwargs)
-
-    from django.urls import reverse
-    from django.utils.html import format_html
-
-    def botao_pdf(self, obj):
-        if obj.tipo == 'EXUMACAO':
-            url = reverse("sepultados_gestao:pdf_exumacao", args=[obj.pk])
-        elif obj.tipo == 'TRANSLADO':
-            url = reverse("sepultados_gestao:pdf_translado", args=[obj.pk])
-        else:
+    def status_receita(self, obj):
+        receitas = getattr(obj, 'receita_set', None)
+        if not receitas:
             return "-"
-        return format_html('<a href="{}" target="_blank">📄 PDF</a>', url)
+        status = list(receitas.values_list('status', flat=True))
+        if not status:
+            return "-"
+        if all(s.lower() == 'pago' for s in status):
+            cor = 'green'
+        elif any(s.lower() == 'parcial' for s in status):
+            cor = 'orange'
+        else:
+            cor = 'red'
+        return format_html(f'<b style="color: {cor}">{status[0].capitalize()}</b>')
+    status_receita.short_description = "Status"
 
-    botao_pdf.short_description = "Guia"
+    def get_form(self, request, obj=None, **kwargs):
+        form = super().get_form(request, obj, **kwargs)
+
+        class FormComRequest(form):
+            def __new__(cls, *args, **kwargs):
+                kwargs['request'] = request
+                return form(*args, **kwargs)
+
+        return FormComRequest
 
 
-    
     class Media:
-        js = ['custom_admin/js/movimentacao.js']
+        js = ('custom_admin/js/formulario_exumacao_translado.js',)
+
+@admin.register(Translado)
+class TransladoAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
+    form = TransladoForm
+    search_fields = ['sepultado__nome']
+    autocomplete_fields = ['sepultado', 'tumulo_destino']
+    readonly_fields = ['numero_documento']
+    list_display = ['numero_documento', 'data', 'sepultado', 'destino', 'valor', 'forma_pagamento']
+    list_filter = ['destino']
+    fieldsets = (
+        (None, {
+            'fields': ('numero_documento', 'sepultado', 'data')
+        }),
+        ("Detalhes", {
+            'fields': ('motivo', 'observacoes', 'destino', 'tumulo_destino')
+        }),
+        ("Pagamento", {
+            'fields': ('forma_pagamento', 'quantidade_parcelas', 'valor')
+        }),
+        ("Responsável pela solicitação", {
+            'fields': ('nome_responsavel', 'cpf', 'endereco', 'telefone')
+        }),
+    )
+
+
+
 
 
 @admin.register(Plano)
@@ -913,7 +830,6 @@ class LicencaAdmin(admin.ModelAdmin):
 
 
 admin.site.register(Quadra, QuadraAdmin)
-admin.site.register(MovimentacaoSepultado, MovimentacaoSepultadoAdmin)
 admin.site.register(Sepultado, SepultadoAdmin)
 
 
@@ -1006,7 +922,7 @@ class CustomAdminSite(AdminSite):
 
         modelos_gestao = {
             "Cemiterio", "Quadra", "Tumulo", "Sepultado",
-            "ConcessaoContrato", "MovimentacaoSepultado",
+            "ConcessaoContrato", "Exumacao", "Translado",
             "TipoServicoFinanceiro", "Receita"
         }
 

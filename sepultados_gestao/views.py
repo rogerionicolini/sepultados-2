@@ -151,7 +151,6 @@ from django.shortcuts import get_object_or_404
 from django.template.loader import render_to_string
 from django.http import HttpResponse
 from weasyprint import HTML
-from .models import MovimentacaoSepultado
 import os
 from django.conf import settings
 
