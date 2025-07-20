@@ -632,6 +632,11 @@ from .forms import ExumacaoForm, TransladoForm
 from .mixins import PrefeituraObrigatoriaAdminMixin
 from .models import Exumacao, Translado, Sepultado, Receita  # etc.
 from django.db.models import Q
+from django.core.exceptions import ValidationError
+from django.contrib import messages
+from django.contrib import admin, messages
+from .models import Exumacao, Receita
+
 
 
 @admin.register(Exumacao)
@@ -659,6 +664,9 @@ class ExumacaoAdmin(admin.ModelAdmin):
         }),
     )
 
+  
+
+
     def get_queryset(self, request):
         qs = super().get_queryset(request)
         prefeitura_id = request.session.get("prefeitura_ativa_id")
@@ -673,7 +681,7 @@ class ExumacaoAdmin(admin.ModelAdmin):
     valor_formatado.short_description = "Valor"
 
     def status_receita(self, obj):
-        receitas = getattr(obj, 'receita_set', None)
+        receitas = obj.receitas.all()
         if not receitas:
             return "-"
         status = list(receitas.values_list('status', flat=True))

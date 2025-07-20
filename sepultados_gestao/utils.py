@@ -30,11 +30,17 @@ def gerar_numero_sequencial_global(prefeitura):
     return f"{proximo}/{ano}"
 
 
-def gerar_receitas_para_servico(servico, descricao, forma_pagamento, valor_total, parcelas=1, nome=None, cpf=None, numero_documento=None):
-    from .models import Receita
+from datetime import date
+from decimal import Decimal
+from dateutil.relativedelta import relativedelta
 
+
+def gerar_receitas_para_servico(servico, descricao, forma_pagamento, valor_total, parcelas=1, nome=None, cpf=None, numero_documento=None):
     if not numero_documento:
         raise ValueError("O número do documento deve ser fornecido (contrato, exumação, etc).")
+
+    # IMPORTAÇÕES MOVIDAS PARA DENTRO DA FUNÇÃO ↓↓↓↓↓
+    from .models import Receita, Exumacao, Translado, ConcessaoContrato, Sepultado
 
     dados_comuns = {
         "descricao": descricao,
@@ -42,13 +48,25 @@ def gerar_receitas_para_servico(servico, descricao, forma_pagamento, valor_total
         "nome": nome,
         "cpf": cpf,
         "numero_documento": numero_documento,
+        "valor_pago": Decimal("0.00"),
+        "desconto": Decimal("0.00"),
     }
+
+    if isinstance(servico, Exumacao):
+        dados_comuns["exumacao"] = servico
+    elif isinstance(servico, Translado):
+        dados_comuns["translado"] = servico
+    elif isinstance(servico, ConcessaoContrato):
+        dados_comuns["contrato"] = servico
+    elif isinstance(servico, Sepultado):
+        dados_comuns["sepultado"] = servico
+    else:
+        raise ValueError("Tipo de serviço não suportado.")
 
     if forma_pagamento == 'gratuito':
         Receita.objects.create(
             **dados_comuns,
             valor_total=Decimal("0.00"),
-            valor_pago=Decimal("0.00"),
             valor_em_aberto=Decimal("0.00"),
             status='pago',
             data_vencimento=date.today()
@@ -58,7 +76,6 @@ def gerar_receitas_para_servico(servico, descricao, forma_pagamento, valor_total
         Receita.objects.create(
             **dados_comuns,
             valor_total=valor_total,
-            valor_pago=Decimal("0.00"),
             valor_em_aberto=valor_total,
             status='aberto',
             data_vencimento=date.today()
@@ -77,12 +94,10 @@ def gerar_receitas_para_servico(servico, descricao, forma_pagamento, valor_total
             Receita.objects.create(
                 **dados_comuns,
                 valor_total=valor_final,
-                valor_pago=Decimal("0.00"),
                 valor_em_aberto=valor_final,
                 status='aberto',
                 data_vencimento=date.today() + relativedelta(months=i)
             )
-
 
 def obter_prefeitura_ativa_do_request(request):
     from .models import Prefeitura

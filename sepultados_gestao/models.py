@@ -452,6 +452,7 @@ class Sepultado(models.Model):
                 numero_documento=self.numero_sepultamento
             )
 
+
         # Atualiza o status do túmulo
         if self.tumulo:
             self.tumulo.status = self.tumulo.calcular_status_dinamico()
@@ -776,7 +777,7 @@ class Exumacao(models.Model):
             self.sepultado.data_exumacao = self.data
             self.sepultado.save()
 
-   
+      
     def __str__(self):
         return f"Exumação de {self.sepultado.nome}"
 
@@ -967,16 +968,25 @@ class Receita(models.Model):
         null=True,
         blank=True
     )
-    contrato = models.ForeignKey(
-        'ConcessaoContrato',
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
+    
+    prefeitura = models.ForeignKey(
+        'Prefeitura',
+        on_delete=models.CASCADE,
         editable=False
     )
+    
+    contrato = models.ForeignKey(
+        'ConcessaoContrato',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        verbose_name="Contrato",
+        related_name='receitas'
+    )
+
     exumacao = models.ForeignKey(
         'Exumacao',
-        on_delete=models.SET_NULL,
+        on_delete=models.PROTECT,
         null=True,
         blank=True,
         verbose_name="Exumação",
@@ -985,16 +995,20 @@ class Receita(models.Model):
 
     translado = models.ForeignKey(
         'Translado',
-        on_delete=models.SET_NULL,
+        on_delete=models.PROTECT,
         null=True,
         blank=True,
         verbose_name="Translado",
         related_name='receitas'
     )
-    prefeitura = models.ForeignKey(
-        'Prefeitura',
-        on_delete=models.CASCADE,
-        editable=False
+
+    sepultado = models.ForeignKey(
+        'Sepultado',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        verbose_name="Sepultado",
+        related_name='receitas'
     )
 
     nome = models.CharField(

@@ -615,10 +615,11 @@ class ExumacaoForm(forms.ModelForm):
         cleaned_data = super().clean()
         sepultado = cleaned_data.get('sepultado')
         data_exumacao = cleaned_data.get('data')
+        tumulo_informado = cleaned_data.get('tumulo')
 
         if not sepultado or not data_exumacao:
             return
-
+        
         sepultamento_data = sepultado.data_sepultamento
         if sepultamento_data and sepultado.tumulo:
             cemit = sepultado.tumulo.quadra.cemiterio
@@ -629,9 +630,14 @@ class ExumacaoForm(forms.ModelForm):
                     f"É necessário aguardar no mínimo {minimo_meses} meses após o sepultamento para realizar a exumação."
                 )
 
-        # Preenche o campo 'tumulo' automaticamente com base no sepultado
-        if not cleaned_data.get('tumulo') and sepultado.tumulo:
+        # 🚫 Garante que o túmulo informado no formulário seja o mesmo do sepultado
+        if tumulo_informado and sepultado.tumulo and tumulo_informado != sepultado.tumulo:
+            raise ValidationError("O túmulo selecionado não corresponde ao túmulo do sepultado.")
+
+        # ✅ Preenche o campo 'tumulo' automaticamente se estiver em branco
+        if not tumulo_informado and sepultado.tumulo:
             self.cleaned_data['tumulo'] = sepultado.tumulo
+
 
 class TransladoForm(forms.ModelForm):
     class Meta:
