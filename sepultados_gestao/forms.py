@@ -714,29 +714,25 @@ class TransladoForm(forms.ModelForm):
         request = kwargs.pop('request', None)
         super().__init__(*args, **kwargs)
 
-        # Reordena os campos
-        ordem = [
-            'numero_documento', 'data', 'sepultado', 'motivo', 'observacoes',
-            'destino', 'tumulo_destino', 'cemiterio_nome', 'cemiterio_endereco',
-            'forma_pagamento', 'quantidade_parcelas',
-            'valor', 'nome_responsavel', 'cpf', 'endereco', 'telefone'
-        ]
-        self.order_fields(ordem)
-
         self.fields['tumulo_destino'].widget.attrs.update({
             'class': 'admin-autocomplete',
             'data-autocomplete-light-function': 'select2',
             'style': 'width: 400px;',
         })
 
+        # Corrige o erro de "escolha não disponível"
         if self.instance and self.instance.tumulo_destino:
-            # Se já há um túmulo definido, garante que ele esteja no queryset para evitar erro de validação
             self.fields['tumulo_destino'].queryset = Tumulo.objects.filter(pk=self.instance.tumulo_destino.pk)
+        elif 'tumulo_destino' in self.data:
+            try:
+                pk = int(self.data.get('tumulo_destino'))
+                self.fields['tumulo_destino'].queryset = Tumulo.objects.filter(pk=pk)
+            except (ValueError, TypeError):
+                self.fields['tumulo_destino'].queryset = Tumulo.objects.none()
         elif request and hasattr(request, 'cemiterio_ativo'):
             self.fields['tumulo_destino'].queryset = Tumulo.objects.filter(quadra__cemiterio=request.cemiterio_ativo)
         else:
             self.fields['tumulo_destino'].queryset = Tumulo.objects.none()
-
 
     def clean_valor(self):
         valor_str = self.cleaned_data.get('valor')
@@ -756,3 +752,19 @@ class TransladoForm(forms.ModelForm):
             raise ValidationError("Informe um valor maior que zero para traslados pagos.")
 
         return round(valor, 2)
+
+    def clean(self):
+        cleaned_data = super().clean()
+        destino = cleaned_data.get("destino")
+        tumulo_destino = cleaned_data.get("tumulo_destino")
+
+        if destino == "outro_tumulo":
+            if not tumulo_destino:
+                raise ValidationError("Você deve selecionar um túmulo de destino.")
+            
+            if not hasattr(tumulo_destino, 'concessaocontrato'):
+                raise ValidationError({
+                    'tumulo_destino': "Este túmulo não possui contrato de concessão. O sepultamento não é permitido."
+                })
+
+        return cleaned_data
