@@ -716,6 +716,11 @@ class Exumacao(models.Model):
 
     def clean(self):
         super().clean()
+
+        sepultado = getattr(self, 'sepultado', None)
+        if not sepultado:
+            return
+
         if self.sepultado and self.sepultado.exumado and not self.pk:
             raise ValidationError("Este sepultado já foi exumado. Não é possível registrar outra exumação.")
         sepultado = getattr(self, 'sepultado', None)
@@ -743,7 +748,9 @@ class Exumacao(models.Model):
     def save(self, *args, **kwargs):
         criando = self.pk is None
 
-        # SEMPRE força prefeitura com base no sepultado
+        if not self.sepultado:
+            raise ValidationError("O campo 'Sepultado' é obrigatório.")
+# SEMPRE força prefeitura com base no sepultado
         if self.sepultado and self.sepultado.tumulo:
             self.prefeitura = self.sepultado.tumulo.quadra.cemiterio.prefeitura
         elif not self.prefeitura:
@@ -757,10 +764,11 @@ class Exumacao(models.Model):
 
         # Geração da receita e atualização do sepultado
         if criando:
-            if self.forma_pagamento == 'gratuito' and self.valor > 0:
+            if self.forma_pagamento == 'gratuito' and (self.valor or 0) > 0:
                 raise ValidationError("Exumação gratuita deve ter valor R$ 0,00.")
-            if self.forma_pagamento != 'gratuito' and self.valor <= 0:
+            if self.forma_pagamento != 'gratuito' and (not self.valor or self.valor <= 0):
                 raise ValidationError("Informe um valor válido para exumação paga.")
+
 
             gerar_receitas_para_servico(
                 servico=self,
@@ -779,11 +787,16 @@ class Exumacao(models.Model):
 
       
     def __str__(self):
-        return f"Exumação de {self.sepultado.nome}"
+        return f"Exumação de {self.sepultado.nome}" if self.sepultado_id else "Exumação"
 
     class Meta:
         verbose_name = "Exumação"
         verbose_name_plural = "Exumações"
+
+from django.db import models
+from django.utils import timezone
+from django.core.exceptions import ValidationError
+from decimal import Decimal
 
 class Translado(models.Model):
     sepultado = models.ForeignKey("Sepultado", on_delete=models.PROTECT)
@@ -798,8 +811,9 @@ class Translado(models.Model):
     ]
     destino = models.CharField(max_length=20, choices=DESTINOS)
     tumulo_destino = models.ForeignKey("Tumulo", on_delete=models.SET_NULL, null=True, blank=True)
+    cemiterio_nome = models.CharField("Cemitério", max_length=255, blank=True, null=True)
+    cemiterio_endereco = models.CharField("Endereço do Cemitério", max_length=255, blank=True, null=True)
 
-    # Dados do responsável pela solicitação
     nome_responsavel = models.CharField("Nome", max_length=255, blank=True, null=True)
     cpf = models.CharField("CPF", max_length=18, blank=True, null=True)
     endereco = models.CharField("Endereço", max_length=255, blank=True, null=True)
@@ -811,14 +825,26 @@ class Translado(models.Model):
         default='gratuito',
         verbose_name="Forma de Pagamento"
     )
-    quantidade_parcelas = models.PositiveIntegerField(
-        verbose_name="Quantidade de Parcelas",
-        null=True,
-        blank=True
-    )
+    quantidade_parcelas = models.PositiveIntegerField("Quantidade de Parcelas", null=True, blank=True)
     valor = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Valor", default=0.00)
 
     numero_documento = models.CharField(max_length=20, blank=True, editable=False)
+
+    def clean(self):
+        super().clean()
+
+        if not self.sepultado:
+            raise ValidationError("O campo Sepultado é obrigatório.")
+
+        if not self.sepultado.exumado:
+            raise ValidationError("Só é possível realizar o translado de sepultados que já foram exumados.")
+
+        translados_existentes = Translado.objects.filter(sepultado=self.sepultado)
+        if self.pk:
+            translados_existentes = translados_existentes.exclude(pk=self.pk)
+
+        if translados_existentes.exists():
+            raise ValidationError("Este sepultado já foi trasladado anteriormente. Não é possível duplicar.")
 
     def save(self, *args, **kwargs):
         from .utils import gerar_receitas_para_servico, gerar_numero_sequencial_global
@@ -845,19 +871,22 @@ class Translado(models.Model):
                 numero_documento=self.numero_documento
             )
 
-            # Atualiza o sepultado como trasladado
+            # Marca o sepultado como trasladado
             self.sepultado.trasladado = True
             self.sepultado.data_translado = self.data
-            self.sepultado.save()
 
-            # Se for para outro túmulo, atualiza o campo
+            # Se for para outro túmulo, transfere
             if self.destino == 'outro_tumulo' and self.tumulo_destino:
                 self.sepultado.tumulo = self.tumulo_destino
-                self.sepultado.save()
+
+            self.sepultado.save()
 
     @property
     def prefeitura(self):
-        return self.sepultado.tumulo.quadra.cemiterio.prefeitura
+        try:
+            return self.sepultado.tumulo.quadra.cemiterio.prefeitura
+        except:
+            return None  # evita erro caso o túmulo original tenha sido apagado
 
     def __str__(self):
         return f"Translado de {self.sepultado.nome}"
@@ -865,6 +894,9 @@ class Translado(models.Model):
     class Meta:
         verbose_name = "Translado"
         verbose_name_plural = "Traslados"
+
+
+
 
 class Plano(models.Model):
     nome = models.CharField(max_length=50, unique=True)

@@ -148,35 +148,36 @@ def obter_tumulo_origem(request):
 
 from django.contrib.admin.views.decorators import staff_member_required
 from django.shortcuts import get_object_or_404
-from django.template.loader import render_to_string
 from django.http import HttpResponse
+from django.template.loader import render_to_string
 from weasyprint import HTML
 import os
 from django.conf import settings
+from .models import Exumacao
 
 @staff_member_required
 def pdf_exumacao(request, pk):
-    movimentacao = get_object_or_404(
-        MovimentacaoSepultado.objects.select_related(
-            'tumulo_origem__quadra__cemiterio'
+    exumacao = get_object_or_404(
+        Exumacao.objects.select_related(
+            'tumulo__quadra__cemiterio'
         ),
-        pk=pk,
-        tipo="EXUMACAO"
+        pk=pk
     )
 
-    prefeitura = movimentacao.tumulo_origem.quadra.cemiterio.prefeitura
+    prefeitura = exumacao.tumulo.quadra.cemiterio.prefeitura
     brasao_path = ''
     if prefeitura and prefeitura.brasao:
         brasao_absoluto = os.path.join(settings.MEDIA_ROOT, prefeitura.brasao.name)
         brasao_path = f"file:///{brasao_absoluto.replace(os.sep, '/')}"
 
     html = render_to_string("pdf/exumacao.html", {
-        "movimentacao": movimentacao,
+        "exumacao": exumacao,
         "brasao_path": brasao_path,
     })
 
     pdf = HTML(string=html).write_pdf()
     return HttpResponse(pdf, content_type='application/pdf')
+
 
 
 @staff_member_required

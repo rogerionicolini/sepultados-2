@@ -5,7 +5,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const linhaParcelas = parcelasInput ? parcelasInput.closest('div.form-row, tr, div') : null;
 
     function toggleParcelas() {
-        if (forma && forma.value && forma.value.toLowerCase() === 'parcelado') {
+        if (forma && forma.value.toLowerCase() === 'parcelado') {
             if (linhaParcelas) linhaParcelas.style.display = '';
             if (parcelasInput) parcelasInput.style.display = '';
         } else {
@@ -61,5 +61,45 @@ document.addEventListener('DOMContentLoaded', function () {
 
         valorField.addEventListener('input', aplicarMascaraMoeda);
         valorField.value = formatarMoeda(valorField.value); // Aplica ao carregar
+    }
+
+    // === Exibir/ocultar tumulo_destino e campos de cemitério externo ===
+    const campoDestino = document.getElementById('id_destino');
+    const campoTumuloDestinoWrapper = document.getElementById('id_tumulo_destino')?.closest('.form-row');
+    const campoNomeCemiterio = document.getElementById('id_cemiterio_nome')?.closest('.form-row');
+    const campoEnderecoCemiterio = document.getElementById('id_cemiterio_endereco')?.closest('.form-row');
+
+    function atualizarCamposDestino() {
+        if (!campoDestino) return;
+
+        const valor = campoDestino.value;
+
+        // Tumulo destino: só mostra se destino for outro_tumulo ou ossario
+        if (campoTumuloDestinoWrapper) {
+            if (valor === 'outro_tumulo' || valor === 'ossario') {
+                campoTumuloDestinoWrapper.style.display = '';
+            } else {
+                campoTumuloDestinoWrapper.style.display = 'none';
+                document.getElementById('id_tumulo_destino').value = '';
+            }
+        }
+
+        // Campos de cemitério externo: só mostra se destino for outro_cemiterio
+        if (campoNomeCemiterio && campoEnderecoCemiterio) {
+            if (valor === 'outro_cemiterio') {
+                campoNomeCemiterio.style.display = '';
+                campoEnderecoCemiterio.style.display = '';
+            } else {
+                campoNomeCemiterio.style.display = 'none';
+                campoEnderecoCemiterio.style.display = 'none';
+                document.getElementById('id_cemiterio_nome').value = '';
+                document.getElementById('id_cemiterio_endereco').value = '';
+            }
+        }
+    }
+
+    if (campoDestino) {
+        campoDestino.addEventListener('change', atualizarCamposDestino);
+        atualizarCamposDestino();
     }
 });

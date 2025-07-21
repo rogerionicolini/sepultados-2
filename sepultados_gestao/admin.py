@@ -621,6 +621,7 @@ class ConcessaoContratoAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
         return format_html('<a href="{}" target="_blank">📄 PDF</a>', url)
     link_pdf.short_description = "Contrato"
 
+
     class Media:
         js = ('custom_admin/js/contrato.js',)
 
@@ -636,17 +637,19 @@ from django.core.exceptions import ValidationError
 from django.contrib import messages
 from django.contrib import admin, messages
 from .models import Exumacao, Receita
+from django.urls import reverse
 
 
 
 @admin.register(Exumacao)
 class ExumacaoAdmin(admin.ModelAdmin):
     form = ExumacaoForm
+    inlines = [AnexoInline]
     autocomplete_fields = ['sepultado', 'tumulo']
     readonly_fields = ['numero_documento']
     list_display = [
         'numero_documento', 'data', 'get_nome_sepultado',
-        'valor_formatado', 'forma_pagamento', 'status_receita'
+        'valor_formatado', 'forma_pagamento', 'status_receita', 'link_pdf'
     ]
     list_filter = ['forma_pagamento']
     search_fields = ['sepultado__nome', 'numero_documento', 'nome_responsavel', 'cpf']
@@ -706,13 +709,19 @@ class ExumacaoAdmin(admin.ModelAdmin):
 
         return FormComRequest
 
+    def link_pdf(self, obj):
+        url = reverse('sepultados_gestao:pdf_exumacao', args=[obj.pk])
+        return format_html('<a href="{}" target="_blank">📄 PDF</a>', url)
+    link_pdf.short_description = "Guia PDF"
+
 
     class Media:
         js = ('custom_admin/js/formulario_exumacao_translado.js',)
 
 @admin.register(Translado)
-class TransladoAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
+class TransladoAdmin(admin.ModelAdmin):
     form = TransladoForm
+    inlines = [AnexoInline]
     search_fields = ['sepultado__nome']
     autocomplete_fields = ['sepultado', 'tumulo_destino']
     readonly_fields = ['numero_documento']
@@ -720,10 +729,14 @@ class TransladoAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
     list_filter = ['destino']
     fieldsets = (
         (None, {
-            'fields': ('numero_documento', 'sepultado', 'data')
+            'fields': ('numero_documento', 'data', 'sepultado')
         }),
         ("Detalhes", {
-            'fields': ('motivo', 'observacoes', 'destino', 'tumulo_destino')
+            'fields': (
+                'motivo', 'observacoes',
+                'destino', 'tumulo_destino',
+                'cemiterio_nome', 'cemiterio_endereco',
+            )
         }),
         ("Pagamento", {
             'fields': ('forma_pagamento', 'quantidade_parcelas', 'valor')
@@ -732,6 +745,7 @@ class TransladoAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
             'fields': ('nome_responsavel', 'cpf', 'endereco', 'telefone')
         }),
     )
+
 
 
 
