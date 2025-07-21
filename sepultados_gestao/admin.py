@@ -210,22 +210,22 @@ from django.utils.safestring import mark_safe
 from django.utils.html import format_html
 from datetime import date
 from dateutil.relativedelta import relativedelta
-from .models import Tumulo
+from django.urls import reverse
+
+from .models import Tumulo, ConcessaoContrato, Translado
 from .forms import TumuloForm
 from .mixins import PrefeituraObrigatoriaAdminMixin
-from django.urls import reverse
 
 @admin.register(Tumulo)
 class TumuloAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
-    search_fields = ['identificacao', 'quadra__nome']
     form = TumuloForm
     autocomplete_fields = ['quadra']
+    search_fields = ['identificacao', 'quadra__nome']
     list_display = (
         "tipo_estrutura", "identificador", "quadra",
         "status_com_cor", "usar_linha", "linha", "reservado", "link_pdf"
     )
     list_filter = ("status", "quadra", "usar_linha", "reservado")
-    search_fields = ("identificador", "linha", "quadra__numero", "quadra__cemiterio__nome")
     readonly_fields = ("status", "painel_sepultados")
     fields = (
         "tipo_estrutura", "identificador", "capacidade", "quadra",
@@ -235,10 +235,8 @@ class TumuloAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
     def link_pdf(self, obj):
         url = reverse('sepultados_gestao:gerar_pdf_sepultados_tumulo', args=[obj.pk])
         return format_html('<a href="{}" target="_blank">📄 PDF</a>', url)
-
     link_pdf.short_description = "Lista de Sepultados (PDF)"
 
-    
     def get_queryset(self, request):
         qs = super().get_queryset(request)
         if not request.cemiterio_ativo:
@@ -270,18 +268,11 @@ class TumuloAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
                 kwargs2['request'] = request
                 super().__init__(*args, **kwargs2)
         return FormComRequest
-    
-    
-    from django.utils.safestring import mark_safe
-    from datetime import date
-    from dateutil.relativedelta import relativedelta
-    from .models import ConcessaoContrato
 
     def painel_sepultados(self, obj):
         if not obj:
             return ""
 
-        # Verifica contrato de concessão
         contrato = ConcessaoContrato.objects.filter(tumulo=obj).first()
         if contrato:
             contrato_html = f"""
@@ -299,8 +290,11 @@ class TumuloAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
                 <strong style='color: #996600;'>Atenção:</strong> Este túmulo não possui contrato de concessão registrado.
             </div>
             """
+
         sepultados = obj.sepultado_set.all().order_by('-data_sepultamento')
-        if not sepultados.exists():
+        translados = Translado.objects.filter(tumulo_destino=obj).select_related('sepultado').order_by('-data')
+
+        if not sepultados.exists() and not translados.exists():
             return mark_safe(f"""
                 {contrato_html}
                 <div style='margin-top: 20px; background: #eafbe4; padding: 20px 25px; border-radius: 12px;
@@ -312,6 +306,8 @@ class TumuloAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
 
         tempo_minimo_meses = obj.quadra.cemiterio.tempo_minimo_exumacao or 0
         linhas = ""
+
+        # Sepultados diretamente ligados ao túmulo
         for s in sepultados:
             status = "Sepultado"
             if s.trasladado:
@@ -333,6 +329,22 @@ class TumuloAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
             <tr>
                 <td style='padding: 6px 10px; border-bottom: 1px solid #c3d9af;'>{s.nome}</td>
                 <td style='padding: 6px 10px; border-bottom: 1px solid #c3d9af;'>{s.data_sepultamento.strftime('%d/%m/%Y') if s.data_sepultamento else '-'}</td>
+                <td style='padding: 6px 10px; border-bottom: 1px solid #c3d9af;'>{status}</td>
+                <td style='padding: 6px 10px; border-bottom: 1px solid #c3d9af;'>{exumacao_info}</td>
+            </tr>
+            """
+
+        # Sepultados trasladados para este túmulo
+        for t in translados:
+            s = t.sepultado
+            status = "Exumado (Traslado)"
+            data_sep = t.data.strftime('%d/%m/%Y')
+            exumacao_info = f"<span style='color: #003366;'>Transferido em {data_sep}</span>"
+
+            linhas += f"""
+            <tr>
+                <td style='padding: 6px 10px; border-bottom: 1px solid #c3d9af;'>{s.nome}</td>
+                <td style='padding: 6px 10px; border-bottom: 1px solid #c3d9af;'>{data_sep}</td>
                 <td style='padding: 6px 10px; border-bottom: 1px solid #c3d9af;'>{status}</td>
                 <td style='padding: 6px 10px; border-bottom: 1px solid #c3d9af;'>{exumacao_info}</td>
             </tr>
@@ -718,6 +730,11 @@ class ExumacaoAdmin(admin.ModelAdmin):
     class Media:
         js = ('custom_admin/js/formulario_exumacao_translado.js',)
 
+# certo
+from sepultados_gestao.utils import obter_prefeitura_ativa_do_request
+
+
+
 @admin.register(Translado)
 class TransladoAdmin(admin.ModelAdmin):
     form = TransladoForm
@@ -725,7 +742,7 @@ class TransladoAdmin(admin.ModelAdmin):
     search_fields = ['sepultado__nome']
     autocomplete_fields = ['sepultado', 'tumulo_destino']
     readonly_fields = ['numero_documento']
-    list_display = ['numero_documento', 'data', 'sepultado', 'destino', 'valor', 'forma_pagamento']
+    list_display = ['numero_documento', 'data', 'sepultado', 'destino', 'valor', 'forma_pagamento', 'link_pdf']
     list_filter = ['destino']
     fieldsets = (
         (None, {
@@ -745,6 +762,20 @@ class TransladoAdmin(admin.ModelAdmin):
             'fields': ('nome_responsavel', 'cpf', 'endereco', 'telefone')
         }),
     )
+
+    def get_queryset(self, request):
+        qs = super().get_queryset(request)
+        pref = obter_prefeitura_ativa_do_request(request)
+        if pref:
+            return qs.filter(sepultado__tumulo__quadra__cemiterio__prefeitura=pref)
+        return qs.none()
+
+    def link_pdf(self, obj):
+        url = reverse('sepultados_gestao:pdf_translado', args=[obj.pk])
+        return format_html('<a href="{}" target="_blank">📄 PDF</a>', url)
+    link_pdf.short_description = "Guia PDF"
+
+
 
 
 

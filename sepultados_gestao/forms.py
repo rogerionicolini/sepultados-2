@@ -758,13 +758,14 @@ class TransladoForm(forms.ModelForm):
         destino = cleaned_data.get("destino")
         tumulo_destino = cleaned_data.get("tumulo_destino")
 
+        from .models import ConcessaoContrato
+
         if destino == "outro_tumulo":
             if not tumulo_destino:
                 raise ValidationError("Você deve selecionar um túmulo de destino.")
-            
-            if not hasattr(tumulo_destino, 'concessaocontrato'):
-                raise ValidationError({
-                    'tumulo_destino': "Este túmulo não possui contrato de concessão. O sepultamento não é permitido."
-                })
 
-        return cleaned_data
+            contrato_existe = ConcessaoContrato.objects.filter(tumulo=tumulo_destino).exists()
+            if not contrato_existe:
+                raise ValidationError({
+                    'tumulo_destino': "Este túmulo não possui contrato de concessão. A transferência não é permitida."
+                })

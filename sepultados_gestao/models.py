@@ -831,7 +831,6 @@ class Translado(models.Model):
     numero_documento = models.CharField(max_length=20, blank=True, editable=False)
 
     def clean(self):
-        from .models import ConcessaoContrato
         super().clean()
 
         if not self.sepultado:
@@ -847,18 +846,23 @@ class Translado(models.Model):
         if translados_existentes.exists():
             raise ValidationError("Este sepultado já foi trasladado anteriormente. Não é possível duplicar.")
 
-        if self.destino == 'outro_tumulo' and self.tumulo_destino:
-            if self.tumulo_destino.quadra.cemiterio.tipo != 'ossario':
-                contrato_existe = ConcessaoContrato.objects.filter(tumulo=self.tumulo_destino).exists()
-                if not contrato_existe:
-                    raise ValidationError({
-                        'tumulo_destino': "Este túmulo não possui contrato de concessão. A transferência não é permitida."
-                    })
+
 
     def save(self, *args, **kwargs):
         from .utils import gerar_receitas_para_servico, gerar_numero_sequencial_global
+        from .models import ConcessaoContrato
 
         criando = self.pk is None
+
+        self.full_clean()
+
+        # ⚠️ Aqui agora o self.tumulo_destino está resolvido corretamente como instância
+        if self.destino == 'outro_tumulo' and self.tumulo_destino:
+            contrato_existe = ConcessaoContrato.objects.filter(tumulo=self.tumulo_destino).exists()
+            if not contrato_existe:
+                raise ValidationError({
+                    'tumulo_destino': "Este túmulo não possui contrato de concessão. A transferência não é permitida."
+                })
 
         if criando and not self.numero_documento:
             self.numero_documento = gerar_numero_sequencial_global(self.prefeitura)
@@ -883,17 +887,13 @@ class Translado(models.Model):
             sep = self.sepultado
             sep.trasladado = True
             sep.data_translado = self.data
+            sep.save(update_fields=['trasladado', 'data_translado'])
 
-            if self.destino == 'outro_tumulo' and self.tumulo_destino:
-                from .models import ConcessaoContrato
-                if self.tumulo_destino and not self.tumulo_destino.contrato_concessao:
-                    raise ValidationError({
-                        'tumulo_destino': "Este túmulo não possui contrato de concessão. A transferência não é permitida."
-                    })
-
-
-
-
+        if self.destino == 'outro_tumulo' and self.tumulo_destino:
+            sep.exumado = True  # mantém exumado = True após translado
+            sep.save(update_fields=['trasladado', 'data_translado', 'tumulo', 'exumado'])
+        else:
+            sep.save(update_fields=['trasladado', 'data_translado'])
 
 
     @property
@@ -901,7 +901,7 @@ class Translado(models.Model):
         try:
             return self.sepultado.tumulo.quadra.cemiterio.prefeitura
         except:
-            return None  # evita erro caso o túmulo original tenha sido apagado
+            return None
 
     def __str__(self):
         return f"Translado de {self.sepultado.nome}"
