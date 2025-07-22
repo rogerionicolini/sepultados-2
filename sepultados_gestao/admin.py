@@ -1046,8 +1046,11 @@ class CustomAdminSite(AdminSite):
                 elif model["object_name"] in modelos_gestao and prefeitura_ativa_id:
                     if model["object_name"] in modelos_com_prefeitura_apenas:
                         grupo_gestao["models"].append(model)
+                    elif model["object_name"] == "RegistroAuditoria":
+                        grupo_gestao["models"].append(model)
                     elif cemiterio_ativo_id:
                         grupo_gestao["models"].append(model)
+
 
 
         resultado = []
