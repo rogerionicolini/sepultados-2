@@ -359,28 +359,8 @@ def importar_quadras(request):
         messages.success(request, f"{total} quadra(s) importada(s) com sucesso.")
 
     return render(request, "admin/importar_base.html", {
-        "title": "Importar Quadras",
-        "form_content": """
-            <form method="post" enctype="multipart/form-data">
-                {% csrf_token %}
-                <label for='id_arquivo'>
-                    <strong>Selecionar Arquivo CSV XLS XLSX(.csv, .xls, .xlsx):</strong>
-                </label>
-                <p>
-                    <input type="file" name="arquivo" id="id_arquivo" accept=".csv,.xls,.xlsx" required onchange="mostrarNomeArquivo(this)">
-                    <br>
-                    <small style="color:#444;">Formatos aceitos: .csv, .xls, .xlsx</small>
-                </p>
-                <p><span id="nome-arquivo" style="margin-top:5px;color:#064e08;font-weight:bold;"></span></p>
-                <button type="submit" class="default">Importar</button>
-            </form>
-            <script>
-                function mostrarNomeArquivo(input) {
-                    var nome = input.files.length > 0 ? input.files[0].name : "";
-                    document.getElementById("nome-arquivo").innerText = nome;
-                }
-            </script>
-        """
+        "titulo_pagina": "Importar Quadras",
+        "link_planilha": "/media/planilhas/Planilha de Quadras.xlsx"
     })
 
 
@@ -478,9 +458,10 @@ def importar_tumulos(request):
         messages.success(request, f"{total} túmulo(s) importado(s) com sucesso.")
 
     return render(request, "admin/importar_base.html", {
-        "title": "Importar Túmulos",
-        "long_content": "",
+        "titulo_pagina": "Importar Túmulos",
+        "link_planilha": "/media/planilhas/Planilha de Tumulos.xlsx"
     })
+
 
 
 from django.contrib import messages
@@ -532,8 +513,6 @@ def importar_sepultados(request):
                         tumulo=tumulo,
                     )
                     sep.save(ignorar_validacao_contrato=True)
-
-
                     total += 1
 
                 except Exception as e:
@@ -548,27 +527,10 @@ def importar_sepultados(request):
         except Exception as e:
             messages.error(request, f"Erro ao processar a planilha: {str(e)}")
 
+    # Esse render está fora do if POST: será usado tanto no GET quanto após o POST
     return render(request, "admin/importar_base.html", {
         "title": "Importar Sepultados",
-        "form_content": """
-            <form method="post" enctype="multipart/form-data">
-                {% csrf_token %}
-                <label for='id_arquivo'>
-                    <strong>Selecionar Arquivo CSV XLS XLSX (.csv, .xls, .xlsx):</strong>
-                </label>
-                <p>
-                    <input type="file" name="arquivo" id="id_arquivo" accept=".csv,.xls,.xlsx" required onchange="mostrarNomeArquivo(this)">
-                    <br>
-                    <small style="color:#444;">Formatos aceitos: .csv, .xls, .xlsx</small>
-                </p>
-                <p><span id="nome-arquivo" style="margin-top:5px;color:#064e08;font-weight:bold;"></span></p>
-                <button type="submit" class="default">Importar</button>
-            </form>
-            <script>
-                function mostrarNomeArquivo(input) {
-                    var nome = input.files.length > 0 ? input.files[0].name : "";
-                    document.getElementById("nome-arquivo").innerText = nome;
-                }
-            </script>
-        """
+        "titulo_pagina": "Importar Sepultados",
+        "mostrar_formulario": True,
+        "link_planilha": "/media/planilhas/Planilha de Sepultados.xlsx"
     })

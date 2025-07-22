@@ -1,39 +1,63 @@
 {% extends "admin/base_site.html" %}
-{% block title %}{{ title }}{% endblock %}
+{% block title %}{{ titulo_pagina }}{% endblock %}
 
 {% block content %}
-  <div class="content">
-    <h1 style="margin-bottom: 20px;">{{ titulo_pagina }}</h1>
+<div class="content" style="max-width: 600px; margin-top: 30px;">
 
-    {% if messages %}
-      <ul class="messagelist">
-        {% for message in messages %}
-          <li{% if message.tags %} class="{{ message.tags }}"{% endif %}>{{ message }}</li>
-        {% endfor %}
-      </ul>
-    {% endif %}
+  <style>
+    .import-link {
+      display: inline-block;
+      margin-bottom: 20px;
+      font-weight: bold;
+      color: #064e08;
+      font-size: 15px;
+    }
 
-    <div class="module">
-      <form method="post" enctype="multipart/form-data" class="form-row">
-        {% csrf_token %}
-        <fieldset class="module aligned">
-          <div class="form-row">
-            <label for="id_arquivo"><strong>Selecionar Arquivo: CSV XLS XLSX</strong></label>
-            <input type="file" name="arquivo" id="id_arquivo" accept=".csv,.xls,.xlsx" required onchange="mostrarNomeArquivo(this)">
-            <p id="nome-arquivo" style="margin-top:5px;color:#006400;font-weight:bold;"></p>
-          </div>
-        </fieldset>
-        <div class="submit-row">
-          <input type="submit" value="Importar" class="default">
-        </div>
-      </form>
+    .info-formatos {
+      color: #444;
+      font-size: 13px;
+      margin-top: 5px;
+      margin-bottom: 20px;
+    }
+
+    #nome-arquivo {
+      margin-top: 5px;
+      color: #064e08;
+      font-weight: bold;
+      font-size: 14px;
+    }
+
+    form {
+      margin-top: 20px;
+    }
+
+    .form-group {
+      margin-bottom: 20px;
+    }
+  </style>
+
+  <a href="{{ link_planilha }}" download class="import-link">
+    📄 Baixar modelo de planilha (.xlsx)
+  </a>
+
+  <form method="post" enctype="multipart/form-data">
+    {% csrf_token %}
+
+    <div class="form-group">
+      <label for="id_arquivo"><strong>Selecionar Arquivo:</strong></label><br>
+      <input type="file" name="arquivo" id="id_arquivo" accept=".csv,.xls,.xlsx" required onchange="mostrarNomeArquivo(this)">
+      <div id="nome-arquivo"></div>
+      <div class="info-formatos">Formatos aceitos: .csv, .xls, .xlsx</div>
     </div>
-  </div>
+
+    <button type="submit" class="button default">Importar</button>
+  </form>
 
   <script>
     function mostrarNomeArquivo(input) {
-      const nome = input.files.length ? input.files[0].name : "";
-      document.getElementById('nome-arquivo').innerText = nome;
+      var nome = input.files.length > 0 ? input.files[0].name : "";
+      document.getElementById("nome-arquivo").innerText = nome;
     }
   </script>
+</div>
 {% endblock %}
