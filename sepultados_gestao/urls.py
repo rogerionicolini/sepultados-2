@@ -1,5 +1,8 @@
 from django.urls import path
 from . import views
+from sepultados_gestao import views
+
+
 
 app_name = 'sepultados_gestao'
 
@@ -19,4 +22,7 @@ urlpatterns = [
     path("translado/<int:pk>/guia/", views.pdf_translado, name="pdf_translado"),
     path('sepultado/<int:pk>/guia_sepultamento/', views.gerar_guia_sepultamento_pdf, name='gerar_guia_sepultamento_pdf'),
     path('tumulo/<int:pk>/pdf_sepultados/', views.gerar_pdf_sepultados_tumulo, name='gerar_pdf_sepultados_tumulo'),
+    path("importar/quadras/", views.importar_quadras, name="importar_quadras"),
+    path("importar/tumulos/", views.importar_tumulos, name="importar_tumulos"),
+    path("importar/sepultados/", views.importar_sepultados, name="importar_sepultados"),
 ]

@@ -10,6 +10,7 @@ urlpatterns = [
     path('admin/selecionar-cemiterio/', selecionar_cemiterio_ativo, name='selecionar_cemiterio_ativo'),
     path('admin/', custom_admin_site.urls),
     path('', include('sepultados_gestao.urls')),
+    path('admin/', include('sepultados_gestao.urls')),
 ]
 
 from django.conf import settings

@@ -333,6 +333,8 @@ class Sepultado(models.Model):
     cor_pele = models.CharField(max_length=100, blank=True, null=True)
     estado_civil = models.CharField(max_length=20, choices=ESTADO_CIVIL_CHOICES, blank=True, null=True)
     nome_conjuge = models.CharField("Nome do Cônjuge", max_length=255, blank=True, null=True)
+    nome_pai = models.CharField("Nome do Pai", max_length=150, blank=True, null=True)
+    nome_mae = models.CharField("Nome da Mãe", max_length=150, blank=True, null=True)
     profissao = models.CharField(max_length=255, blank=True, null=True)
     grau_instrucao = models.CharField("Escolaridade", max_length=255, blank=True, null=True)
 
@@ -427,12 +429,15 @@ class Sepultado(models.Model):
         from .models import Sepultado
         from django.core.exceptions import ValidationError
 
+        ignorar_validacao = kwargs.pop("ignorar_validacao_contrato", False)
         criando = self.pk is None
 
         if criando and not self.numero_sepultamento:
             self.numero_sepultamento = gerar_numero_sequencial_global(self.tumulo.quadra.cemiterio.prefeitura)
 
-        self.full_clean()  # Executa o clean completo
+        if not ignorar_validacao:
+            self.full_clean()  # Executa o clean completo, com validações de contrato
+
         self.idade_ao_falecer = self.calcular_idade()
         super().save(*args, **kwargs)
 
@@ -452,13 +457,10 @@ class Sepultado(models.Model):
                 numero_documento=self.numero_sepultamento
             )
 
-
         # Atualiza o status do túmulo
         if self.tumulo:
             self.tumulo.status = self.tumulo.calcular_status_dinamico()
             self.tumulo.save(update_fields=["status"])
-
-
 
     def __str__(self):
         return self.nome

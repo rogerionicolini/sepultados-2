@@ -445,7 +445,7 @@ class SepultadoAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
         ('Dados do Sepultado', {
             'fields': (
                 'nome', 'cpf_sepultado', 'sexo', 'sexo_outro_descricao', 'data_nascimento', 'local_nascimento',
-                'nacionalidade', 'cor_pele', 'estado_civil', 'nome_conjuge',
+                'nacionalidade', 'cor_pele', 'estado_civil', 'nome_conjuge', "nome_pai", "nome_mae",
                 'profissao', 'grau_instrucao', 'informacoes_movimentacoes'
             )
         }),
@@ -1016,23 +1016,29 @@ class CustomAdminSite(AdminSite):
         modelos_gestao = {
             "Cemiterio", "Quadra", "Tumulo", "Sepultado",
             "ConcessaoContrato", "Exumacao", "Translado",
-            "Receita", "RegistroAuditoria",  # 👈 aqui!
+            "Receita", "RegistroAuditoria",
         }
-
 
         modelos_com_prefeitura_apenas = {
             "Cemiterio", "TipoServicoFinanceiro", "Receita",
-            "Tiposervicofinanceiro"  # Adicione esta variação para garantir
-            }
+            "Tiposervicofinanceiro"
+        }
 
         grupo_geral = {
             "name": "Administração Geral",
             "app_label": "admin_geral",
             "models": []
         }
+
         grupo_gestao = {
             "name": "Sepultados Gestão",
             "app_label": "sepultados_gestao",
+            "models": []
+        }
+
+        grupo_importacoes = {
+            "name": "Importações",
+            "app_label": "importacoes",
             "models": []
         }
 
@@ -1051,6 +1057,26 @@ class CustomAdminSite(AdminSite):
                     elif cemiterio_ativo_id:
                         grupo_gestao["models"].append(model)
 
+        # Adiciona o grupo de Importações se prefeitura e cemitério estiverem ativos
+        if prefeitura_ativa_id and cemiterio_ativo_id:
+            grupo_importacoes["models"].append({
+                "name": "Importar Quadras",
+                "object_name": "ImportarQuadras",
+                "admin_url": "/importar/quadras/",   # ✅ Correto
+                "add_url": "/importar/quadras/"
+            })
+            grupo_importacoes["models"].append({
+                "name": "Importar Túmulos",
+                "object_name": "ImportarTumulos",
+                "admin_url": "/importar/tumulos/",   # ✅ Correto
+                "add_url": "/importar/tumulos/"
+            })
+            grupo_importacoes["models"].append({
+                "name": "Importar Sepultados",
+                "object_name": "ImportarSepultados",
+                "admin_url": "/importar/sepultados/",  # ✅ Correto
+                "add_url": "/importar/sepultados/"
+            })
 
 
         resultado = []
@@ -1058,13 +1084,14 @@ class CustomAdminSite(AdminSite):
             resultado.append(grupo_geral)
         if grupo_gestao["models"]:
             resultado.append(grupo_gestao)
+        if grupo_importacoes["models"]:
+            resultado.append(grupo_importacoes)
+
         return resultado
 
     def register_models(self):
-        from django.contrib import admin
         for model, model_admin in admin.site._registry.items():
             self.register(model, model_admin.__class__)
-
 
 from django.contrib import admin
 from django.urls import path, reverse

@@ -301,3 +301,274 @@ def gerar_pdf_sepultados_tumulo(request, pk):
     response = HttpResponse(pdf_file, content_type='application/pdf')
     response['Content-Disposition'] = f'inline; filename="sepultados_tumulo_{tumulo.identificador}.pdf"'
     return response
+
+
+from django.contrib import messages
+from django.shortcuts import render
+from django.contrib.admin.views.decorators import staff_member_required
+from sepultados_gestao.models import Quadra
+import pandas as pd
+
+@staff_member_required
+def importar_quadras(request):
+    if not request.session.get("prefeitura_ativa_id") or not request.session.get("cemiterio_ativo_id"):
+        messages.error(request, "Você precisa selecionar uma prefeitura e um cemitério antes de importar.")
+        return render(request, "admin/importar_base.html", {
+            "title": "Importar Quadras",
+            "form_content": "",
+        })
+
+    total = 0
+    if request.method == "POST" and request.FILES.get("arquivo"):
+        arquivo = request.FILES["arquivo"]
+        extensao = arquivo.name.split(".")[-1].lower()
+
+        try:
+            if extensao == "csv":
+                df = pd.read_csv(arquivo)
+            elif extensao in ["xls", "xlsx"]:
+                df = pd.read_excel(arquivo)
+            else:
+                messages.error(request, "Formato de arquivo não suportado.")
+                return render(request, "admin/importar_base.html", {
+                    "title": "Importar Quadras",
+                    "form_content": "",
+                })
+        except Exception as e:
+            messages.error(request, f"Erro ao ler o arquivo: {str(e)}")
+            return render(request, "admin/importar_base.html", {
+                "title": "Importar Quadras",
+                "form_content": "",
+            })
+
+        for _, linha in df.iterrows():
+            try:
+                codigo = str(linha[0]).strip()
+                if not codigo:
+                    continue
+
+                Quadra.objects.create(
+                    codigo=codigo,
+                    cemiterio_id=request.session["cemiterio_ativo_id"]
+                )
+                total += 1
+            except Exception as e:
+                print(f"[DEBUG] Erro ao importar linha: {linha}\nMotivo: {e}")
+                continue
+
+        messages.success(request, f"{total} quadra(s) importada(s) com sucesso.")
+
+    return render(request, "admin/importar_base.html", {
+        "title": "Importar Quadras",
+        "form_content": """
+            <form method="post" enctype="multipart/form-data">
+                {% csrf_token %}
+                <label for='id_arquivo'>
+                    <strong>Selecionar Arquivo CSV XLS XLSX(.csv, .xls, .xlsx):</strong>
+                </label>
+                <p>
+                    <input type="file" name="arquivo" id="id_arquivo" accept=".csv,.xls,.xlsx" required onchange="mostrarNomeArquivo(this)">
+                    <br>
+                    <small style="color:#444;">Formatos aceitos: .csv, .xls, .xlsx</small>
+                </p>
+                <p><span id="nome-arquivo" style="margin-top:5px;color:#064e08;font-weight:bold;"></span></p>
+                <button type="submit" class="default">Importar</button>
+            </form>
+            <script>
+                function mostrarNomeArquivo(input) {
+                    var nome = input.files.length > 0 ? input.files[0].name : "";
+                    document.getElementById("nome-arquivo").innerText = nome;
+                }
+            </script>
+        """
+    })
+
+
+import pandas as pd
+from django.contrib import messages
+from django.shortcuts import render
+from django.contrib.admin.views.decorators import staff_member_required
+from sepultados_gestao.models import Tumulo, Quadra
+
+
+@staff_member_required
+def importar_tumulos(request):
+    if not request.session.get("prefeitura_ativa_id") or not request.session.get("cemiterio_ativo_id"):
+        messages.error(request, "Você precisa selecionar uma prefeitura e um cemitério antes de importar.")
+        return render(request, "admin/importar_base.html", {
+            "title": "Importar Túmulos",
+            "long_content": "",
+        })
+
+    total = 0
+
+    if request.method == "POST" and request.FILES.get("arquivo"):
+        arquivo = request.FILES["arquivo"]
+        extensao = arquivo.name.split(".")[-1].lower()
+
+        try:
+            if extensao == "csv":
+                df = pd.read_csv(arquivo)
+            elif extensao in ["xls", "xlsx"]:
+                df = pd.read_excel(arquivo)
+            else:
+                messages.error(request, "Formato de arquivo não suportado.")
+                return render(request, "admin/importar_base.html", {
+                    "title": "Importar Túmulos",
+                    "long_content": "",
+                })
+        except Exception as e:
+            messages.error(request, f"Erro ao ler o arquivo: {str(e)}")
+            return render(request, "admin/importar_base.html", {
+                "title": "Importar Túmulos",
+                "long_content": "",
+            })
+
+        print(f"[DEBUG] Sessão atual: prefeitura_id={request.session.get('prefeitura_ativa_id')} | cemitério_id={request.session.get('cemiterio_ativo_id')}")
+
+        MAPA_TIPO_ESTRUTURA = {
+            'túmulo': 'tumulo',
+            'perpétua': 'perpetua',
+            'sepultura': 'sepultura',
+            'jazigo': 'jazigo',
+            'outro': 'outro',
+        }
+
+        for _, linha in df.iterrows():
+            try:
+                quadra_codigo = str(linha["quadra_codigo"]).strip()
+                identificador = str(linha["identificador"]).strip()
+
+                tipo_raw = str(linha["tipo_estrutura"]).strip().lower()
+                tipo_estrutura = MAPA_TIPO_ESTRUTURA.get(tipo_raw, 'tumulo')
+
+                capacidade = int(float(linha["capacidade"])) if pd.notna(linha["capacidade"]) else 1
+                usar_linha = str(linha["usar_linha"]).strip().lower() == "sim"
+                linha_valor = int(linha["linha"]) if usar_linha and pd.notna(linha["linha"]) else None
+
+                print(f"[DEBUG] Buscando quadra: '{quadra_codigo}' no cemitério ID {request.session['cemiterio_ativo_id']}")
+                quadra = Quadra.objects.filter(
+                    codigo__iexact=quadra_codigo,
+                    cemiterio_id=request.session["cemiterio_ativo_id"]
+                ).first()
+
+                if not quadra:
+                    print(f"❌ Quadra não encontrada: '{quadra_codigo}'")
+                    continue
+
+                print(f"✅ Quadra encontrada: ID={quadra.id} - {quadra.codigo}")
+
+                Tumulo.objects.create(
+                    quadra=quadra,
+                    cemiterio_id=request.session["cemiterio_ativo_id"],
+                    identificador=identificador,
+                    tipo_estrutura=tipo_estrutura,
+                    capacidade=capacidade,
+                    usar_linha=usar_linha,
+                    linha=linha_valor,
+                    reservado=False,
+                    status="disponivel",
+                )
+                total += 1
+
+            except Exception as e:
+                print(f"❌ Erro ao importar túmulo da linha: {linha}\nMotivo: {e}")
+                continue
+
+        messages.success(request, f"{total} túmulo(s) importado(s) com sucesso.")
+
+    return render(request, "admin/importar_base.html", {
+        "title": "Importar Túmulos",
+        "long_content": "",
+    })
+
+
+from django.contrib import messages
+from django.shortcuts import render
+from django.contrib.admin.views.decorators import staff_member_required
+from sepultados_gestao.models import Sepultado, Tumulo
+import pandas as pd
+
+@staff_member_required
+def importar_sepultados(request):
+    if not request.session.get("prefeitura_ativa_id") or not request.session.get("cemiterio_ativo_id"):
+        messages.error(request, "Você precisa selecionar uma prefeitura e um cemitério antes de importar.")
+        return render(request, "admin/importar_base.html", {
+            "title": "Importar Sepultados",
+            "form_content": "",
+        })
+
+    total = 0
+    erros = []
+
+    if request.method == "POST" and request.FILES.get("arquivo"):
+        try:
+            planilha = request.FILES["arquivo"]
+            df = pd.read_excel(planilha)
+
+            for i, row in df.iterrows():
+                try:
+                    identificador_tumulo = str(row.get("identificador_tumulo")).strip()
+                    tumulo = Tumulo.objects.filter(
+                        identificador=identificador_tumulo,
+                        quadra__cemiterio_id=request.session["cemiterio_ativo_id"]
+                    ).first()
+
+                    if not tumulo:
+                        erros.append(f"Linha {i+2}: Túmulo '{identificador_tumulo}' não encontrado.")
+                        continue
+
+                    sep = Sepultado(
+                        nome=row.get("nome") or "",
+                        cpf_sepultado=row.get("cpf_sepultado"),
+                        data_nascimento=row.get("data_nascimento"),
+                        sexo=row.get("sexo") or "NI",
+                        local_nascimento=row.get("local_nascimento"),
+                        local_falecimento=row.get("local_falecimento"),
+                        data_falecimento=row.get("data_falecimento"),
+                        data_sepultamento=row.get("data_sepultamento"),
+                        nome_pai=row.get("nome_pai"),
+                        nome_mae=row.get("nome_mae"),
+                        tumulo=tumulo,
+                    )
+                    sep.save(ignorar_validacao_contrato=True)
+
+
+                    total += 1
+
+                except Exception as e:
+                    erros.append(f"Linha {i+2}: Erro ao importar - {str(e)}")
+
+            if total:
+                messages.success(request, f"{total} sepultado(s) importado(s) com sucesso.")
+            if erros:
+                for erro in erros:
+                    messages.warning(request, erro)
+
+        except Exception as e:
+            messages.error(request, f"Erro ao processar a planilha: {str(e)}")
+
+    return render(request, "admin/importar_base.html", {
+        "title": "Importar Sepultados",
+        "form_content": """
+            <form method="post" enctype="multipart/form-data">
+                {% csrf_token %}
+                <label for='id_arquivo'>
+                    <strong>Selecionar Arquivo CSV XLS XLSX (.csv, .xls, .xlsx):</strong>
+                </label>
+                <p>
+                    <input type="file" name="arquivo" id="id_arquivo" accept=".csv,.xls,.xlsx" required onchange="mostrarNomeArquivo(this)">
+                    <br>
+                    <small style="color:#444;">Formatos aceitos: .csv, .xls, .xlsx</small>
+                </p>
+                <p><span id="nome-arquivo" style="margin-top:5px;color:#064e08;font-weight:bold;"></span></p>
+                <button type="submit" class="default">Importar</button>
+            </form>
+            <script>
+                function mostrarNomeArquivo(input) {
+                    var nome = input.files.length > 0 ? input.files[0].name : "";
+                    document.getElementById("nome-arquivo").innerText = nome;
+                }
+            </script>
+        """
+    })

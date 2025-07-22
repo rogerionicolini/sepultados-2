@@ -769,3 +769,27 @@ class TransladoForm(forms.ModelForm):
                 raise ValidationError({
                     'tumulo_destino': "Este túmulo não possui contrato de concessão. A transferência não é permitida."
                 })
+
+# IMPORTAÇÃO DE DADOS POR PLANILHA
+import csv
+import io
+
+from django import forms
+from django.core.exceptions import ValidationError
+
+class ImportarPlanilhaForm(forms.Form):
+    arquivo = forms.FileField(
+        label="Selecione um arquivo CSV ou XLSX",
+        help_text="Somente arquivos .csv ou .xlsx são aceitos.",
+    )
+
+    def clean_arquivo(self):
+        arquivo = self.cleaned_data.get("arquivo")
+        if not arquivo:
+            raise ValidationError("Você deve selecionar um arquivo.")
+
+        extensao = arquivo.name.split(".")[-1].lower()
+        if extensao not in ["csv", "xls", "xlsx"]:
+            raise ValidationError("Formato de arquivo inválido. Use CSV ou Excel.")
+
+        return arquivo
