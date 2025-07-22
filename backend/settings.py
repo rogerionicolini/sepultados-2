@@ -32,8 +32,9 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
-    'django.contrib.messages.middleware.MessageMiddleware',         # 👈 mover para cima
-    'sepultados_gestao.middleware.PrefeituraAtivaMiddleware',       # 👈 abaixo dele
+    'crum.CurrentRequestUserMiddleware',
+    'django.contrib.messages.middleware.MessageMiddleware',
+    'sepultados_gestao.middleware.PrefeituraAtivaMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 

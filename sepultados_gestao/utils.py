@@ -117,3 +117,20 @@ def validar_prefeitura_obrigatoria(instance):
     """
     if not hasattr(instance, 'prefeitura') or not instance.prefeitura:
         raise ValidationError("A prefeitura vinculada é obrigatória para este registro.")
+
+
+from django.utils.timezone import now
+
+def registrar_auditoria(usuario, acao, modelo, objeto_id=None, representacao=None, prefeitura=None):
+    from .models import RegistroAuditoria  # <-- IMPORTAÇÃO LOCAL
+
+    RegistroAuditoria.objects.create(
+        usuario=usuario,
+        acao=acao,
+        modelo=modelo,
+        objeto_id=str(objeto_id) if objeto_id else "",
+        representacao=representacao or "",
+        data_hora=now(),
+        prefeitura=prefeitura
+    )
+

@@ -27,6 +27,8 @@ from django.contrib.contenttypes.admin import GenericTabularInline
 from .models import Anexo
 from .views import gerar_recibo_pdf
 from .forms import PlanoForm
+from .models import RegistroAuditoria
+from .utils import registrar_auditoria
 
 
 
@@ -976,8 +978,9 @@ class CustomAdminSite(AdminSite):
         modelos_gestao = {
             "Cemiterio", "Quadra", "Tumulo", "Sepultado",
             "ConcessaoContrato", "Exumacao", "Translado",
-            "TipoServicoFinanceiro", "Receita"
+            "Receita", "RegistroAuditoria",  # 👈 aqui!
         }
+
 
         modelos_com_prefeitura_apenas = {
             "Cemiterio", "TipoServicoFinanceiro", "Receita",
@@ -1028,7 +1031,9 @@ from django.utils.html import format_html
 from django.utils.encoding import force_str
 from .models import Receita
 from .forms import ReceitaForm
-from .views import gerar_recibo_pdf  # Certifique-se que essa view está definida
+from .views import gerar_recibo_pdf 
+
+
 
 @admin.register(Receita)
 class ReceitaAdmin(admin.ModelAdmin):
@@ -1192,3 +1197,76 @@ class ReceitaAdmin(admin.ModelAdmin):
         if db_field.name == 'prefeitura':
             kwargs['disabled'] = True
         return super().formfield_for_foreignkey(db_field, request, **kwargs)
+
+    def save_model(self, request, obj, form, change):
+        super().save_model(request, obj, form, change)
+
+        acao = 'change' if change else 'add'
+        registrar_auditoria(
+            usuario=request.user,
+            acao=acao,
+            modelo="Receita",
+            objeto_id=obj.pk,
+            representacao=str(obj),
+            prefeitura=getattr(obj, "prefeitura", None)
+        )
+
+    def delete_model(self, request, obj):
+        registrar_auditoria(
+            usuario=request.user,
+            acao='delete',
+            modelo="Receita",
+            objeto_id=obj.pk,
+            representacao=str(obj),
+            prefeitura=getattr(obj, "prefeitura", None)
+        )
+        super().delete_model(request, obj)
+
+
+
+from django.contrib import admin
+from django.core.exceptions import PermissionDenied
+from .models import RegistroAuditoria
+
+@admin.register(RegistroAuditoria)
+class RegistroAuditoriaAdmin(admin.ModelAdmin):
+    list_display = ('data_hora', 'acao', 'modelo', 'objeto_id', 'usuario')
+    list_filter = ('acao', 'modelo', 'data_hora')
+    search_fields = ('modelo', 'representacao', 'usuario__username')
+    readonly_fields = ('acao', 'usuario', 'modelo', 'objeto_id', 'representacao', 'data_hora', 'prefeitura')
+
+    def get_queryset(self, request):
+        qs = super().get_queryset(request)
+        if request.user.is_superuser:
+            return qs
+        prefeitura = getattr(request, 'prefeitura_ativa', None)
+        if prefeitura:
+            return qs.filter(prefeitura=prefeitura)
+        return qs.none()
+
+    def get_object(self, request, object_id, from_field=None):
+        obj = super().get_object(request, object_id)
+        if obj is None:
+            return None
+        if request.user.is_superuser:
+            return obj
+        prefeitura = getattr(request, 'prefeitura_ativa', None)
+        if obj.prefeitura != prefeitura:
+            raise PermissionDenied("Você não tem permissão para acessar esse registro.")
+        return obj
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False  # Nenhuma edição permitida
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    def has_view_permission(self, request, obj=None):
+        if obj is None or request.user.is_superuser:
+            return True
+        prefeitura = getattr(request, 'prefeitura_ativa', None)
+        return obj.prefeitura == prefeitura
+    

@@ -1232,7 +1232,9 @@ class Receita(models.Model):
                     exumacao=self.exumacao,
                     translado=self.translado,
                 )
+           
 
+    
     def __str__(self):
         return str(self.numero_documento)
 
@@ -1261,3 +1263,107 @@ class Anexo(models.Model):
     class Meta:
         verbose_name = "Anexo"
         verbose_name_plural = "Anexos"
+
+
+from django.db import models
+from django.contrib.auth.models import User
+
+class RegistroAuditoria(models.Model):
+    ACAO_CHOICES = (
+        ('add', 'Adição'),
+        ('change', 'Edição'),
+        ('delete', 'Exclusão'),
+    )
+
+    acao = models.CharField(max_length=10, choices=ACAO_CHOICES)
+    usuario = models.ForeignKey(User, on_delete=models.PROTECT)
+    modelo = models.CharField(max_length=100)
+    objeto_id = models.CharField(max_length=100)
+    representacao = models.TextField()
+    data_hora = models.DateTimeField(auto_now_add=True)
+    prefeitura = models.ForeignKey('Prefeitura', on_delete=models.CASCADE)
+
+    def __str__(self):
+        return f"{self.get_acao_display()} - {self.modelo} ({self.representacao})"
+
+    class Meta:
+        verbose_name = "Registro de Auditoria"
+        verbose_name_plural = "Registros de Auditoria"
+        ordering = ['-data_hora']
+
+from django.db.models.signals import post_save, post_delete, pre_delete
+from django.dispatch import receiver
+from crum import get_current_user
+from .models import RegistroAuditoria
+from django.core.exceptions import ValidationError
+
+@receiver(pre_delete, sender=RegistroAuditoria)
+def bloquear_exclusao_auditoria(sender, instance, **kwargs):
+    raise ValidationError("Os registros de auditoria não podem ser excluídos.")
+
+def obter_prefeitura_robusta(instance, usuario):
+    # 1. Da instância, se existir
+    prefeitura = getattr(instance, "prefeitura", None)
+    # 2. Do usuário, se existir
+    if not prefeitura and usuario and hasattr(usuario, "prefeitura"):
+        prefeitura = usuario.prefeitura
+    # 3. Da request ativa, se existir
+    if not prefeitura:
+        try:
+            from crum import get_current_request
+            req = get_current_request()
+            if req and hasattr(req, "prefeitura_ativa"):
+                prefeitura = getattr(req, "prefeitura_ativa", None)
+        except ImportError:
+            prefeitura = None
+    return prefeitura
+
+@receiver(post_save)
+def auditar_salvamento(sender, instance, created, **kwargs):
+    if sender == RegistroAuditoria:
+        return
+
+    usuario = get_current_user()
+    if not usuario or not usuario.is_authenticated:
+        return
+
+    modelo = getattr(sender, "__name__", sender.__class__.__name__)
+    acao = 'add' if created else 'change'
+
+    prefeitura = obter_prefeitura_robusta(instance, usuario)
+    if not prefeitura:
+        return  # Não salva auditoria sem prefeitura válida
+
+    RegistroAuditoria.objects.create(
+        usuario=usuario,
+        acao=acao,
+        modelo=modelo,
+        objeto_id=str(getattr(instance, "pk", "")),
+        representacao=str(instance),
+        prefeitura=prefeitura
+    )
+
+@receiver(post_delete)
+def auditar_exclusao(sender, instance, **kwargs):
+    if sender == RegistroAuditoria:
+        return
+
+    usuario = get_current_user()
+    if not usuario or not usuario.is_authenticated:
+        return
+
+    modelo = getattr(sender, "__name__", sender.__class__.__name__)
+    acao = 'delete'
+
+    prefeitura = obter_prefeitura_robusta(instance, usuario)
+    if not prefeitura:
+        return  # Não salva auditoria sem prefeitura válida
+
+    RegistroAuditoria.objects.create(
+        usuario=usuario,
+        acao=acao,
+        modelo=modelo,
+        objeto_id=str(getattr(instance, "pk", "")),
+        representacao=str(instance),
+        prefeitura=prefeitura
+    )
