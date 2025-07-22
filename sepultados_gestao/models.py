@@ -1301,22 +1301,31 @@ from django.core.exceptions import ValidationError
 def bloquear_exclusao_auditoria(sender, instance, **kwargs):
     raise ValidationError("Os registros de auditoria não podem ser excluídos.")
 
+from sepultados_gestao.session_context.thread_local import get_prefeitura_ativa
+
 def obter_prefeitura_robusta(instance, usuario):
-    # 1. Da instância, se existir
+    # 1. Usa prefeitura ativa do middleware via thread-local
+    prefeitura = get_prefeitura_ativa()
+    if prefeitura:
+        return prefeitura
+
+    # 2. Se não tiver, tenta da instância
     prefeitura = getattr(instance, "prefeitura", None)
-    # 2. Do usuário, se existir
-    if not prefeitura and usuario and hasattr(usuario, "prefeitura"):
-        prefeitura = usuario.prefeitura
-    # 3. Da request ativa, se existir
-    if not prefeitura:
-        try:
-            from crum import get_current_request
-            req = get_current_request()
-            if req and hasattr(req, "prefeitura_ativa"):
-                prefeitura = getattr(req, "prefeitura_ativa", None)
-        except ImportError:
-            prefeitura = None
-    return prefeitura
+    if prefeitura:
+        return prefeitura
+
+    # 3. Último recurso: tenta do usuário
+    if usuario and hasattr(usuario, "prefeitura"):
+        return usuario.prefeitura
+
+    return None
+
+
+
+
+
+
+from sepultados_gestao.session_context.thread_local import get_prefeitura_ativa
 
 @receiver(post_save)
 def auditar_salvamento(sender, instance, created, **kwargs):
@@ -1330,9 +1339,17 @@ def auditar_salvamento(sender, instance, created, **kwargs):
     modelo = getattr(sender, "__name__", sender.__class__.__name__)
     acao = 'add' if created else 'change'
 
-    prefeitura = obter_prefeitura_robusta(instance, usuario)
+    # ✅ Tenta obter da session thread_local primeiro
+    prefeitura = get_prefeitura_ativa()
+
+    # ⛔ Fallbacks caso não venha da session
     if not prefeitura:
-        return  # Não salva auditoria sem prefeitura válida
+        prefeitura = getattr(instance, 'prefeitura', None)
+    if not prefeitura and hasattr(usuario, 'prefeitura'):
+        prefeitura = usuario.prefeitura
+
+    if not prefeitura:
+        return  # Evita salvar auditoria inválida
 
     RegistroAuditoria.objects.create(
         usuario=usuario,
@@ -1355,9 +1372,17 @@ def auditar_exclusao(sender, instance, **kwargs):
     modelo = getattr(sender, "__name__", sender.__class__.__name__)
     acao = 'delete'
 
-    prefeitura = obter_prefeitura_robusta(instance, usuario)
+    # ✅ Prioriza a session thread_local
+    prefeitura = get_prefeitura_ativa()
+
+    # ⛔ Fallbacks
     if not prefeitura:
-        return  # Não salva auditoria sem prefeitura válida
+        prefeitura = getattr(instance, 'prefeitura', None)
+    if not prefeitura and hasattr(usuario, 'prefeitura'):
+        prefeitura = usuario.prefeitura
+
+    if not prefeitura:
+        return
 
     RegistroAuditoria.objects.create(
         usuario=usuario,

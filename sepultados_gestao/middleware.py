@@ -4,6 +4,8 @@ from django.contrib import messages
 from django.urls import reverse
 
 from .models import Prefeitura, Cemiterio
+from sepultados_gestao.session_context.thread_local import set_prefeitura_ativa
+
 
 URLS_LIVRES = [
     "/admin/sepultados_gestao/prefeitura/",
@@ -31,6 +33,7 @@ class PrefeituraAtivaMiddleware(MiddlewareMixin):
             if prefeitura_id:
                 try:
                     request.prefeitura_ativa = Prefeitura.objects.get(id=prefeitura_id)
+                    set_prefeitura_ativa(request.prefeitura_ativa)  # ✅ LINHA ADICIONADA
                 except Prefeitura.DoesNotExist:
                     request.prefeitura_ativa = None
 

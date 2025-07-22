@@ -29,6 +29,9 @@ from .views import gerar_recibo_pdf
 from .forms import PlanoForm
 from .models import RegistroAuditoria
 from .utils import registrar_auditoria
+from sepultados_gestao.session_context.thread_local import get_prefeitura_ativa
+
+
 
 
 
@@ -168,6 +171,9 @@ class QuadraAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
         kwargs['form'] = CustomForm
         return super().get_form(request, obj, **kwargs)
 
+    from django.contrib import messages
+    from sepultados_gestao.models import RegistroAuditoria
+
     def save_model(self, request, obj, form, change):
         # Define a prefeitura com base na sessão
         obj.prefeitura = request.prefeitura_ativa
@@ -179,7 +185,18 @@ class QuadraAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
             return
 
         obj.cemiterio_id = cemiterio_id
+
         super().save_model(request, obj, form, change)
+
+        # ✅ Auditoria salva diretamente e corretamente
+        RegistroAuditoria.objects.create(
+            usuario=request.user,
+            acao='change' if change else 'add',
+            modelo=obj.__class__.__name__,
+            objeto_id=str(obj.pk),
+            representacao=str(obj),
+            prefeitura = get_prefeitura_ativa()
+        )
 
     def get_queryset(self, request):
         qs = super().get_queryset(request)
@@ -193,11 +210,32 @@ class QuadraAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
             return {}
         return super().get_model_perms(request)
 
+
     def delete_model(self, request, obj):
         if obj.tumulo_set.exists():
             self.message_user(request, "Não é possível excluir esta quadra. Existem túmulos vinculados.", level=messages.ERROR)
             return
+
+        modelo = self.model.__name__
+        usuario = get_current_user()
+        prefeitura = get_prefeitura_ativa()
+
+        if not usuario or not usuario.is_authenticated or not prefeitura:
+            self.message_user(request, "Não foi possível registrar a auditoria por falta de contexto.", level=messages.WARNING)
+            return super().delete_model(request, obj)
+
+        RegistroAuditoria.objects.create(
+            usuario=usuario,
+            acao="delete",
+            modelo=modelo,
+            objeto_id=str(obj.pk),
+            representacao=str(obj),
+            prefeitura=prefeitura
+        )
+
         super().delete_model(request, obj)
+
+
 
     def delete_queryset(self, request, queryset):
         for obj in queryset:
@@ -1237,12 +1275,11 @@ class RegistroAuditoriaAdmin(admin.ModelAdmin):
 
     def get_queryset(self, request):
         qs = super().get_queryset(request)
-        if request.user.is_superuser:
-            return qs
         prefeitura = getattr(request, 'prefeitura_ativa', None)
         if prefeitura:
             return qs.filter(prefeitura=prefeitura)
         return qs.none()
+
 
     def get_object(self, request, object_id, from_field=None):
         obj = super().get_object(request, object_id)
