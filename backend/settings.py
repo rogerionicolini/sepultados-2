@@ -15,6 +15,7 @@ INSTALLED_APPS = [
     'sepultados_gestao.apps.SepultadosGestaoConfig',
     'crum',
     'core',
+    'relatorios',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',

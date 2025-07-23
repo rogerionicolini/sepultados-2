@@ -1,0 +1,61 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+
+{% block content %}
+<h1>Relatório de Sepultados</h1>
+
+<form method="get" class="form-row" style="margin-bottom: 20px;">
+    <div style="display: flex; gap: 20px; flex-wrap: wrap; align-items: center;">
+        <label>Data início:
+            <input type="date" name="data_inicio" value="{{ data_inicio }}">
+        </label>
+        <label>Data fim:
+            <input type="date" name="data_fim" value="{{ data_fim }}">
+        </label>
+        <label>Status:
+            <select name="status">
+                <option value="">Todos</option>
+                <option value="sepultado" {% if status == "sepultado" %}selected{% endif %}>Sepultado</option>
+                <option value="exumado" {% if status == "exumado" %}selected{% endif %}>Exumado</option>
+                <option value="trasladado" {% if status == "trasladado" %}selected{% endif %}>Trasladado</option>
+            </select>
+        </label>
+
+        <button type="submit" class="button default">Filtrar</button>
+
+        <a href="{% url 'relatorios:relatorio_sepultados_pdf' %}?data_inicio={{ data_inicio }}&data_fim={{ data_fim }}&status={{ status }}"
+           class="button default" style="text-decoration: none; display: inline-block;">
+            📄 PDF
+        </a>
+    </div>
+</form>
+
+<table class="adminlist">
+    <thead>
+        <tr>
+            <th>Nome</th>
+            <th>Data Falecimento</th>
+            <th>Data Sepultamento</th>
+            <th>Quadra</th>
+            <th>Linha</th>
+            <th>Túmulo</th>
+            <th>Status</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for s in sepultados %}
+        <tr>
+            <td>{{ s.nome }}</td>
+            <td>{{ s.data_falecimento|date:"d/m/Y" }}</td>
+            <td>{{ s.data_sepultamento|date:"d/m/Y" }}</td>
+            <td>{{ s.tumulo.quadra.codigo }}</td>
+            <td>{{ s.tumulo.linha }}</td>
+            <td>{{ s.tumulo.identificador }}</td>
+            <td>{{ s.status_display }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="7">Nenhum sepultado encontrado.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

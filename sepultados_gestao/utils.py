@@ -134,3 +134,17 @@ def registrar_auditoria(usuario, acao, modelo, objeto_id=None, representacao=Non
         prefeitura=prefeitura
     )
 
+
+from django.template.loader import get_template
+from django.http import HttpResponse
+import io
+from xhtml2pdf import pisa
+
+def render_to_pdf(template_path, context={}):
+    template = get_template(template_path)
+    html = template.render(context)
+    response = HttpResponse(content_type='application/pdf')
+    pisa_status = pisa.CreatePDF(io.BytesIO(html.encode("UTF-8")), dest=response)
+    if pisa_status.err:
+        return HttpResponse("Erro ao gerar PDF", status=500)
+    return response

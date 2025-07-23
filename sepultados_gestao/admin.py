@@ -1146,6 +1146,21 @@ class CustomAdminSite(AdminSite):
                 "add_url": "/importar/sepultados/"
             })
 
+                    # Adiciona o grupo de Relatórios se prefeitura e cemitério estiverem ativos
+        grupo_relatorios = {
+            "name": "Relatórios",
+            "app_label": "menu_relatorios",  # ← nome fictício só para agrupar
+            "models": []
+        }
+
+
+        if prefeitura_ativa_id and cemiterio_ativo_id:
+            grupo_relatorios["models"].append({
+                "name": "Relatório de Sepultados",
+                "object_name": "RelatorioSepultados",
+                "admin_url": "/relatorios/sepultados/"
+            })
+
 
         resultado = []
         if grupo_geral["models"]:
@@ -1154,8 +1169,12 @@ class CustomAdminSite(AdminSite):
             resultado.append(grupo_gestao)
         if grupo_importacoes["models"]:
             resultado.append(grupo_importacoes)
+        if grupo_relatorios["models"]:
+            resultado.append(grupo_relatorios)
 
         return resultado
+
+
 
     def register_models(self):
         for model, model_admin in admin.site._registry.items():

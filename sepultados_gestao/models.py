@@ -539,6 +539,13 @@ class Sepultado(models.Model):
         if tumulo:
             tumulo.status = tumulo.calcular_status_dinamico()
             tumulo.save(update_fields=["status"])
+    @property
+    def status_display(self):
+        if self.data_translado:
+            return "Transladado"
+        elif self.data_exumacao:
+            return "Exumado"
+        return "Sepultado"
 
     class Meta:
         verbose_name = "Sepultado"
