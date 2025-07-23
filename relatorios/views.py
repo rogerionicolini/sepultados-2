@@ -103,3 +103,77 @@ def relatorio_sepultados_pdf(request):
     pdf = html.write_pdf()
 
     return HttpResponse(pdf, content_type='application/pdf')
+
+
+from sepultados_gestao.models import Exumacao
+
+@staff_member_required
+def relatorio_exumacoes(request):
+    prefeitura_id = request.session.get("prefeitura_ativa_id")
+    cemiterio_id = request.session.get("cemiterio_ativo_id")
+
+    exumacoes = Exumacao.objects.filter(tumulo__quadra__cemiterio_id=cemiterio_id)
+
+    data_inicio = request.GET.get("data_inicio")
+    data_fim = request.GET.get("data_fim")
+
+    if data_inicio and data_fim:
+        try:
+            dt_ini = datetime.strptime(data_inicio, "%Y-%m-%d").date()
+            dt_fim = datetime.strptime(data_fim, "%Y-%m-%d").date()
+            exumacoes = exumacoes.filter(data__range=(dt_ini, dt_fim))
+        except ValueError:
+            pass
+
+    context = {
+        "exumacoes": exumacoes,
+        "data_inicio": data_inicio,
+        "data_fim": data_fim,
+    }
+    return render(request, "relatorios/relatorio_exumacoes.html", context)
+
+
+@staff_member_required
+def relatorio_exumacoes_pdf(request):
+    prefeitura = request.prefeitura_ativa
+    cemiterio = request.cemiterio_ativo
+
+    data_inicio = request.GET.get("data_inicio")
+    data_fim = request.GET.get("data_fim")
+
+    exumacoes = Exumacao.objects.filter(
+        prefeitura=prefeitura,
+        tumulo__quadra__cemiterio=cemiterio
+    )
+
+    try:
+        if data_inicio:
+            data_inicio_formatada = datetime.strptime(data_inicio, "%Y-%m-%d").date()
+            exumacoes = exumacoes.filter(data__gte=data_inicio_formatada)
+    except (ValueError, TypeError):
+        data_inicio = None
+
+    try:
+        if data_fim:
+            data_fim_formatada = datetime.strptime(data_fim, "%Y-%m-%d").date()
+            exumacoes = exumacoes.filter(data__lte=data_fim_formatada)
+    except (ValueError, TypeError):
+        data_fim = None
+
+    brasao_url = None
+    if prefeitura and prefeitura.brasao:
+        brasao_url = request.build_absolute_uri(prefeitura.brasao.url)
+
+    html_string = render_to_string("pdf/relatorio_exumacoes_pdf.html", {
+        "exumacoes": exumacoes,
+        "prefeitura": prefeitura,
+        "cemiterio": cemiterio,
+        "data_inicio": data_inicio,
+        "data_fim": data_fim,
+        "brasao_url": brasao_url,
+    })
+
+    html = HTML(string=html_string)
+    pdf = html.write_pdf()
+
+    return HttpResponse(pdf, content_type='application/pdf')
