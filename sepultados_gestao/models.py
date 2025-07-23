@@ -862,10 +862,10 @@ class Translado(models.Model):
         from .models import ConcessaoContrato
 
         criando = self.pk is None
+        sep = self.sepultado  # ✅ Define sempre no início
 
         self.full_clean()
 
-        # ⚠️ Aqui agora o self.tumulo_destino está resolvido corretamente como instância
         if self.destino == 'outro_tumulo' and self.tumulo_destino:
             contrato_existe = ConcessaoContrato.objects.filter(tumulo=self.tumulo_destino).exists()
             if not contrato_existe:
@@ -893,7 +893,6 @@ class Translado(models.Model):
                 numero_documento=self.numero_documento
             )
 
-            sep = self.sepultado
             sep.trasladado = True
             sep.data_translado = self.data
             sep.save(update_fields=['trasladado', 'data_translado'])
@@ -903,6 +902,20 @@ class Translado(models.Model):
             sep.save(update_fields=['trasladado', 'data_translado', 'tumulo', 'exumado'])
         else:
             sep.save(update_fields=['trasladado', 'data_translado'])
+
+    @property
+    def tumulo_origem(self):
+        return self.sepultado.tumulo
+
+    @property
+    def destino_resumido(self):
+        if self.destino == 'outro_tumulo' and self.tumulo_destino:
+            return str(self.tumulo_destino)
+        elif self.destino == 'ossario':
+            return "Ossário"
+        elif self.destino == 'outro_cemiterio':
+            return f"{self.cemiterio_nome or ''}".strip()
+        return "Não informado"
 
 
     @property

@@ -1,0 +1,51 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+
+{% block content %}
+<h1>Relatório de Translados</h1>
+
+<form method="get" class="form-row" style="margin-bottom: 20px;">
+    <div style="display: flex; gap: 20px; flex-wrap: wrap; align-items: center;">
+        <label>Data início:
+            <input type="date" name="data_inicio" value="{{ data_inicio }}">
+        </label>
+        <label>Data fim:
+            <input type="date" name="data_fim" value="{{ data_fim }}">
+        </label>
+
+        <button type="submit" class="button default">Filtrar</button>
+
+        <a href="{% url 'relatorios:relatorio_translados_pdf' %}?data_inicio={{ data_inicio }}&data_fim={{ data_fim }}"
+           class="button default" style="text-decoration: none; display: inline-block;">
+            📄 PDF
+        </a>
+    </div>
+</form>
+
+<table class="adminlist">
+    <thead>
+        <tr>
+            <th>Nome do Sepultado</th>
+            <th>Data do Translado</th>
+            <th>Origem</th>
+            <th>Destino</th>
+            <th>Motivo</th>
+            <th>Responsável</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for t in translados %}
+        <tr>
+            <td>{{ t.sepultado.nome }}</td>
+            <td>{{ t.data|date:"d/m/Y" }}</td>
+            <td>{{ t.tumulo_origem }}</td>
+            <td>{{ t.destino_resumido }}</td>
+            <td>{{ t.motivo }}</td>
+            <td>{{ t.nome_responsavel }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="6">Nenhum translado encontrado.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

@@ -5,6 +5,8 @@ from sepultados_gestao.utils import render_to_pdf
 from datetime import datetime
 
 
+
+
 @staff_member_required
 def relatorio_sepultados(request):
     prefeitura_id = request.session.get("prefeitura_ativa_id")
@@ -177,3 +179,88 @@ def relatorio_exumacoes_pdf(request):
     pdf = html.write_pdf()
 
     return HttpResponse(pdf, content_type='application/pdf')
+
+from sepultados_gestao.models import Translado
+from django.contrib.admin.views.decorators import staff_member_required
+from django.shortcuts import render
+from django.utils.dateparse import parse_date
+from django.template.loader import render_to_string
+from weasyprint import HTML
+from django.http import HttpResponse
+
+@staff_member_required
+def relatorio_translados(request):
+    prefeitura_id = request.session.get("prefeitura_ativa_id")
+    cemiterio_id = request.session.get("cemiterio_ativo_id")
+
+    translados = Translado.objects.filter(
+        sepultado__tumulo__quadra__cemiterio__id=cemiterio_id,
+        sepultado__tumulo__quadra__cemiterio__prefeitura_id=prefeitura_id
+    )
+
+    data_inicio = request.GET.get("data_inicio")
+    data_fim = request.GET.get("data_fim")
+
+    if data_inicio and data_fim:
+        try:
+            dt_ini = parse_date(data_inicio)
+            dt_fim = parse_date(data_fim)
+            translados = translados.filter(data__range=(dt_ini, dt_fim))
+        except (ValueError, TypeError):
+            dt_ini = dt_fim = None
+
+    context = {
+        "translados": translados,
+        "data_inicio": data_inicio,
+        "data_fim": data_fim,
+    }
+
+    return render(request, "relatorios/relatorio_translados.html", context)
+
+from django.contrib.admin.views.decorators import staff_member_required
+from django.template.loader import render_to_string
+from django.http import HttpResponse
+from weasyprint import HTML
+from django.utils.dateparse import parse_date
+from sepultados_gestao.models import Translado, Prefeitura, Cemiterio
+
+@staff_member_required
+def relatorio_translados_pdf(request):
+    prefeitura_id = request.session.get("prefeitura_ativa_id")
+    cemiterio_id = request.session.get("cemiterio_ativo_id")
+
+    prefeitura = Prefeitura.objects.filter(id=prefeitura_id).first()
+    cemiterio = Cemiterio.objects.filter(id=cemiterio_id).first()
+
+    translados = Translado.objects.filter(
+        sepultado__tumulo__quadra__cemiterio_id=cemiterio_id,
+        sepultado__tumulo__quadra__cemiterio__prefeitura_id=prefeitura_id,
+    )
+
+    data_inicio = request.GET.get("data_inicio")
+    data_fim = request.GET.get("data_fim")
+
+    if data_inicio and data_fim:
+        try:
+            dt_ini = parse_date(data_inicio)
+            dt_fim = parse_date(data_fim)
+            translados = translados.filter(data_translado__range=(dt_ini, dt_fim))
+        except Exception:
+            pass
+
+    brasao_url = None
+    if prefeitura and prefeitura.brasao:
+        brasao_url = request.build_absolute_uri(prefeitura.brasao.url)
+
+    context = {
+        "prefeitura": prefeitura,
+        "cemiterio": cemiterio,
+        "translados": translados,
+        "data_inicio": data_inicio,
+        "data_fim": data_fim,
+        "brasao_url": brasao_url,
+    }
+
+    html_string = render_to_string("pdf/relatorio_translados_pdf.html", context)
+    pdf_file = HTML(string=html_string).write_pdf()
+    return HttpResponse(pdf_file, content_type="application/pdf")

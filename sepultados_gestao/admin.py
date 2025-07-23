@@ -1165,7 +1165,12 @@ class CustomAdminSite(AdminSite):
                 "object_name": "RelatorioExumacoes",
                 "admin_url": "/relatorios/exumacoes/"
             })
-    
+            grupo_relatorios["models"].append({
+                "name": "Relatório de Translados",
+                "object_name": "RelatorioTranslados",
+                "admin_url": "/relatorios/translados/"
+            })
+
 
         resultado = []
         if grupo_geral["models"]:
