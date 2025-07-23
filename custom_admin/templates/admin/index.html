@@ -4,11 +4,7 @@
 {% block content %}
     {% if not is_popup %}
         <div id="content-main">
-            {% if app_list %}
-                {# mantido vazio para que o menu lateral cuide da navegação #}
-            {% else %}
-                <p>{% trans "Você não tem permissão para acessar nenhum aplicativo." %}</p>
-            {% endif %}
+            {# deixado em branco de propósito, já que o menu lateral é responsável pela navegação #}
         </div>
     {% endif %}
 {% endblock %}

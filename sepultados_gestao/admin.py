@@ -1170,6 +1170,13 @@ class CustomAdminSite(AdminSite):
                 "object_name": "RelatorioTranslados",
                 "admin_url": "/relatorios/translados/"
             })
+            grupo_relatorios["models"].append({
+                "name": "Relatório de Contratos",
+                "object_name": "RelatorioContratos",
+                "admin_url": "/relatorios/contratos/"
+            })
+
+
 
 
         resultado = []

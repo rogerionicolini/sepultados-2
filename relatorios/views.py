@@ -264,3 +264,85 @@ def relatorio_translados_pdf(request):
     html_string = render_to_string("pdf/relatorio_translados_pdf.html", context)
     pdf_file = HTML(string=html_string).write_pdf()
     return HttpResponse(pdf_file, content_type="application/pdf")
+
+
+# relatorio/views.py
+from django.contrib.admin.views.decorators import staff_member_required
+from django.shortcuts import render
+from django.utils.dateparse import parse_date
+from django.template.loader import render_to_string
+from weasyprint import HTML
+from django.http import HttpResponse
+from sepultados_gestao.models import ConcessaoContrato, Prefeitura, Cemiterio
+
+
+@staff_member_required
+def relatorio_contratos(request):
+    prefeitura_id = request.session.get("prefeitura_ativa_id")
+    cemiterio_id = request.session.get("cemiterio_ativo_id")
+
+    contratos = ConcessaoContrato.objects.filter(
+        tumulo__quadra__cemiterio_id=cemiterio_id,
+        tumulo__quadra__cemiterio__prefeitura_id=prefeitura_id
+    )
+
+    data_inicio = request.GET.get("data_inicio")
+    data_fim = request.GET.get("data_fim")
+
+    if data_inicio and data_fim:
+        try:
+            dt_ini = parse_date(data_inicio)
+            dt_fim = parse_date(data_fim)
+            contratos = contratos.filter(data_contrato__range=(dt_ini, dt_fim))
+        except Exception:
+            pass
+
+    context = {
+        "contratos": contratos,
+        "data_inicio": data_inicio,
+        "data_fim": data_fim,
+    }
+
+    return render(request, "relatorios/relatorio_contratos.html", context)
+
+
+@staff_member_required
+def relatorio_contratos_pdf(request):
+    prefeitura_id = request.session.get("prefeitura_ativa_id")
+    cemiterio_id = request.session.get("cemiterio_ativo_id")
+
+    prefeitura = Prefeitura.objects.filter(id=prefeitura_id).first()
+    cemiterio = Cemiterio.objects.filter(id=cemiterio_id).first()
+
+    contratos = ConcessaoContrato.objects.filter(
+        tumulo__quadra__cemiterio_id=cemiterio_id,
+        tumulo__quadra__cemiterio__prefeitura_id=prefeitura_id
+    )
+
+    data_inicio = request.GET.get("data_inicio")
+    data_fim = request.GET.get("data_fim")
+
+    if data_inicio and data_fim:
+        try:
+            dt_ini = parse_date(data_inicio)
+            dt_fim = parse_date(data_fim)
+            contratos = contratos.filter(data_contrato__range=(dt_ini, dt_fim))
+        except Exception:
+            pass
+
+    brasao_url = None
+    if prefeitura and prefeitura.brasao:
+        brasao_url = request.build_absolute_uri(prefeitura.brasao.url)
+
+    context = {
+        "prefeitura": prefeitura,
+        "cemiterio": cemiterio,
+        "contratos": contratos,
+        "data_inicio": data_inicio,
+        "data_fim": data_fim,
+        "brasao_url": brasao_url,
+    }
+
+    html_string = render_to_string("pdf/relatorio_contratos_pdf.html", context)
+    pdf_file = HTML(string=html_string).write_pdf()
+    return HttpResponse(pdf_file, content_type="application/pdf")

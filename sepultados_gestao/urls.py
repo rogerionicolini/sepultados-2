@@ -24,5 +24,5 @@ urlpatterns = [
     path('tumulo/<int:pk>/pdf_sepultados/', views.gerar_pdf_sepultados_tumulo, name='gerar_pdf_sepultados_tumulo'),
     path("importar/quadras/", views.importar_quadras, name="importar_quadras"),
     path("importar/tumulos/", views.importar_tumulos, name="importar_tumulos"),
-    path("importar/sepultados/", views.importar_sepultados, name="importar_sepultados"),
+    path("importar/sepultados/", views.importar_sepultados, name="importar_sepultados"),    
 ]

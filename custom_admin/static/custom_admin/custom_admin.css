@@ -527,3 +527,58 @@ select[autocomplete],
 }
 
 
+#content-main {
+    overflow-y: auto;
+    max-height: calc(100vh - 100px); /* ajuste conforme seu cabeçalho */
+}
+
+#content {
+    overflow: visible;
+}
+
+.dashboard .app-menu_relatorios {
+    margin-bottom: 20px;
+}
+
+#content-main .module {
+    overflow-y: auto;
+}
+
+.dashboard #content-main {
+    max-height: 100vh;
+    overflow-y: auto;
+}
+
+#container {
+    min-height: 100vh;
+    overflow-y: auto;
+}
+
+#content {
+    min-height: 100vh;
+    overflow-y: auto;
+}
+
+/* Garante que a área do menu lateral permita rolagem */
+#nav-sidebar {
+    max-height: none !important;
+    overflow-y: auto !important;
+}
+
+/* Garante que a área principal não limite a altura */
+#container {
+    height: auto !important;
+    min-height: 100vh !important;
+    display: flex;
+}
+
+/* Garante que o conteúdo ocupe o espaço corretamente */
+#content {
+    flex-grow: 1;
+}
+
+/* Impede que o menu lateral corte conteúdo */
+.module {
+    max-height: none !important;
+    overflow: visible !important;
+}
