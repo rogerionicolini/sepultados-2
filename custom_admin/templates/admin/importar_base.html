@@ -1,0 +1,63 @@
+{% extends "admin/base_site.html" %}
+{% block title %}{{ titulo_pagina }}{% endblock %}
+
+{% block content %}
+<div class="content" style="max-width: 600px; margin-top: 30px;">
+
+  <style>
+    .import-link {
+      display: inline-block;
+      margin-bottom: 20px;
+      font-weight: bold;
+      color: #064e08;
+      font-size: 15px;
+    }
+
+    .info-formatos {
+      color: #444;
+      font-size: 13px;
+      margin-top: 5px;
+      margin-bottom: 20px;
+    }
+
+    #nome-arquivo {
+      margin-top: 5px;
+      color: #064e08;
+      font-weight: bold;
+      font-size: 14px;
+    }
+
+    form {
+      margin-top: 20px;
+    }
+
+    .form-group {
+      margin-bottom: 20px;
+    }
+  </style>
+
+  <a href="{{ link_planilha }}" download class="import-link">
+    📄 Baixar modelo de planilha (.xlsx)
+  </a>
+
+  <form method="post" enctype="multipart/form-data">
+    {% csrf_token %}
+
+    <div class="form-group">
+      <label for="id_arquivo"><strong>Selecionar Arquivo:</strong></label><br>
+      <input type="file" name="arquivo" id="id_arquivo" accept=".csv,.xls,.xlsx" required onchange="mostrarNomeArquivo(this)">
+      <div id="nome-arquivo"></div>
+      <div class="info-formatos">Formatos aceitos: .csv, .xls, .xlsx</div>
+    </div>
+
+    <button type="submit" class="button default">Importar</button>
+  </form>
+
+  <script>
+    function mostrarNomeArquivo(input) {
+      var nome = input.files.length > 0 ? input.files[0].name : "";
+      document.getElementById("nome-arquivo").innerText = nome;
+    }
+  </script>
+</div>
+{% endblock %}

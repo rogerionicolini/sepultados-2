@@ -1,0 +1,93 @@
+/* Fundo da tela */
+body {
+  margin: 0;
+  padding: 0;
+  background-color: #e3efcc;
+  font-family: Arial, sans-serif;
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Container principal */
+.login-container {
+  text-align: center;
+  width: 100%;
+}
+
+/* Logo centralizada */
+.login-logo img {
+  width: 180px; /* Aumentado */
+  margin-bottom: 20px;
+}
+
+/* Caixa de login */
+.login-box {
+  background-color: #f2f7e9;
+  padding: 30px 40px;
+  border-radius: 12px;
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+  display: inline-block;
+  text-align: left;
+  min-width: 360px;
+}
+
+/* Título */
+.login-box h1 {
+  font-size: 20px;
+  margin-bottom: 20px;
+  color: #2d4b1d;
+  text-align: center;
+}
+
+/* Linhas do formulário */
+.form-row {
+  margin-bottom: 16px;
+}
+
+/* Rótulos */
+.form-row label {
+  display: block;
+  margin-bottom: 5px;
+  font-weight: bold;
+  color: #2d4b1d;
+  font-size: 16px;
+}
+
+/* Campos de input */
+.form-row input {
+  width: 100%;
+  padding: 10px;
+  border: 2px solid #ccc;
+  border-radius: 8px;
+  font-size: 16px;
+  background-color: #eef3ff;
+  box-sizing: border-box;
+}
+
+/* Mensagem de erro */
+.error {
+  color: red;
+  font-size: 14px;
+  margin-bottom: 15px;
+  text-align: center;
+}
+
+/* Botão Acessar */
+.form-row button {
+  width: 100%;
+  padding: 10px;
+  background-color: #305d1e; /* Verde escuro */
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 16px;
+  cursor: pointer;
+  transition: background-color 0.3s ease;
+}
+
+/* Hover do botão */
+.form-row button:hover {
+  background-color: #274b18;
+}

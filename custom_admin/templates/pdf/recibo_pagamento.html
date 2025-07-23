@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Recibo de Pagamento</title>
+    <style>
+        @page {
+            size: A5 landscape;
+            margin: 1cm;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+        }
+
+        .borda {
+            width: 100%;
+            height: 100%;
+            border: 2px solid black;
+            padding: 1.8cm 2cm 2.3cm 2cm; /* topo, dir, baixo, esq */
+            box-sizing: border-box;
+            position: relative;
+        }
+
+        .cabecalho {
+            display: flex;
+            align-items: flex-start;
+            justify-content: flex-start;
+            margin-bottom: 20px;
+            margin-top: -10px;
+        }
+
+        .logo img {
+            max-height: 70px;
+        }
+
+        .dados {
+            margin-left: 12px;
+            font-size: 10pt;
+            line-height: 1.2;
+        }
+
+        h2 {
+            text-align: center;
+            margin: 0 0 30px;
+            font-size: 16pt;
+            font-weight: bold;
+            text-decoration: underline;
+        }
+
+        .conteudo {
+            font-size: 11pt;
+            line-height: normal;
+        }
+
+        .conteudo p {
+            margin: 2px 0;
+        }
+
+        .assinaturas {
+            position: absolute;
+            bottom: 40px;
+            width: 100%;
+            text-align: center;
+            font-size: 10pt;
+        }
+
+        .assinatura {
+            margin-top: 20px;
+        }
+
+        .assinatura hr {
+            width: 40%;
+            margin: auto;
+            margin-bottom: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="borda">
+        <div class="cabecalho">
+            <div class="logo">
+                {% if receita.prefeitura.brasao %}
+                    <img src="{{ receita.prefeitura.brasao.url }}">
+                {% endif %}
+            </div>
+            <div class="dados">
+                <strong>{{ receita.prefeitura.nome }}</strong><br>
+                {{ receita.prefeitura.logradouro }}, {{ receita.prefeitura.endereco_numero }}<br>
+                {{ receita.prefeitura.endereco_bairro }} – {{ receita.prefeitura.endereco_cidade }} – {{ receita.prefeitura.endereco_estado }}<br>
+                CEP {{ receita.prefeitura.endereco_cep }}
+            </div>
+        </div>
+
+        <h2>Recibo de Pagamento</h2>
+
+        <div class="conteudo">
+            <p><strong>Número do Documento:</strong> {{ receita.numero_documento }}</p>
+            <p><strong>Descrição:</strong> {{ receita.descricao }}</p>
+            <p><strong>Nome do Pagador:</strong> {{ receita.nome|default:"-" }}</p>
+            <p><strong>CPF/CNPJ:</strong> {{ receita.cpf|default:"-" }}</p>
+            <p><strong>Valor Total:</strong> R$ {{ receita.valor_total }}</p>
+            <p><strong>Desconto:</strong> R$ {{ receita.desconto|default:"0,00" }}</p>
+            <p><strong>Valor Pago:</strong> R$ {{ receita.valor_pago|default:"0,00" }}</p>
+            <p><strong>Data de Pagamento:</strong> {{ receita.data_pagamento|date:"d/m/Y" }}</p>
+            
+        </div><br><br>
+
+        <div class="assinaturas">
+            <div class="assinatura">
+                <hr>
+                <strong>{{ receita.prefeitura.nome }}</strong><br>
+                CPF/CNPJ: {{ receita.prefeitura.cnpj }}
+            </div>
+        </div>
+    </div>
+</body>
+</html>

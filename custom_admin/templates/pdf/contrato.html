@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Contrato de Concessão de Túmulo</title>
+    <style>
+        @page {
+            size: A4;
+            margin: 0;
+        }
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+        }
+        .a4-borda {
+            width: 18.5cm;
+            height: 27.7cm;
+            margin: auto;
+            margin-top: 1cm;
+            padding: 2cm;
+            border: 2px solid black;
+            box-sizing: border-box;
+            position: relative;
+        }
+        .cabecalho {
+            display: flex;
+            align-items: flex-start;
+            justify-content: flex-start;
+            margin-bottom: 10px;
+            margin-top: -35px;
+        }
+        .logo img {
+            max-height: 75px;
+        }
+        .dados {
+            margin-left: 12px;
+            font-size: 10pt;
+            line-height: 1.3;
+            text-align: left;
+        }
+        h2 {
+            text-align: center;
+            text-decoration: underline;
+            margin: 10px 0 20px;
+            font-size: 16pt;
+        }
+        .conteudo {
+            font-size: 10pt;
+            line-height: 1.2;
+        }
+        .conteudo p {
+            margin: 2px 0;
+        }
+        .clausulas-texto {
+            font-size: 11pt;
+            line-height: 1.30;
+            text-align: justify;
+            margin-top: 12px;
+        }
+        .assinaturas {
+            position: absolute;
+            bottom: 40px;
+            left: 2cm;
+            right: 2cm;
+            font-size: 10pt;
+        }
+        .assinatura-bloco {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 30px;
+        }
+        .assinatura {
+            width: 45%;
+            text-align: center;
+        }
+        .assinatura hr {
+            margin-bottom: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="a4-borda">
+        <div class="cabecalho">
+            <div class="logo">
+                {% if brasao_path %}
+                    <img src="{{ brasao_path }}" alt="Brasão da Prefeitura">
+                {% endif %}
+            </div>
+            <div class="dados">
+                <strong>{{ contrato.prefeitura.nome }}</strong><br>
+                {{ contrato.prefeitura.logradouro }}<br>
+                {{ contrato.prefeitura.endereco_bairro }} – {{ contrato.prefeitura.endereco_cidade }}<br>
+                CEP {{ contrato.prefeitura.endereco_cep }}
+            </div>
+        </div>
+
+        <h2>Contrato de Concessão de Túmulo</h2>
+
+        <div class="conteudo">
+            <p><strong>Número do Contrato:</strong> {{ contrato.numero_contrato }}</p>
+            <p><strong>Nome:</strong> {{ contrato.nome }}</p>
+            <p><strong>CPF/CNPJ:</strong> {{ contrato.cpf|default:"-" }}</p>
+            <p><strong>Telefone:</strong> {{ contrato.telefone|default:"-" }}</p>
+            <p><strong>Endereço:</strong>
+                {{ contrato.logradouro|default:"" }},
+                {{ contrato.endereco_numero|default:"" }} –
+                {{ contrato.endereco_bairro|default:"" }},
+                {{ contrato.endereco_cidade|default:"" }} –
+                {{ contrato.endereco_estado|default:"" }},
+                CEP {{ contrato.endereco_cep|default:"" }}
+            </p>
+            <p><strong>Túmulo:</strong> {{ contrato.tumulo.identificador }}</p>
+            <p><strong>Data da Concessão:</strong> {{ contrato.data_contrato|date:"d/m/Y" }}</p>
+            <p><strong>Forma de Pagamento:</strong> {{ contrato.get_forma_pagamento_display }}</p>
+            {% if contrato.forma_pagamento == 'parcelado' %}
+                <p><strong>Quantidade de Parcelas:</strong> {{ contrato.quantidade_parcelas }}</p>
+            {% endif %}
+            <p><strong>Valor Total:</strong> R$ {{ contrato.valor_total }}</p>
+            <p><strong>Observações:</strong><br>{{ contrato.observacoes|default:"-" }}</p>
+
+            {% if contrato.prefeitura.clausulas_contrato %}
+                <div class="clausulas-texto">
+                    {{ contrato.prefeitura.clausulas_contrato|linebreaks }}
+                </div>
+            {% endif %}
+        </div>
+
+        <div class="assinaturas">
+            <div class="assinatura-bloco">
+                <div class="assinatura">
+                    <hr>
+                    <strong>{{ contrato.prefeitura.nome }}</strong><br>
+                    CPF/CNPJ: {{ contrato.prefeitura.cnpj }}
+                </div>
+                <div class="assinatura">
+                    <hr>
+                    <strong>{{ contrato.nome }}</strong><br>
+                    CPF/CNPJ: {{ contrato.cpf|default:"-" }}
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

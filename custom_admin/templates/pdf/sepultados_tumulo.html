@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Lista de Sepultados no Túmulo</title>
+    <style>
+        @page {
+            size: A4;
+            margin: 0;
+        }
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+        }
+        .a4-borda {
+            width: 18.5cm;
+            height: 27.7cm;
+            margin: auto;
+            margin-top: 1cm;
+            padding: 2cm;
+            border: 2px solid black;
+            box-sizing: border-box;
+        }
+        .cabecalho {
+            display: flex;
+            align-items: flex-start;
+            margin-bottom: 20px;
+            margin-top: -35px;
+        }
+        .logo img {
+            max-height: 75px;
+        }
+        .dados {
+            margin-left: 12px;
+            font-size: 11pt;
+            line-height: 1.4;
+        }
+        h1 {
+            text-align: center;
+            font-size: 16pt;
+            margin-bottom: 15px;
+            background-color: #e3efcc;
+            border: 1px solid black;
+            padding: 4px;
+        }
+        .info {
+            font-size: 11pt;
+            margin-bottom: 15px;
+        }
+        .info p {
+            margin: 2px 0;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 10.5pt;
+            margin-top: 10px;
+        }
+        th, td {
+            border: 1px solid #333;
+            padding: 4px;
+            vertical-align: top;
+            text-align: left;
+        }
+        th {
+            background-color: #e3efcc;
+        }
+        .subtabela {
+            width: 100%;
+            border: none;
+            font-size: 10pt;
+        }
+        .subtabela td {
+            border: none;
+            padding: 3px 6px;
+        }
+    </style>
+</head>
+<body>
+<div class="a4-borda">
+    <div class="cabecalho">
+        <div class="logo">
+            {% if brasao_url %}
+                <img src="{{ brasao_url }}" alt="Brasão da Prefeitura">
+            {% endif %}
+        </div>
+        <div class="dados">
+            <strong>Prefeitura Municipal de {{ prefeitura.nome }}</strong><br>
+            {{ prefeitura.logradouro }}, {{ prefeitura.endereco_numero }}<br>
+            {{ prefeitura.endereco_bairro }} – {{ prefeitura.endereco_cidade }} – {{ prefeitura.endereco_estado }}<br>
+            CEP {{ prefeitura.endereco_cep }}
+        </div>
+    </div>
+
+    <h1>Lista de Sepultados no Túmulo</h1>
+
+    <div class="info">
+        <p><strong>Cemitério:</strong> {{ cemiterio.nome }}</p>
+        <p><strong>Endereço:</strong> {{ cemiterio.endereco|default:"Endereço não informado" }} – {{ cemiterio.cidade|default:"Cidade" }} / {{ cemiterio.estado|default:"UF" }}</p>
+    </div>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Nome do Sepultado</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for s in sepultados %}
+            <tr>
+                <td><strong>{{ s.nome }}</strong></td>
+            </tr>
+            <tr>
+                <td>
+                    <table class="subtabela">
+                        <tr>
+                            <td><strong>Nascimento:</strong> {{ s.data_nascimento|date:"d/m/Y" }}</td>
+                            <td><strong>Falecimento:</strong> {{ s.data_falecimento|date:"d/m/Y" }}</td>
+                            <td><strong>Sepultamento:</strong> {{ s.data_sepultamento|date:"d/m/Y" }}</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Quadra:</strong> {{ s.tumulo.quadra|default:"–" }}</td>
+                            <td><strong>Linha:</strong> {{ s.tumulo.linha|default:"–" }}</td>
+                            <td><strong>Túmulo:</strong> {{ s.tumulo.identificador }}</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Status:</strong>
+                                {% if s.data_translado %}
+                                    Transladado
+                                {% elif s.data_exumacao %}
+                                    Exumado
+                                {% else %}
+                                    Sepultado
+                                {% endif %}
+                            </td>
+                            <tr>
+                                <td><strong>Status:</strong>
+                                    {% if s.data_translado %}
+                                        Transladado
+                                    {% elif s.data_exumacao %}
+                                        Exumado
+                                    {% else %}
+                                        Sepultado
+                                    {% endif %}
+                                </td>
+                                <td><strong>Exumação:</strong> {{ s.data_exumacao|date:"d/m/Y"|default:"–" }}</td>
+                                <td><strong>Translado:</strong> {{ s.data_translado|date:"d/m/Y"|default:"–" }}</td>
+                            </tr>
+
+                        </tr>
+                    </table>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+</body>
+</html>

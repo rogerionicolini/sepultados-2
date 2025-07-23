@@ -1,0 +1,16 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Logout - Sepultados.com</title>
+    <link rel="stylesheet" href="{% static 'custom_admin/css/custom_logout.css' %}">
+</head>
+<body>
+    <div class="logout-container">
+        <img src="{% static 'custom_admin/logo.png' %}" alt="Logo" class="logout-logo">
+        <h1>Você saiu do sistema</h1>
+        <a href="/admin/login/" class="logout-button">Fazer login novamente</a>
+    </div>
+</body>
+</html>
