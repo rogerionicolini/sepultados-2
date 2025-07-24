@@ -106,7 +106,7 @@
                 <td>{{ c.numero_contrato }}</td>
                 <td>{{ c.data_contrato|date:"d/m/Y" }}</td>
                 <td>{{ c.nome }}</td>
-                <td>{{ c.documento }}</td>
+                <td>{{ c.cpf|stringformat:"s" }}</td>
                 <td>{{ c.tumulo }}</td>
                 <td>R$ {{ c.valor }}</td>
                 <td>{{ c.get_forma_pagamento_display }}</td>

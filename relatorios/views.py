@@ -306,6 +306,15 @@ def relatorio_contratos(request):
     return render(request, "relatorios/relatorio_contratos.html", context)
 
 
+from django.contrib.admin.views.decorators import staff_member_required
+from django.shortcuts import render
+from django.utils.dateparse import parse_date
+from django.template.loader import render_to_string
+from weasyprint import HTML
+from django.http import HttpResponse
+from sepultados_gestao.models import ConcessaoContrato, Prefeitura, Cemiterio
+
+
 @staff_member_required
 def relatorio_contratos_pdf(request):
     prefeitura_id = request.session.get("prefeitura_ativa_id")
@@ -319,16 +328,15 @@ def relatorio_contratos_pdf(request):
         tumulo__quadra__cemiterio__prefeitura_id=prefeitura_id
     )
 
+    # Corrigido: tratamento seguro dos parâmetros
     data_inicio = request.GET.get("data_inicio")
     data_fim = request.GET.get("data_fim")
 
-    if data_inicio and data_fim:
-        try:
-            dt_ini = parse_date(data_inicio)
-            dt_fim = parse_date(data_fim)
-            contratos = contratos.filter(data_contrato__range=(dt_ini, dt_fim))
-        except Exception:
-            pass
+    dt_ini = parse_date(data_inicio) if data_inicio and data_inicio != "None" else None
+    dt_fim = parse_date(data_fim) if data_fim and data_fim != "None" else None
+
+    if dt_ini and dt_fim:
+        contratos = contratos.filter(data_contrato__range=(dt_ini, dt_fim))
 
     brasao_url = None
     if prefeitura and prefeitura.brasao:
@@ -338,8 +346,8 @@ def relatorio_contratos_pdf(request):
         "prefeitura": prefeitura,
         "cemiterio": cemiterio,
         "contratos": contratos,
-        "data_inicio": data_inicio,
-        "data_fim": data_fim,
+        "data_inicio": dt_ini,
+        "data_fim": dt_fim,
         "brasao_url": brasao_url,
     }
 

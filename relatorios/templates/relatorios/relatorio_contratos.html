@@ -1,54 +1,51 @@
 {% extends "admin/base_site.html" %}
 {% load static %}
-{% load i18n %}
 
 {% block content %}
-<h1 style="margin-bottom: 20px;">📄 Relatório de Contratos de Concessão</h1>
+<h1>Relatório de Contratos de Concessão</h1>
 
-<form method="get" class="form-inline" style="margin-bottom: 20px;">
-    <div style="margin-bottom: 10px;">
-        <label for="data_inicio">Data de Início:</label>
-        <input type="date" id="data_inicio" name="data_inicio" value="{{ data_inicio }}" class="vDateField">
-    </div>
-    <div style="margin-bottom: 10px;">
-        <label for="data_fim">Data de Fim:</label>
-        <input type="date" id="data_fim" name="data_fim" value="{{ data_fim }}" class="vDateField">
-    </div>
-    <button type="submit" class="button">Filtrar</button>
+<form method="get" class="form-row" style="margin-bottom: 20px;">
+    <div style="display: flex; gap: 20px; flex-wrap: wrap; align-items: center;">
+        <label>Data início:
+            <input type="date" name="data_inicio" value="{{ data_inicio }}">
+        </label>
+        <label>Data fim:
+            <input type="date" name="data_fim" value="{{ data_fim }}">
+        </label>
 
-    <a href="{% url 'relatorios:relatorio_contratos_pdf' %}?data_inicio={{ data_inicio }}&data_fim={{ data_fim }}"
-       target="_blank" class="button"
-       style="background-color: #4CAF50; color: white; padding: 5px 10px; text-decoration: none;">
-        📄 Gerar PDF
-    </a>
+        <button type="submit" class="button default">Filtrar</button>
+
+        <a href="{% url 'relatorios:relatorio_contratos_pdf' %}?data_inicio={{ data_inicio }}&data_fim={{ data_fim }}"
+           class="button default" style="text-decoration: none; display: inline-block;">
+            📄 PDF
+        </a>
+    </div>
 </form>
 
-{% if contratos %}
-    <table class="table" style="width: 100%; border-collapse: collapse;">
-        <thead>
-            <tr style="background-color: #f0f0f0;">
-                <th style="border: 1px solid #ccc; padding: 5px;">Número</th>
-                <th style="border: 1px solid #ccc; padding: 5px;">Data do Contrato</th>
-                <th style="border: 1px solid #ccc; padding: 5px;">Nome</th>
-                <th style="border: 1px solid #ccc; padding: 5px;">CPF/CNPJ</th>
-                <th style="border: 1px solid #ccc; padding: 5px;">Túmulo</th>
-                <th style="border: 1px solid #ccc; padding: 5px;">Quadra</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for contrato in contratos %}
-                <tr>
-                    <td style="border: 1px solid #ccc; padding: 5px;">{{ contrato.numero_contrato }}</td>
-                    <td style="border: 1px solid #ccc; padding: 5px;">{{ contrato.data_contrato|date:"d/m/Y" }}</td>
-                    <td style="border: 1px solid #ccc; padding: 5px;">{{ contrato.nome }}</td>
-                    <td style="border: 1px solid #ccc; padding: 5px;">{{ contrato.cpf }}</td>
-                    <td style="border: 1px solid #ccc; padding: 5px;">{{ contrato.tumulo.codigo }}</td>
-                    <td style="border: 1px solid #ccc; padding: 5px;">{{ contrato.tumulo.quadra.codigo }}</td>
-                </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-{% else %}
-    <p>Nenhum contrato encontrado para os filtros selecionados.</p>
-{% endif %}
+<table class="adminlist">
+    <thead>
+        <tr>
+            <th style="padding: 10px !important; min-width: 80px;">Número</th>
+            <th style="padding: 10px !important; min-width: 130px;">Data do Contrato</th>
+            <th style="padding: 10px !important; min-width: 180px;">Nome</th>
+            <th style="padding: 10px !important; min-width: 150px;">CPF/CNPJ</th>
+            <th style="padding: 10px !important; min-width: 150px;">Túmulo</th>
+            <th style="padding: 10px !important; min-width: 100px;">Quadra</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for contrato in contratos %}
+        <tr>
+            <td style="padding: 10px !important;">{{ contrato.numero_contrato }}</td>
+            <td style="padding: 10px !important;">{{ contrato.data_contrato|date:"d/m/Y" }}</td>
+            <td style="padding: 10px !important;">{{ contrato.nome }}</td>
+            <td style="padding: 10px !important;">{{ contrato.cpf }}</td>
+            <td style="padding: 10px !important;">{{ contrato.tumulo|default:"-" }}</td>
+            <td style="padding: 10px !important;">{{ contrato.tumulo.quadra.codigo|default:"-" }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="6" style="padding: 10px !important;">Nenhum contrato encontrado.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
 {% endblock %}
