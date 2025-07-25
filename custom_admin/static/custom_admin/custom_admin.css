@@ -582,3 +582,112 @@ select[autocomplete],
     max-height: none !important;
     overflow: visible !important;
 }
+
+/* --- GRUPO UNIVERSAL PARA TODOS OS "CARDS" DO MENU LATERAL --- */
+#nav-sidebar .module,
+#nav-sidebar .app-sepultados_gestao,
+#nav-sidebar .app-administraçao_geral,
+#nav-sidebar .app-relatorios,
+#nav-sidebar .app-importacoes {
+    background: #f3faea !important;
+    border-radius: 15px !important;
+    margin-bottom: 12px !important;
+    padding: 10px 8px 7px 8px !important;
+    box-shadow: 0 1px 7px 0 #e3efcc2e !important;
+    border: 1px solid #d7eac5 !important;
+}
+
+/* --- TÍTULOS DOS BLOCOS --- */
+#nav-sidebar .module caption,
+#nav-sidebar .app-caption {
+    font-size: 1.04rem !important;
+    font-weight: 700 !important;
+    color: #3d6b2c !important;
+    background: none !important;
+    letter-spacing: 0.01em;
+    margin-bottom: 7px !important;
+    margin-top: 0 !important;
+    text-transform: uppercase;
+    padding-left: 9px;
+    border-left: 3.5px solid #9bbf80 !important;
+    border-radius: 0 8px 8px 0;
+    line-height: 1.13 !important;
+}
+
+/* --- ITENS DO MENU --- */
+#nav-sidebar .model,
+#nav-sidebar li a {
+    color: #225b14 !important;
+    font-size: 0.97rem !important;
+    font-weight: 500 !important;
+    padding: 3px 13px 3px 13px !important;
+    border-radius: 9px !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px;
+    transition: background 0.18s, color 0.18s;
+    text-decoration: none !important;
+    border: none !important;
+    min-height: 0 !important;
+    height: 25px !important;
+    line-height: 1.08 !important;
+    margin-bottom: 0 !important;
+    margin-top: 0 !important;
+    background: none !important;
+}
+
+#nav-sidebar .model:hover,
+#nav-sidebar li a:hover {
+    background: #e3efcc !important;
+    color: #225b14 !important;
+    font-weight: 600 !important;
+    text-decoration: none !important;
+    box-shadow: 0 1px 6px #bddcb521;
+}
+
+/* --- BOTÃO ADICIONAR --- */
+#nav-sidebar .addlink {
+    background: #5a8b36 !important;
+    color: #fff !important;
+    border-radius: 14px !important;
+    font-size: 0.98em !important;
+    font-weight: 600 !important;
+    padding: 5px 24px !important;          /* Mais espaço nos lados E em cima/baixo */
+    margin-left: auto !important;
+    margin-right: 3px !important;
+    border: none !important;
+    box-shadow: 0 1px 3px #b2cca41c;
+    height: unset !important;
+    min-height: 4px !important;           /* Altura mínima confortável */
+    display: flex !important;              /* Flexbox para centralizar texto */
+    align-items: center !important;        /* Centraliza verticalmente */
+    justify-content: center !important;    /* Centraliza horizontalmente */
+    line-height: 1.1 !important;
+    white-space: nowrap !important;
+}
+
+#nav-sidebar .addlink:hover {
+    background: #42782b !important;
+    color: #fff !important;
+    border: none !important;
+}
+
+/* --- Remover espaço e linhas extras --- */
+#nav-sidebar hr {
+    display: none !important;
+}
+#nav-sidebar ul {
+    margin: 0 !important;
+    padding: 0 !important;
+    gap: 0 !important;
+}
+#nav-sidebar li,
+#nav-sidebar .model {
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+#nav-filter, #nav-filter + br {
+    display: none !important;
+}
+
