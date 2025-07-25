@@ -14,4 +14,6 @@ urlpatterns = [
     path("contratos/pdf/", views.relatorio_contratos_pdf, name="relatorio_contratos_pdf"),
     path("receitas/", views.relatorio_receitas, name="relatorio_receitas"),
     path("receitas/pdf/", views.relatorio_receitas_pdf, name="relatorio_receitas_pdf"),
+    path("tumulos/", views.relatorio_tumulos, name="relatorio_tumulos"),
+    path("tumulos/pdf/", views.relatorio_tumulos_pdf, name="relatorio_tumulos_pdf"),
 ]

@@ -1,10 +1,10 @@
 {% load humanize %}
+{% load formatos %}
 <!DOCTYPE html>
 <html lang="pt-BR">
-{% load formatos %}   
 <head>
     <meta charset="UTF-8">
-    <title>Relatório de Receitas</title>
+    <title>Relatório de Túmulos</title>
     <style>
         @page { size: A4 portrait; margin: 1.5cm; }
         body { font-family: Arial, sans-serif; margin: 0; padding: 0; }
@@ -82,44 +82,64 @@
         </div>
     </div>
 
-    <h1>Relatório de Receitas</h1>
+    <h1>Relatório de Túmulos</h1>
 
     <div class="info">
         <p><strong>Cemitério:</strong> {{ cemiterio.nome }}</p>
-        <p><strong>Período:</strong>
-            {% if data_inicio and data_fim %}
-                {{ data_inicio|date:"d/m/Y" }} a {{ data_fim|date:"d/m/Y" }}
-            {% else %}
-                Todos
+        <p><strong>Status:</strong> 
+            {% if status_filtro == "Reservado" %}Reservado
+            {% elif status_filtro == "Livre" %}Livre
+            {% else %}Todos
             {% endif %}
         </p>
+        <p><strong>Tipo:</strong> {{ tipo_filtro|default:"Todos" }}</p>
+        <p><strong>Data:</strong> {{ hoje|date:"d/m/Y" }}</p>
     </div>
 
     <table>
         <thead>
             <tr>
-                <th>Nº</th>
-                <th>Vencimento</th>
-                <th>Nome</th>
-                <th>CPF/CNPJ</th>
-                <th>Serviço</th>
-                <th>Valor</th>
+                <th>Tipo</th>
+                <th>Identificador</th>
+                <th>Linha</th>
+                <th>Capacidade</th>
+                <th>Ocupação</th>
                 <th>Status</th>
-                <th>Pagamento</th>
+                <th>Reservado</th>
+                <th>Motivo</th>
+                <th>Contrato</th>
             </tr>
         </thead>
         <tbody>
-        {% for receita in receitas %}
+        {% for tumulo in tumulos %}
             <tr>
-                <td>{{ receita.numero_documento }}</td>
-                <td>{{ receita.data_vencimento|date:"d/m/Y"|default:"-" }}</td>
-                <td>{{ receita.nome|default:"-" }}</td>
-                <td>{{ receita.cpf|default:"-" }}</td>
-                <td>{{ receita.descricao|default:"-" }}</td>
-                <td>{{ receita.valor_total|br_currency }}</td>
-
-                <td>{{ receita.status|default:"-" }}</td>
-                <td>{{ receita.data_pagamento|date:"d/m/Y"|default:"-" }}</td>
+                <td>{{ tumulo.get_tipo_estrutura_display }}</td>
+                <td>{{ tumulo.identificador }}</td>
+                <td>
+                    {% if tumulo.usar_linha %}
+                        {{ tumulo.linha|default:"-" }}
+                    {% else %}
+                        -
+                    {% endif %}
+                </td>
+                <td>{{ tumulo.capacidade }}</td>
+                <td>{{ tumulo.sepultado_set.count }}/{{ tumulo.capacidade }}</td>
+                <td>{{ tumulo.get_status_display }}</td>
+                <td>{{ tumulo.reservado|yesno:"Sim,Não" }}</td>
+                <td>{{ tumulo.motivo_reserva|default:"-" }}</td>
+                <td>
+                    {% with contrato=tumulo_contrato|dict_get:tumulo.id %}
+                        {% if contrato %}
+                            {{ contrato.numero_contrato }}
+                        {% else %}
+                            -
+                        {% endif %}
+                    {% endwith %}
+                </td>
+            </tr>
+        {% empty %}
+            <tr>
+                <td colspan="9" style="text-align: center;">Nenhum túmulo encontrado.</td>
             </tr>
         {% endfor %}
         </tbody>

@@ -460,3 +460,99 @@ def relatorio_receitas_pdf(request):
     html_string = render_to_string("pdf/relatorio_receitas_pdf.html", context)
     pdf_file = HTML(string=html_string).write_pdf()
     return HttpResponse(pdf_file, content_type="application/pdf")
+
+
+from django.contrib.admin.views.decorators import staff_member_required
+from django.shortcuts import render
+from django.template.loader import render_to_string
+from django.utils.dateparse import parse_date
+from weasyprint import HTML
+from django.http import HttpResponse
+from sepultados_gestao.models import Tumulo, Prefeitura, Cemiterio, ConcessaoContrato
+
+
+@staff_member_required
+def relatorio_tumulos(request):
+    prefeitura_id = request.session.get("prefeitura_ativa_id")
+    cemiterio_id = request.session.get("cemiterio_ativo_id")
+
+    tumulos = Tumulo.objects.filter(cemiterio_id=cemiterio_id)
+
+    status_filtro = request.GET.get("status")
+    tipo_filtro = request.GET.get("tipo")
+
+    if status_filtro:
+        tumulos = tumulos.filter(status=status_filtro)
+    if tipo_filtro:
+        tumulos = tumulos.filter(tipo_estrutura=tipo_filtro)
+
+    contratos = ConcessaoContrato.objects.filter(tumulo__in=tumulos)
+
+    tumulo_contrato = {c.tumulo_id: c for c in contratos}
+
+    context = {
+        "tumulos": tumulos,
+        "status_filtro": status_filtro,
+        "tipo_filtro": tipo_filtro,
+        "tumulo_contrato": tumulo_contrato,
+    }
+    return render(request, "relatorios/relatorio_tumulos.html", context)
+
+
+from django.contrib.admin.views.decorators import staff_member_required
+from django.http import HttpResponse
+from django.template.loader import render_to_string
+from django.utils.dateparse import parse_date
+from weasyprint import HTML
+from datetime import date
+
+from sepultados_gestao.models import Tumulo, Prefeitura, Cemiterio, ConcessaoContrato, Sepultado
+
+@staff_member_required
+def relatorio_tumulos_pdf(request):
+    prefeitura_id = request.session.get("prefeitura_ativa_id")
+    cemiterio_id = request.session.get("cemiterio_ativo_id")
+
+    prefeitura = Prefeitura.objects.filter(id=prefeitura_id).first()
+    cemiterio = Cemiterio.objects.filter(id=cemiterio_id).first()
+
+    tumulos = Tumulo.objects.filter(cemiterio_id=cemiterio_id).prefetch_related("sepultado_set")
+
+    status_filtro = request.GET.get("status")
+    tipo_filtro = request.GET.get("tipo")
+
+    if not status_filtro or status_filtro in ["None", "Todos", ""]:
+        status_filtro = None
+    if not tipo_filtro or tipo_filtro in ["None", "Todos", ""]:
+        tipo_filtro = None
+
+    if status_filtro:
+        if status_filtro == "Reservado":
+            tumulos = tumulos.filter(reservado=True)
+        elif status_filtro == "Livre":
+            tumulos = tumulos.filter(reservado=False)
+
+    if tipo_filtro:
+        tumulos = tumulos.filter(tipo_estrutura=tipo_filtro)
+
+    contratos = ConcessaoContrato.objects.filter(tumulo__in=tumulos)
+    tumulo_contrato = {c.tumulo_id: c for c in contratos}
+
+    brasao_url = None
+    if prefeitura and prefeitura.brasao:
+        brasao_url = request.build_absolute_uri(prefeitura.brasao.url)
+
+    context = {
+        "prefeitura": prefeitura,
+        "cemiterio": cemiterio,
+        "tumulos": tumulos,
+        "status_filtro": status_filtro or "Todos",
+        "tipo_filtro": tipo_filtro or "Todos",
+        "tumulo_contrato": tumulo_contrato,
+        "brasao_url": brasao_url,
+        "hoje": date.today(),
+    }
+
+    html_string = render_to_string("pdf/relatorio_tumulos_pdf.html", context)
+    pdf_file = HTML(string=html_string).write_pdf()
+    return HttpResponse(pdf_file, content_type="application/pdf")
