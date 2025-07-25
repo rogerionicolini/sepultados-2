@@ -1254,7 +1254,18 @@ class Receita(models.Model):
                     exumacao=self.exumacao,
                     translado=self.translado,
                 )
-           
+    @property
+    def descricao_segura(self):
+        if self.contrato:
+            return f"Contrato {self.contrato.numero_contrato}"
+        elif self.exumacao:
+            return f"Exumação {self.exumacao.sepultado.nome}"
+        elif self.translado:
+            return f"Translado {self.translado.sepultado.nome}"
+        elif self.sepultado:
+            return f"Sepultamento {self.sepultado.nome}"
+        return self.descricao or "Receita Diversa"
+       
 
     
     def __str__(self):

@@ -1,0 +1,59 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+{% load formatos %}
+
+{% block content %}
+<h1>Relatório de Receitas</h1>
+
+<form method="get" class="form-row" style="margin-bottom: 20px;">
+    <div style="display: flex; gap: 20px; flex-wrap: wrap; align-items: center;">
+        <label>Data início:
+            <input type="date" name="data_inicio" value="{{ data_inicio }}">
+        </label>
+        <label>Data fim:
+            <input type="date" name="data_fim" value="{{ data_fim }}">
+        </label>
+
+        <button type="submit" class="button default">Filtrar</button>
+
+        <a href="{% url 'relatorios:relatorio_receitas_pdf' %}?data_inicio={{ data_inicio }}&data_fim={{ data_fim }}"
+           class="button default" style="text-decoration: none; display: inline-block;">
+            📄 PDF
+        </a>
+    </div>
+</form>
+
+<table class="table table-striped">
+    <thead>
+        <tr>
+            <th>NÚMERO</th>
+            <th>DATA VENCIMENTO</th>
+            <th>NOME</th>
+            <th>CPF/CNPJ</th>
+            <th>SERVIÇO</th>
+            <th>VALOR</th>
+            <th>STATUS</th>
+            <th>DATA PAGAMENTO</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for receita in receitas %}
+            <tr>
+                <td>{{ receita.numero_documento }}</td>
+                <td>{{ receita.data_vencimento|date:"d/m/Y" }}</td>
+                <td>{{ receita.nome|default:"-" }}</td>
+                <td>{{ receita.cpf|default:"-" }}</td>
+                <td>{{ receita.descricao_segura }}</td>
+                <td>{{ receita.valor_total|br_currency }}</td>
+                <td>{{ receita.status }}</td>
+                <td>{{ receita.data_pagamento|date:"d/m/Y" }}</td>
+            </tr>
+        {% empty %}
+            <tr>
+                <td colspan="8">Nenhuma receita encontrada.</td>
+            </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+{% endblock %}

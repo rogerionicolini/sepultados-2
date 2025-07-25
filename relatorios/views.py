@@ -354,3 +354,109 @@ def relatorio_contratos_pdf(request):
     html_string = render_to_string("pdf/relatorio_contratos_pdf.html", context)
     pdf_file = HTML(string=html_string).write_pdf()
     return HttpResponse(pdf_file, content_type="application/pdf")
+
+
+from django.contrib.admin.views.decorators import staff_member_required
+from django.shortcuts import render
+from django.utils.dateparse import parse_date
+from django.template.loader import render_to_string
+from weasyprint import HTML
+from django.http import HttpResponse
+from sepultados_gestao.models import Receita, Prefeitura, Cemiterio
+from django.db.models import Q
+
+
+@staff_member_required
+def relatorio_receitas(request):
+    prefeitura_id = request.session.get("prefeitura_ativa_id")
+    cemiterio_id = request.session.get("cemiterio_ativo_id")
+
+    receitas = Receita.objects.filter(prefeitura_id=prefeitura_id)
+
+    if cemiterio_id:
+        receitas = receitas.filter(
+            Q(contrato__tumulo__quadra__cemiterio_id=cemiterio_id) |
+            Q(sepultado__tumulo__quadra__cemiterio_id=cemiterio_id) |
+            Q(exumacao__tumulo__quadra__cemiterio_id=cemiterio_id) |
+            Q(translado__tumulo_destino__quadra__cemiterio_id=cemiterio_id) |
+            Q(contrato__isnull=True, sepultado__isnull=True, exumacao__isnull=True, translado__isnull=True)  # receitas gerais
+        ).distinct()
+
+    data_inicio = request.GET.get("data_inicio")
+    data_fim = request.GET.get("data_fim")
+
+    if data_inicio:
+        try:
+            dt_ini = parse_date(data_inicio)
+            receitas = receitas.filter(data_vencimento__gte=dt_ini)
+        except Exception:
+            pass
+
+    if data_fim:
+        try:
+            dt_fim = parse_date(data_fim)
+            receitas = receitas.filter(data_vencimento__lte=dt_fim)
+        except Exception:
+            pass
+
+    context = {
+        "receitas": receitas,
+        "data_inicio": data_inicio,
+        "data_fim": data_fim,
+    }
+
+    return render(request, "relatorios/relatorio_receitas.html", context)
+
+
+@staff_member_required
+def relatorio_receitas_pdf(request):
+    prefeitura_id = request.session.get("prefeitura_ativa_id")
+    cemiterio_id = request.session.get("cemiterio_ativo_id")
+
+    prefeitura = Prefeitura.objects.filter(id=prefeitura_id).first()
+    cemiterio = Cemiterio.objects.filter(id=cemiterio_id).first()
+
+    receitas = Receita.objects.filter(prefeitura_id=prefeitura_id)
+
+    if cemiterio_id:
+        receitas = receitas.filter(
+            Q(contrato__tumulo__quadra__cemiterio_id=cemiterio_id) |
+            Q(sepultado__tumulo__quadra__cemiterio_id=cemiterio_id) |
+            Q(exumacao__tumulo__quadra__cemiterio_id=cemiterio_id) |
+            Q(translado__tumulo_destino__quadra__cemiterio_id=cemiterio_id) |
+            Q(contrato__isnull=True, sepultado__isnull=True, exumacao__isnull=True, translado__isnull=True)
+        ).distinct()
+
+    data_inicio = request.GET.get("data_inicio")
+    data_fim = request.GET.get("data_fim")
+
+    if data_inicio:
+        try:
+            dt_ini = parse_date(data_inicio)
+            receitas = receitas.filter(data_vencimento__gte=dt_ini)
+        except Exception:
+            pass
+
+    if data_fim:
+        try:
+            dt_fim = parse_date(data_fim)
+            receitas = receitas.filter(data_vencimento__lte=dt_fim)
+        except Exception:
+            pass
+
+    brasao_url = None
+    if prefeitura and prefeitura.brasao:
+        brasao_url = request.build_absolute_uri(prefeitura.brasao.url)
+
+    context = {
+        "prefeitura": prefeitura,
+        "cemiterio": cemiterio,
+        "receitas": receitas,
+        "data_inicio": data_inicio,
+        "data_fim": data_fim,
+        "brasao_url": brasao_url,
+    }
+
+    html_string = render_to_string("pdf/relatorio_receitas_pdf.html", context)
+    pdf_file = HTML(string=html_string).write_pdf()
+    return HttpResponse(pdf_file, content_type="application/pdf")

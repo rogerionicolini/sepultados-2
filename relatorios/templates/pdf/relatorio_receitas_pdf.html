@@ -1,0 +1,127 @@
+{% load humanize %}
+<!DOCTYPE html>
+<html lang="pt-BR">
+{% load formatos %}   
+<head>
+    <meta charset="UTF-8">
+    <title>Relatório de Receitas</title>
+    <style>
+        @page { size: A4 portrait; margin: 1.5cm; }
+        body { font-family: Arial, sans-serif; margin: 0; padding: 0; }
+
+        .cabecalho {
+            display: flex;
+            align-items: flex-start;
+            margin-bottom: 20px;
+        }
+
+        .logo img { max-height: 75px; }
+
+        .dados {
+            margin-left: 12px;
+            font-size: 11pt;
+            line-height: 1.4;
+        }
+
+        h1 {
+            text-align: center;
+            font-size: 16pt;
+            margin-bottom: 15px;
+            background-color: #e3efcc;
+            border: 1px solid black;
+            padding: 6px;
+        }
+
+        .info {
+            font-size: 11pt;
+            margin-bottom: 15px;
+        }
+
+        .info p { margin: 2px 0; }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 9pt;
+            margin-top: 10px;
+        }
+
+        th, td {
+            border: 1px solid #333;
+            padding: 4px 6px;
+            word-wrap: break-word;
+        }
+
+        th {
+            background-color: #e3efcc;
+            text-align: center;
+            font-weight: bold;
+        }
+
+        td {
+            text-align: left;
+        }
+
+        tr {
+            page-break-inside: avoid;
+        }
+    </style>
+</head>
+<body>
+    <div class="cabecalho">
+        <div class="logo">
+            {% if brasao_url %}
+                <img src="{{ brasao_url }}" alt="Brasão da Prefeitura">
+            {% endif %}
+        </div>
+        <div class="dados">
+            <strong>Prefeitura Municipal de {{ prefeitura.nome }}</strong><br>
+            {{ prefeitura.logradouro }}, {{ prefeitura.endereco_numero }}<br>
+            {{ prefeitura.endereco_bairro }} – {{ prefeitura.endereco_cidade }} – {{ prefeitura.endereco_estado }}<br>
+            CEP {{ prefeitura.endereco_cep }}
+        </div>
+    </div>
+
+    <h1>Relatório de Receitas</h1>
+
+    <div class="info">
+        <p><strong>Cemitério:</strong> {{ cemiterio.nome }}</p>
+        <p><strong>Período:</strong>
+            {% if data_inicio and data_fim %}
+                {{ data_inicio|date:"d/m/Y" }} a {{ data_fim|date:"d/m/Y" }}
+            {% else %}
+                Todos
+            {% endif %}
+        </p>
+    </div>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Nº</th>
+                <th>Vencimento</th>
+                <th>Nome</th>
+                <th>CPF/CNPJ</th>
+                <th>Serviço</th>
+                <th>Valor</th>
+                <th>Status</th>
+                <th>Pagamento</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for receita in receitas %}
+            <tr>
+                <td>{{ receita.numero_documento }}</td>
+                <td>{{ receita.data_vencimento|date:"d/m/Y"|default:"-" }}</td>
+                <td>{{ receita.nome|default:"-" }}</td>
+                <td>{{ receita.cpf|default:"-" }}</td>
+                <td>{{ receita.descricao|default:"-" }}</td>
+                <td>{{ receita.valor_total|br_currency }}</td>
+                <td>{{ receita.status|default:"-" }}</td>
+                <td>{{ receita.data_pagamento|date:"d/m/Y"|default:"-" }}</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</body>
+</html>
