@@ -16,6 +16,7 @@ INSTALLED_APPS = [
     'crum',
     'core',
     'relatorios',
+    'rest_framework',
     'django.contrib.humanize',
     'django.contrib.admin',
     'django.contrib.auth',
