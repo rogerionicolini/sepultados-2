@@ -10,19 +10,9 @@ def br_currency(value):
     except (TypeError, ValueError):
         return "R$ 0,00"
 
-from django import template
-
-register = template.Library()
-
 @register.filter
 def get_item(dicionario, chave):
     return dicionario.get(chave)
-
-# seu_app/templatetags/formatos.py
-
-from django import template
-
-register = template.Library()
 
 @register.filter
 def dict_get(d, k):

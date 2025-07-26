@@ -2,6 +2,11 @@
 {% load static %}
 {% load formatos %}
 
+{% block extrastyle %}
+    {{ block.super }}
+    <link rel="stylesheet" href="{% static 'css/relatorio.css' %}?v=8">
+{% endblock %}
+
 {% block content %}
 <h1>Relatório de Receitas</h1>
 
@@ -23,7 +28,7 @@
     </div>
 </form>
 
-<table class="table table-striped">
+<table class="adminlist">
     <thead>
         <tr>
             <th>NÚMERO</th>

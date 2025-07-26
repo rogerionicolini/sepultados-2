@@ -1,6 +1,11 @@
 {% extends "admin/base_site.html" %}
 {% load static %}
 
+{% block extrastyle %}
+    {{ block.super }}
+    <link rel="stylesheet" href="{% static 'css/relatorio.css' %}?v=8">
+{% endblock %}
+
 {% block content %}
 <h1>Relatório de Túmulos</h1>
 
@@ -34,7 +39,7 @@
     </div>
 </form>
 
-<table class="table table-striped">
+<table class="adminlist">
     <thead>
     <tr>
         <th>Identificador</th>
@@ -47,9 +52,9 @@
         <th>Motivo</th>
         <th>Contrato</th>
     </tr>
-</thead>
-<tbody>
-    {% for tumulo in tumulos %}
+    </thead>
+    <tbody>
+        {% for tumulo in tumulos %}
         <tr>
             <td>{{ tumulo.identificador }}</td>
             <td>{{ tumulo.quadra }}</td>
@@ -71,9 +76,7 @@
                 {% endif %}
             </td>
         </tr>
-    {% endfor %}
-</tbody>
-    
+        {% endfor %}
+    </tbody>
 </table>
-
 {% endblock %}

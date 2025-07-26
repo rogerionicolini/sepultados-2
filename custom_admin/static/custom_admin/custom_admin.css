@@ -691,3 +691,283 @@ select[autocomplete],
     display: none !important;
 }
 
+/* Áreas centrais arredondadas e sem divisórias */
+#changelist-search,
+#changelist .actions,
+#changelist-filter,
+.filter-wrapper,
+.filters,
+.results {
+    border-radius: 14px !important;
+    background: #fff !important;
+    border: 1.5px solid #e3efcc !important;
+    box-shadow: none !important;
+    margin-bottom: 14px !important;
+    padding: 0 !important;
+}
+
+/* Tabela flat, sem NENHUMA linha ou divisão */
+.results table {
+    border-radius: 14px !important;
+    border-collapse: separate !important;
+    border-spacing: 0 !important;
+    width: 100%;
+    background: #fff !important;
+    overflow: hidden;
+    margin: 0 !important;
+}
+
+/* Remove TODAS as linhas internas da tabela */
+.results th, .results td {
+    border: none !important;
+    background: #fff !important;
+    color: #1e5421 !important;
+}
+
+/* Cabeçalho pode ser levemente cinza/verde claro se quiser */
+.results th {
+    background: #f7faef !important;
+    font-weight: bold;
+    color: #1e5421 !important;
+}
+
+/* Bordas arredondadas só nas extremidades */
+.results th:first-child {
+    border-top-left-radius: 14px !important;
+}
+.results th:last-child {
+    border-top-right-radius: 14px !important;
+}
+.results tr:last-child td:first-child {
+    border-bottom-left-radius: 14px !important;
+}
+.results tr:last-child td:last-child {
+    border-bottom-right-radius: 14px !important;
+}
+
+/* Opcional: cor de fundo alternada nas linhas (remove se não quiser) */
+.results tbody tr:nth-child(even) td {
+    background: #f9fcf3 !important;
+}
+.results tbody tr:nth-child(odd) td {
+    background: #fff !important;
+}
+
+/* Remove sombra de foco azul dos inputs */
+input:focus, select:focus, textarea:focus {
+    outline: 1.5px solid #b5cc97 !important;
+    box-shadow: none !important;
+}
+/* Arredonda APENAS as barras de pesquisa e de ações, mantendo proporção original */
+#toolbar,
+#changelist-search,
+#changelist-form .actions,
+#changelist .actions {
+    border-radius: 16px !important;
+    background: #fff !important;
+    border: 1.2px solid #e3efcc !important;
+    box-shadow: none !important;
+    padding: 7px 10px !important;
+    margin-bottom: 12px !important;
+    margin-top: 0 !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+    width: auto !important;
+    min-height: unset !important;
+    max-width: 100% !important;
+}
+
+/* Inputs e botões DENTRO das barras - só arredonda, NÃO aumenta */
+#toolbar input,
+#changelist-search input,
+#changelist-form .actions input,
+#changelist .actions input,
+#toolbar select,
+#changelist-search select,
+#changelist-form .actions select,
+#changelist .actions select {
+    border-radius: 10px !important;
+    border: 1.2px solid #d1eab5 !important;
+    background: #f8fbf2 !important;
+    margin-right: 6px !important;
+    height: 30px !important;
+    font-size: 15px !important;
+    padding: 0 10px !important;
+    min-width: 0 !important;
+    box-sizing: border-box;
+}
+
+/* Botão de submit permanece visível, arredondado, cor padrão */
+#toolbar input[type="submit"],
+#changelist-search input[type="submit"],
+#changelist-form .actions input[type="submit"],
+#changelist .actions input[type="submit"] {
+    background: #cbe0b7 !important;
+    color: #214011 !important;
+    border: none !important;
+    font-weight: bold;
+    padding: 0 16px !important;
+    border-radius: 10px !important;
+    height: 30px !important;
+    min-width: 60px !important;
+    font-size: 15px !important;
+}
+
+/* Remove qualquer sombra azul ou efeito padrão ao focar */
+#toolbar input:focus,
+#changelist-search input:focus,
+#changelist-form .actions input:focus,
+#changelist .actions input:focus {
+    outline: 1.5px solid #b5cc97 !important;
+    box-shadow: none !important;
+}
+
+/* Deixa o paginator redondo, fundo branco e sem linhas */
+.paginator, .paginator * {
+    border-radius: 16px !important;
+    background: #fff !important;
+    border: 1.2px solid #e3efcc !important;
+    box-shadow: none !important;
+    color: #15371a !important;
+    padding: 7px 18px !important;
+    margin: 12px 0 0 0 !important;
+    font-size: 15px !important;
+    min-height: 34px !important;
+    align-items: center !important;
+    display: flex !important;
+    justify-content: flex-start !important;
+}
+
+/* CAMPOS DE FORMULÁRIO MODERNOS E CLEAN */
+#content-main form input[type="text"],
+#content-main form input[type="email"],
+#content-main form input[type="password"],
+#content-main form input[type="number"],
+#content-main form input[type="date"],
+#content-main form input[type="file"],
+#content-main form select,
+#content-main form textarea {
+    border-radius: 12px !important;
+    background: #f8fbf5 !important;
+    border: 1px solid #ddeacc !important;
+    color: #304520 !important;
+    font-size: 1rem;
+    padding: 8px 14px;
+    box-shadow: 0 1px 6px #e3efcc25;
+    outline: none;
+    transition: border 0.2s, box-shadow 0.2s;
+    margin-bottom: 8px;
+}
+
+#content-main form input[type="text"]:focus,
+#content-main form input[type="email"]:focus,
+#content-main form input[type="password"]:focus,
+#content-main form input[type="number"]:focus,
+#content-main form input[type="date"]:focus,
+#content-main form input[type="file"]:focus,
+#content-main form select:focus,
+#content-main form textarea:focus {
+    border: 1.5px solid #94c949 !important;
+    background: #f4ffe6 !important;
+    box-shadow: 0 0 0 2px #e3efcc70;
+}
+
+/* Botão padrão */
+#content-main form input[type="submit"],
+#content-main form button,
+#content-main .submit-row input[type="submit"] {
+    border-radius: 10px !important;
+    background: #40652a !important;
+    color: #fff !important;
+    padding: 8px 24px;
+    font-weight: bold;
+    border: none !important;
+    font-size: 1.08rem;
+    transition: background 0.2s;
+    box-shadow: 0 1px 5px #e3efcc30;
+}
+#content-main form input[type="submit"]:hover,
+#content-main form button:hover,
+#content-main .submit-row input[type="submit"]:hover {
+    background: #94c949 !important;
+    color: #304520 !important;
+}
+
+/* Remove fundo do fieldset e bordas antigas */
+#content-main form fieldset,
+#content-main form .form-row {
+    background: none !important;
+    border: none !important;
+    margin-bottom: 0;
+}
+/* SELECT de Forma de Pagamento visível (apenas esse campo) */
+#id_forma_pagamento,
+#id_destino,
+#id_tipo_estrutura,
+#id_sexo,
+#id_estado_civil,
+#id_estado {
+    width: 220px !important;      /* ajuste a largura como quiser */
+    height: 42px !important;      /* aumenta a altura do select */
+    min-width: 180px !important;
+    max-width: 350px !important;
+    border-radius: 8px !important;
+    font-size: 1.1rem !important;
+    padding: 0 12px !important;
+    background: #eef6e6 !important;
+    color: #224c15 !important;
+    border: 1px solid #b6d2a1 !important;
+    box-shadow: 0 1px 3px #e3efcc33;
+    transition: border 0.2s;
+    outline: none !important;
+}
+
+#id_forma_pagamento:focus,
+#id_destino:focus,
+#id_tipo_estrutura:focus,
+#id_sexo:focus,
+#id_estado_civil:focus,
+#id_estado:focus {
+    border-color: #86be63 !important;
+    box-shadow: 0 0 0 2px #cde5bb99;
+}
+#id_endereco_estado {
+    width: 180px !important;
+    height: 42px !important;
+    min-width: 120px !important;
+    max-width: 260px !important;
+    border-radius: 8px !important;
+    font-size: 1.07rem !important;
+    padding: 0 10px !important;
+    background: #eef6e6 !important;
+    color: #224c15 !important;
+    border: 1px solid #b6d2a1 !important;
+    box-shadow: 0 1px 3px #e3efcc33;
+    transition: border 0.2s;
+    outline: none !important;
+}
+#id_endereco_estado:focus {
+    border-color: #86be63 !important;
+    box-shadow: 0 0 0 2px #cde5bb99;
+}
+#id_prefeitura,
+#id_plano {
+    width: 270px !important;
+    height: 42px !important;
+    min-width: 180px !important;
+    max-width: 380px !important;
+    border-radius: 8px !important;
+    font-size: 1.09rem !important;
+    padding: 0 12px !important;
+    background: #eef6e6 !important;
+    color: #224c15 !important;
+    border: 1px solid #b6d2a1 !important;
+    box-shadow: 0 1px 3px #e3efcc33;
+    transition: border 0.2s;
+    outline: none !important;
+}
+#id_plano:focus {
+    border-color: #86be63 !important;
+    box-shadow: 0 0 0 2px #cde5bb99;
+}
