@@ -10,36 +10,61 @@ from sepultados_gestao.serializers import (
 
 @api_view(['GET'])
 def relatorio_sepultados_api(request):
-    queryset = Sepultado.objects.all()
+    prefeitura = getattr(request, "prefeitura_ativa", None)
+    if prefeitura:
+        queryset = Sepultado.objects.filter(tumulo__quadra__cemiterio__prefeitura=prefeitura)
+    else:
+        queryset = Sepultado.objects.none()
     serializer = SepultadoSerializer(queryset, many=True)
     return Response(serializer.data)
 
 @api_view(['GET'])
 def relatorio_exumacoes_api(request):
-    queryset = Exumacao.objects.all()
+    prefeitura = getattr(request, "prefeitura_ativa", None)
+    if prefeitura:
+        queryset = Exumacao.objects.filter(tumulo__quadra__cemiterio__prefeitura=prefeitura)
+    else:
+        queryset = Exumacao.objects.none()
     serializer = ExumacaoSerializer(queryset, many=True)
     return Response(serializer.data)
 
 @api_view(['GET'])
 def relatorio_translados_api(request):
-    queryset = Translado.objects.all()
+    prefeitura = getattr(request, "prefeitura_ativa", None)
+    if prefeitura:
+        queryset = Translado.objects.filter(tumulo_destino__quadra__cemiterio__prefeitura=prefeitura)
+    else:
+        queryset = Translado.objects.none()
     serializer = TransladoSerializer(queryset, many=True)
     return Response(serializer.data)
 
+
 @api_view(['GET'])
 def relatorio_contratos_api(request):
-    queryset = ConcessaoContrato.objects.all()
+    prefeitura = getattr(request, "prefeitura_ativa", None)
+    if prefeitura:
+        queryset = ConcessaoContrato.objects.filter(tumulo__quadra__cemiterio__prefeitura=prefeitura)
+    else:
+        queryset = ConcessaoContrato.objects.none()
     serializer = ConcessaoContratoSerializer(queryset, many=True)
     return Response(serializer.data)
 
 @api_view(['GET'])
 def relatorio_receitas_api(request):
-    queryset = Receita.objects.all()
+    prefeitura = getattr(request, "prefeitura_ativa", None)
+    if prefeitura:
+        queryset = Receita.objects.filter(prefeitura=prefeitura)
+    else:
+        queryset = Receita.objects.none()
     serializer = ReceitaSerializer(queryset, many=True)
     return Response(serializer.data)
 
 @api_view(['GET'])
 def relatorio_tumulos_api(request):
-    queryset = Tumulo.objects.all()
+    prefeitura = getattr(request, "prefeitura_ativa", None)
+    if prefeitura:
+        queryset = Tumulo.objects.filter(quadra__cemiterio__prefeitura=prefeitura)
+    else:
+        queryset = Tumulo.objects.none()
     serializer = TumuloSerializer(queryset, many=True)
     return Response(serializer.data)
