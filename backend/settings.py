@@ -14,9 +14,11 @@ INSTALLED_APPS = [
     'aaa_usuarios.apps.AaaUsuariosConfig',
     'sepultados_gestao.apps.SepultadosGestaoConfig',
     'crum',
+    'corsheaders',
     'core',
     'relatorios',
     'rest_framework',
+    'rest_framework_simplejwt',
     'django.contrib.humanize',
     'django.contrib.admin',
     'django.contrib.auth',
@@ -30,6 +32,7 @@ INSTALLED_APPS = [
 
 
 MIDDLEWARE = [
+    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -61,6 +64,12 @@ TEMPLATES = [
         },
     },
 ]
+
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    )
+}
 
 
 WSGI_APPLICATION = 'backend.wsgi.application'
@@ -126,3 +135,7 @@ EMAIL_HOST_PASSWORD = 'Digital15suporte%'
 EMAIL_USE_SSL = True
 EMAIL_USE_TLS = False  # Desativado porque usamos SSL
 DEFAULT_FROM_EMAIL = 'Sepultados.com <suporte@sepultados.com>'
+
+FRONTEND_URL = 'http://localhost:5173'
+
+CORS_ALLOW_ALL_ORIGINS = True  # (para testes locais — depois restrinja para o domínio real)

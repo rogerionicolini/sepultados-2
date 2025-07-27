@@ -1,18 +1,31 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import axios from 'axios';
 import './login.css';
 
 function LoginPage() {
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
+  const [erro, setErro] = useState('');
   const navigate = useNavigate();
 
   const handleLogin = async (e) => {
     e.preventDefault();
+    setErro('');
 
-    // Aqui vai a chamada para sua API (JWT)
-    // await fazerLogin(email, senha);
-    navigate('/'); // Redireciona após login
+    try {
+      const response = await axios.post('http://127.0.0.1:8000/api/token/', {
+        email,
+        password: senha,
+      });
+
+      localStorage.setItem('accessToken', response.data.access);
+      localStorage.setItem('refreshToken', response.data.refresh);
+
+      navigate('/dashboard'); // Altere se o destino for outro
+    } catch (error) {
+      setErro('E-mail ou senha inválidos.');
+    }
   };
 
   return (
@@ -36,6 +49,9 @@ function LoginPage() {
           />
           <button type="submit">Entrar</button>
         </form>
+
+        {erro && <p style={{ color: 'red', marginTop: '10px' }}>{erro}</p>}
+
         <Link to="/recuperar-senha" className="link">
           Esqueci minha senha
         </Link>

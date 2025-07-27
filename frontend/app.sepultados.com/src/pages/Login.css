@@ -73,3 +73,15 @@ body, html, #root {
   font-size: 0.95rem;
   cursor: pointer;
 }
+
+.mensagem-sucesso {
+  color: green;
+  margin-top: 12px;
+  text-align: center;
+}
+
+.mensagem-erro {
+  color: red;
+  margin-top: 12px;
+  text-align: center;
+}
