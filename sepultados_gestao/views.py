@@ -56,7 +56,7 @@ def selecionar_prefeitura_ativa(request):
             messages.error(request, "Digite sua senha para confirmar.")
             return redirect("selecionar_prefeitura_ativa")
 
-        user = authenticate(username=request.user.username, password=senha)
+        user = authenticate(email=request.user.email, password=senha)
         if user is None:
             messages.error(request, "Senha incorreta.")
             return redirect("selecionar_prefeitura_ativa")

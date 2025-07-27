@@ -30,7 +30,9 @@ from .forms import PlanoForm
 from .models import RegistroAuditoria
 from .utils import registrar_auditoria
 from sepultados_gestao.session_context.thread_local import get_prefeitura_ativa
-
+from django.contrib.auth import get_user_model
+User = get_user_model()
+    
 
 
 
@@ -151,8 +153,6 @@ class QuadraAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
     list_display = ("codigo", "cemiterio")
     list_filter = ("cemiterio",)
     search_fields = ("codigo", "cemiterio__nome")
-    readonly_fields = ("painel_tumulos",)
-    fields = ("codigo", "painel_tumulos")
 
     def get_form(self, request, obj=None, **kwargs):
         class CustomForm(self.form):
@@ -245,72 +245,6 @@ class QuadraAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
                 self.message_user(request, f"Quadra {obj} não pôde ser excluída: há túmulos vinculados.", level=messages.ERROR)
             else:
                 obj.delete()
-
-    def painel_tumulos(self, obj):
-        from django.utils.safestring import mark_safe
-        from django.urls import reverse
-        from .models import Tumulo, ConcessaoContrato
-
-        if not obj:
-            return ""
-        tumulos = Tumulo.objects.filter(quadra=obj).order_by('identificador')
-        if not tumulos.exists():
-            return mark_safe("""
-                <div style='margin-top: 20px; background: #eafbe4; padding: 20px 25px; border-radius: 12px;
-                            border: 2px solid #339933; box-shadow: 1px 1px 5px rgba(0,0,0,0.05);'>
-                    <h3 style='color: #006600; margin-top: 0; font-size: 16px;'>Nenhum túmulo cadastrado nesta quadra.</h3>
-                </div>
-            """)
-
-        linhas = ""
-        for t in tumulos:
-            contrato = ConcessaoContrato.objects.filter(tumulo=t).first()
-            status = t.get_status_display() if hasattr(t, "get_status_display") else t.status
-            contrato_num = contrato.numero_contrato if contrato else "-"
-            url = reverse('admin:sepultados_gestao_tumulo_change', args=[t.pk])
-            tipo_estrutura = getattr(t, "tipo_estrutura", "-")
-            linha = getattr(t, "linha", "-")
-            identificador = getattr(t, "identificador", t.pk)
-            capacidade = getattr(t, "capacidade", "-")
-
-            linhas += f"""
-                <tr>
-                    <td style='padding: 6px 10px; border-bottom: 1px solid #c3d9af;'>{tipo_estrutura}</td>
-                    <td style='padding: 6px 10px; border-bottom: 1px solid #c3d9af;'>{identificador}</td>
-                    <td style='padding: 6px 10px; border-bottom: 1px solid #c3d9af;'>{linha}</td>
-                    <td style='padding: 6px 10px; border-bottom: 1px solid #c3d9af;'>{capacidade}</td>
-                    <td style='padding: 6px 10px; border-bottom: 1px solid #c3d9af;'>{status}</td>
-                    <td style='padding: 6px 10px; border-bottom: 1px solid #c3d9af;'>{contrato_num}</td>
-                    <td style='padding: 6px 10px; border-bottom: 1px solid #c3d9af; text-align:center;'>
-                        <a href="{url}" target="_blank" style="color:#336633; font-weight:bold;">Editar</a>
-                    </td>
-                </tr>
-            """
-
-        return mark_safe(f"""
-            <div style='margin-top: 20px; background: #f5fbe9; padding: 20px 25px; border-radius: 12px;
-                        border: 2px solid #006600; box-shadow: 2px 2px 6px rgba(0, 0, 0, 0.1);'>
-                <h3 style='color: #003300; margin-top: 0; font-size: 18px;'>Túmulos nesta Quadra</h3>
-                <table style='width: 100%; border-collapse: collapse; font-size: 14px; margin-top: 10px; background:white;'>
-                    <thead>
-                        <tr style='background-color: #dceacb;'>
-                            <th style='text-align: left; padding: 8px 10px; border-bottom: 2px solid #006600;'>Tipo de Estrutura</th>
-                            <th style='text-align: left; padding: 8px 10px; border-bottom: 2px solid #006600;'>Identificador</th>
-                            <th style='text-align: left; padding: 8px 10px; border-bottom: 2px solid #006600;'>Linha</th>
-                            <th style='text-align: left; padding: 8px 10px; border-bottom: 2px solid #006600;'>Capacidade</th>
-                            <th style='text-align: left; padding: 8px 10px; border-bottom: 2px solid #006600;'>Status</th>
-                            <th style='text-align: left; padding: 8px 10px; border-bottom: 2px solid #006600;'>Contrato</th>
-                            <th style='text-align: left; padding: 8px 10px; border-bottom: 2px solid #006600;'></th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {linhas}
-                    </tbody>
-                </table>
-            </div>
-        """)
-    painel_tumulos.short_description = "Túmulos nesta Quadra"
-
 
 
 from django.contrib import admin
@@ -1001,7 +935,9 @@ MODELOS_SEM_DEPENDENCIA = [
     'tipousuario', 'user',  # "user" é do próprio auth.User
 ]
 
-from django.contrib.auth.models import User, Group
+from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Group
+
 
 class AlwaysVisibleAdmin(admin.ModelAdmin):
     def get_model_perms(self, request):
@@ -1035,7 +971,9 @@ for model, model_admin in admin.site._registry.items():
     model_admin.get_model_perms = make_wrapped_get_model_perms(original_get_model_perms)
 
 
-from django.contrib.auth.models import User, Group
+from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Group
+
 
 class AlwaysVisibleAdmin(admin.ModelAdmin):
     def get_model_perms(self, request):
@@ -1450,3 +1388,46 @@ class RegistroAuditoriaAdmin(admin.ModelAdmin):
         prefeitura = getattr(request, 'prefeitura_ativa', None)
         return obj.prefeitura == prefeitura
     
+from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Group
+
+User = get_user_model()
+
+MODELOS_SEM_DEPENDENCIA = [
+    'prefeitura', 'plano', 'licenca',
+    'tipousuario', 'user',
+]
+
+class AlwaysVisibleAdmin(admin.ModelAdmin):
+    def get_model_perms(self, request):
+        return super().get_model_perms(request)
+
+admin.site.unregister(User)
+admin.site.register(User, AlwaysVisibleAdmin)
+
+admin.site.unregister(Group)
+admin.site.register(Group, AlwaysVisibleAdmin)
+
+# Altera dinamicamente os outros ModelAdmins registrados
+for model, model_admin in admin.site._registry.items():
+    model_name = model.__name__.lower()
+    if model_name in MODELOS_SEM_DEPENDENCIA:
+        continue
+
+    original_get_model_perms = model_admin.get_model_perms
+
+    def make_wrapped_get_model_perms(original_func):
+        def wrapped(self, request):
+            prefeitura_ok = bool(request.session.get("prefeitura_ativa_id"))
+            cemiterio_ok = bool(request.session.get("cemiterio_ativo_id"))
+            if not (prefeitura_ok and cemiterio_ok):
+                return {}
+            return original_func(request)
+        return wrapped.__get__(model_admin, model_admin.__class__)
+
+    model_admin.get_model_perms = make_wrapped_get_model_perms(original_get_model_perms)
+
+# Renomeia os apps para agrupamento visual no menu lateral
+from django.apps import apps
+apps.get_app_config('auth').verbose_name = "Administração Geral"
+apps.get_app_config('sepultados_gestao').verbose_name = "Sepultados Gestão"

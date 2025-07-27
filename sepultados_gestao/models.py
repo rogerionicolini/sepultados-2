@@ -1299,7 +1299,8 @@ class Anexo(models.Model):
 
 
 from django.db import models
-from django.contrib.auth.models import User
+from django.conf import settings
+
 
 class RegistroAuditoria(models.Model):
     ACAO_CHOICES = (
@@ -1309,7 +1310,13 @@ class RegistroAuditoria(models.Model):
     )
 
     acao = models.CharField(max_length=10, choices=ACAO_CHOICES)
-    usuario = models.ForeignKey(User, on_delete=models.PROTECT)
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        verbose_name="Usuário responsável"
+    )
     modelo = models.CharField(max_length=100)
     objeto_id = models.CharField(max_length=100)
     representacao = models.TextField()
