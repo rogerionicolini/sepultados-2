@@ -114,3 +114,13 @@ LOGIN_REDIRECT_URL = '/admin/'
 # === MEDIA ===
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+
+# Configurações de envio de e-mail - Hostinger
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'smtp.hostinger.com'
+EMAIL_PORT = 465
+EMAIL_HOST_USER = 'suporte@sepultados.com'
+EMAIL_HOST_PASSWORD = 'Digital15suporte%'
+EMAIL_USE_SSL = True
+EMAIL_USE_TLS = False  # Desativado porque usamos SSL
+DEFAULT_FROM_EMAIL = 'Sepultados.com <suporte@sepultados.com>'

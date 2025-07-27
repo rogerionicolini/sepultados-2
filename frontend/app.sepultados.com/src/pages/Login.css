@@ -1,0 +1,75 @@
+/* Fundo da página */
+body, html, #root {
+  height: 100%;
+  margin: 0;
+  background-color: #e3efcc;
+  font-family: "Segoe UI", sans-serif;
+}
+
+/* Container centralizado */
+.auth-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100%;
+}
+
+/* Box do formulário */
+.auth-box {
+  background: #ffffff;
+  padding: 30px 40px;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  text-align: center;
+  max-width: 400px;
+  width: 90%;
+}
+
+/* Título */
+.auth-box h2 {
+  margin-bottom: 24px;
+  color: #224c15;
+  font-size: 1.5rem;
+  font-weight: bold;
+}
+
+/* Inputs */
+.auth-box input {
+  width: 100%;
+  padding: 12px;
+  margin-bottom: 14px;
+  border: 1px solid #b6d2a1;
+  border-radius: 8px;
+  background-color: #eef6e6;
+  color: #224c15;
+  font-size: 1rem;
+  box-sizing: border-box;
+}
+
+/* Botão */
+.auth-box button {
+  width: 100%;
+  padding: 12px;
+  background-color: #406f3c;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-weight: bold;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+
+.auth-box button:hover {
+  background-color: #2f552c;
+}
+
+/* Link de recuperar senha */
+.auth-box .link {
+  display: block;
+  margin-top: 12px;
+  color: #224c15;
+  text-decoration: underline;
+  font-size: 0.95rem;
+  cursor: pointer;
+}
