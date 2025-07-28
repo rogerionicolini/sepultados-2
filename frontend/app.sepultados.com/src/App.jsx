@@ -1,29 +1,15 @@
-// src/App.jsx
 import React from "react";
-import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
-import Login from "./pages/Login";
-import RecuperarSenha from "./pages/RecuperarSenha";
-import RedefinirSenhaPage from "./pages/RedefinirSenha";
-import PrivateRoute from "./PrivateRoute";
-import Layout from "./Layout";
-import routes from "./routes";
+import { BrowserRouter as Router } from "react-router-dom";
+import AppRoutes from "./routes";
+import Navbar from "./components/Navbar";
 
-const App = () => {
+function App() {
   return (
     <Router>
-      <Routes>
-        {/* Rotas públicas */}
-        <Route path="/login" element={<Login />} />
-        <Route path="/recuperar-senha" element={<RecuperarSenha />} />
-        <Route path="/redefinir-senha/:uid/:token" element={<RedefinirSenhaPage />} />
-
-        {/* Rotas privadas protegidas */}
-        <Route element={<PrivateRoute><Layout /></PrivateRoute>}>
-          {routes}
-        </Route>
-      </Routes>
+      <Navbar />
+      <AppRoutes />
     </Router>
   );
-};
+}
 
 export default App;

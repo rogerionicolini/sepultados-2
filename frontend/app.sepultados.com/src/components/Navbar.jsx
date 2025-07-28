@@ -1,46 +1,48 @@
-// src/Navbar.jsx
-import React from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
+import { useEffect, useState } from "react";
 
 const Navbar = () => {
-  return (
-    <div className="fixed top-0 left-0 h-screen w-64 bg-[#224c15] text-white shadow-md z-40 flex flex-col pt-8">
-      <div className="text-center text-xl font-bold mb-6 px-4">Sepultados.com</div>
+  const location = useLocation();
+  const [showNavbar, setShowNavbar] = useState(true);
 
-      <nav className="flex-1 overflow-y-auto px-4">
-        {[
-          { to: "/", label: "Dashboard" },
-          { to: "/cemiterios", label: "Cemitérios" },
-          { to: "/quadras", label: "Quadras" },
-          { to: "/tumulos", label: "Túmulos" },
-          { to: "/sepultados", label: "Sepultados" },
-          { to: "/contratos", label: "Contratos" },
-          { to: "/exumacoes", label: "Exumações" },
-          { to: "/traslados", label: "Translados" },
-          { to: "/receitas", label: "Receitas" },
-          { to: "/auditoria", label: "Auditoria" },
-          { to: "/importar-quadras", label: "Importar Quadras" },
-          { to: "/importar-tumulos", label: "Importar Túmulos" },
-          { to: "/importar-sepultados", label: "Importar Sepultados" },
-          { to: "/relatorios/sepultados", label: "Relatório de Sepultados" },
-          { to: "/relatorios/exumacoes", label: "Relatório de Exumações" },
-          { to: "/relatorios/traslados", label: "Relatório de Translados" },
-          { to: "/relatorios/contratos", label: "Relatório de Contratos" },
-          { to: "/relatorios/receitas", label: "Relatório de Receitas" },
-          { to: "/relatorios/tumulos", label: "Relatório de Túmulos" },
-        ].map((item, idx) => (
-          <Link
-            key={idx}
-            to={item.to}
-            className="block py-2 px-4 rounded hover:bg-[#1a3b10] transition-colors text-white font-medium"
-          >
-            {item.label}
-          </Link>
-        ))}
-      </nav>
-    </div>
+  useEffect(() => {
+    const token = localStorage.getItem("token");
+    const hiddenRoutes = ["/", "/login", "/recuperar-senha", "/redefinir-senha"];
+    if (!token || hiddenRoutes.includes(location.pathname)) {
+      setShowNavbar(false);
+    } else {
+      setShowNavbar(true);
+    }
+  }, [location]);
+
+  if (!showNavbar) return null;
+
+  return (
+    <nav className="w-60 bg-[#224c15] text-white h-screen fixed left-0 top-0 overflow-y-auto p-4">
+      <h2 className="text-lg font-bold mb-4">Sepultados.com</h2>
+      <ul className="space-y-1">
+        <li><Link to="/dashboard">Dashboard</Link></li>
+        <li><Link to="/cemiterios">Cemitérios</Link></li>
+        <li><Link to="/quadras">Quadras</Link></li>
+        <li><Link to="/tumulos">Túmulos</Link></li>
+        <li><Link to="/sepultados">Sepultados</Link></li>
+        <li><Link to="/contratos">Contratos</Link></li>
+        <li><Link to="/exumacoes">Exumações</Link></li>
+        <li><Link to="/traslados">Translados</Link></li>
+        <li><Link to="/receitas">Receitas</Link></li>
+        <li><Link to="/auditoria">Auditoria</Link></li>
+        <li><Link to="/importar-quadras">Importar Quadras</Link></li>
+        <li><Link to="/importar-tumulos">Importar Túmulos</Link></li>
+        <li><Link to="/importar-sepultados">Importar Sepultados</Link></li>
+        <li><Link to="/relatorio-sepultados">Relatório de Sepultados</Link></li>
+        <li><Link to="/relatorio-exumacoes">Relatório de Exumações</Link></li>
+        <li><Link to="/relatorio-traslados">Relatório de Traslados</Link></li>
+        <li><Link to="/relatorio-contratos">Relatório de Contratos</Link></li>
+        <li><Link to="/relatorio-receitas">Relatório de Receitas</Link></li>
+        <li><Link to="/relatorio-tumulos">Relatório de Túmulos</Link></li>
+      </ul>
+    </nav>
   );
 };
 
 export default Navbar;
-  
