@@ -1,0 +1,88 @@
+{% extends "admin/base.html" %}
+{% load static %}
+
+{% block title %}Sepultados.com Administração{% endblock %}
+
+{% block extrastyle %}
+  {{ block.super }}
+  <link rel="stylesheet" type="text/css" href="{% static 'custom_admin/custom_admin.css' %}">
+{% endblock %}
+
+{% block extrahead %}
+  {{ block.super }}
+{% endblock %}
+
+{% block extra_scripts %}
+  {{ block.super }}
+{% endblock %}
+
+{% block branding %}
+  <div id="site-name">
+    <img src="{% static 'custom_admin/logo.png' %}" alt="Logo"
+         style="height: 50px; vertical-align: middle; margin-right: 10px;">
+    <span class="site-title-text">Sepultados.com Administração</span>
+  </div>
+{% endblock %}
+
+{% block usertools %}
+  <div style="display: flex; flex-direction: column; gap: 8px; margin-right: 20px;">
+    <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+      {% if request.user.is_superuser %}
+        {% for p in prefeituras %}
+          {% if p.id == prefeitura_ativa_id %}
+            <input type="text" readonly value="Prefeitura ativa: {{ p.nome }}"
+                   style="font-size: 12px; font-weight: bold; color: #003300;
+                          background-color: #f2f8e6; border: 1px solid #a8c48c;
+                          padding: 6px 12px; border-radius: 5px;
+                          min-width: 280px; max-width: none; flex-shrink: 0;">
+          {% endif %}
+        {% endfor %}
+        <a href="{% url 'sepultados_gestao:selecionar_prefeitura_ativa' %}"
+           style="font-size: 12px; font-weight: bold; background-color: #9bbf80;
+                  padding: 6px 14px; border-radius: 5px; color: #003300; text-decoration: none;">
+          Selecionar Prefeitura
+        </a>
+      {% endif %}
+
+      {% if request.cemiterio_ativo %}
+        <input type="text" readonly value="Cemitério ativo: {{ request.cemiterio_ativo.nome }}"
+               style="font-size: 12px; font-weight: bold; color: #003300;
+                      background-color: #f2f2f2; border: 1px solid #a8c48c;
+                      padding: 6px 12px; border-radius: 5px;
+                      min-width: 260px; max-width: none; flex-shrink: 0;">
+      {% endif %}
+      <a href="{% url 'sepultados_gestao:selecionar_cemiterio_ativo' %}"
+         style="font-size: 12px; font-weight: bold; background-color: #d3e0c4;
+                padding: 6px 14px; border-radius: 5px; color: #003300; text-decoration: none;">
+        Selecionar Cemitério
+      </a>
+
+      {{ block.super }}
+    </div>
+
+    {% if prefeitura_ativa_id %}
+      {% if licenca_ativa %}
+        <div style="padding: 6px 12px; background-color: #e8f1ff; border: 1px solid #5b94d8;
+                    color: #0b3d91; font-weight: bold; font-size: 13px; margin-top: 12px;
+                    border-radius: 6px;">
+          Plano: {{ licenca_ativa.plano.nome }} —
+          Início: {{ licenca_ativa.data_inicio|date:"d/m/Y" }} —
+          Vencimento: {{ data_vencimento_licenca|date:"d/m/Y" }} —
+          Valor: R$ {{ licenca_ativa.valor_mensal_atual }}
+        </div>
+      {% else %}
+        <div style="padding: 6px 12px; background-color: #ffe8e8; border: 1px solid #cc0000;
+                    color: #cc0000; font-weight: bold; font-size: 13px; margin-top: 12px;
+                    border-radius: 6px;">
+          ⚠️ Esta prefeitura está sem licença válida ou com a licença vencida.
+          Por favor, atualize ou renove a licença para continuar utilizando o sistema.
+        </div>
+      {% endif %}
+    {% endif %}
+  </div>
+{% endblock %}
+
+{% block footer %}
+  {{ block.super }}
+  <script src="{% static 'custom_admin/js/admin.js' %}"></script>
+{% endblock %}

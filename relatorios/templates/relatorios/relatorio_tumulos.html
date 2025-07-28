@@ -1,0 +1,82 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+
+{% block extrastyle %}
+    {{ block.super }}
+    <link rel="stylesheet" href="{% static 'css/relatorio.css' %}?v=8">
+{% endblock %}
+
+{% block content %}
+<h1>Relatório de Túmulos</h1>
+
+<form method="get" class="form-row" style="margin-bottom: 20px;">
+    <div style="display: flex; gap: 20px; flex-wrap: wrap; align-items: center;">
+        <label>Status:
+            <select name="status">
+                <option value="">Todos</option>
+                <option value="disponivel" {% if status_filtro == 'disponivel' %}selected{% endif %}>Disponível</option>
+                <option value="ocupado" {% if status_filtro == 'ocupado' %}selected{% endif %}>Ocupado</option>
+                <option value="reservado" {% if status_filtro == 'reservado' %}selected{% endif %}>Reservado</option>
+            </select>
+        </label>
+        <label>Tipo de Estrutura:
+            <select name="tipo">
+                <option value="">Todos</option>
+                <option value="tumulo" {% if tipo_filtro == 'tumulo' %}selected{% endif %}>Túmulo</option>
+                <option value="perpetua" {% if tipo_filtro == 'perpetua' %}selected{% endif %}>Perpétua</option>
+                <option value="sepultura" {% if tipo_filtro == 'sepultura' %}selected{% endif %}>Sepultura</option>
+                <option value="jazigo" {% if tipo_filtro == 'jazigo' %}selected{% endif %}>Jazigo</option>
+                <option value="outro" {% if tipo_filtro == 'outro' %}selected{% endif %}>Outro</option>
+            </select>
+        </label>
+
+        <button type="submit" class="button default">Filtrar</button>
+
+        <a href="{% url 'relatorios:relatorio_tumulos_pdf' %}?status={{ status_filtro }}&tipo={{ tipo_filtro }}"
+           class="button default" style="text-decoration: none; display: inline-block;">
+            📄 PDF
+        </a>
+    </div>
+</form>
+
+<table class="adminlist">
+    <thead>
+    <tr>
+        <th>Identificador</th>
+        <th>Quadra</th>
+        <th>Tipo</th>
+        <th>Capacidade</th>
+        <th>Ocupação</th>
+        <th>Status</th>
+        <th>Reservado</th>
+        <th>Motivo</th>
+        <th>Contrato</th>
+    </tr>
+    </thead>
+    <tbody>
+        {% for tumulo in tumulos %}
+        <tr>
+            <td>{{ tumulo.identificador }}</td>
+            <td>{{ tumulo.quadra }}</td>
+            <td>{{ tumulo.get_tipo_estrutura_display }}</td>
+            <td>{{ tumulo.capacidade }}</td>
+            <td>
+                {% with tumulo.sepultado_set.count as ocupacao %}
+                    {{ ocupacao }}/{{ tumulo.capacidade }}
+                {% endwith %}
+            </td>
+            <td>{{ tumulo.get_status_display }}</td>
+            <td>{% if tumulo.reservado %}Sim{% else %}Não{% endif %}</td>
+            <td>{{ tumulo.motivo_reserva|default:"-" }}</td>
+            <td>
+                {% if tumulo.concessaocontrato_set.exists %}
+                    {{ tumulo.concessaocontrato_set.first.numero_contrato }}
+                {% else %}
+                    -
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

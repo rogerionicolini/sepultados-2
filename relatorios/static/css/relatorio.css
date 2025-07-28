@@ -1,0 +1,160 @@
+/* Tabela principal - igual ao admin */
+.adminlist {
+    width: 100%;
+    border-collapse: separate !important;
+    border-spacing: 0;
+    background: #fff;
+    border-radius: 14px;
+    box-shadow: 0 2px 10px #e3efcc44;
+    overflow: hidden;
+    margin-top: 16px;
+    margin-bottom: 24px;
+}
+
+.adminlist th, .adminlist td {
+    padding: 10px 18px;
+    font-size: 0.98rem;
+    color: #224c15;
+    border-bottom: 1px solid #e3efcc;
+    background: none;
+    text-align: left;
+}
+
+.adminlist th {
+    background: #f5fbe9;
+    font-weight: bold;
+    font-size: 1.05rem;
+    border-bottom: 2px solid #d0e2bc;
+    text-transform: none;
+    letter-spacing: 0;
+}
+
+.adminlist tr:last-child td {
+    border-bottom: none;
+}
+
+/* Hover igual admin */
+.adminlist tbody tr:hover {
+    background: #f3f8eb;
+    transition: background 0.15s;
+}
+
+/* Responsividade básica */
+@media (max-width: 900px) {
+    .adminlist th, .adminlist td {
+        padding: 8px 10px;
+        font-size: 0.96rem;
+    }
+}
+
+/* Botões do relatório */
+.button.default, .button.default:visited {
+    background: #335c1a;
+    color: #fff !important;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 7px;
+    font-weight: bold;
+    font-size: 1rem;
+    box-shadow: 0 2px 6px #cfe7b6;
+    margin-right: 6px;
+    transition: background 0.12s;
+    cursor: pointer;
+    text-decoration: none;
+    display: inline-block;
+}
+.button.default:hover, .button.default:focus {
+    background: #224c15;
+}
+
+/* Ajustes do form de filtros */
+form.form-row {
+    background: none !important;
+    padding: 0 !important;
+    margin-top: 10px;
+}
+
+form.form-row label {
+    font-weight: 600;
+    color: #2c5222;
+    margin-right: 6px;
+    font-size: 1rem;
+}
+
+form.form-row input[type="date"], 
+form.form-row select {
+    background: #eef6e6;
+    color: #224c15;
+    border: 1px solid #b6d2a1;
+    border-radius: 7px;
+    padding: 5px 10px;
+    font-size: 1rem;
+    outline: none;
+    min-width: 95px;
+}
+
+form.form-row input[type="date"]:focus,
+form.form-row select:focus {
+    border-color: #8ec55b;
+}
+/* Ajusta tamanho mais discreto dos filtros do relatório */
+form.form-row label {
+    font-size: 1rem !important;
+    font-weight: 500;
+    margin-bottom: 2px;
+    color: #224c15;
+}
+
+form.form-row select,
+form.form-row input[type="date"] {
+    min-width: 120px;
+    width: 160px;
+    height: 36px;
+    font-size: 0.95rem;
+    border-radius: 6px;
+    background: #eef6e6;
+    color: #224c15;
+    border: 1px solid #b6d2a1;
+    padding: 0 8px;
+    margin-right: 10px;
+    margin-bottom: 2px;
+    box-shadow: 0 1px 1px #e3efcc40;
+    transition: border 0.2s;
+}
+
+form.form-row select:focus,
+form.form-row input[type="date"]:focus {
+    outline: none;
+    border: 1.5px solid #4e865e;
+}
+
+/* Botões "Filtrar" e "PDF" mais discretos */
+form.form-row .button.default,
+form.form-row a.button.default {
+    font-size: 0.95rem !important;
+    height: 38px;
+    min-width: 80px;
+    border-radius: 6px !important;
+    padding: 0 14px !important;
+    margin-top: 0 !important;
+    margin-bottom: 2px;
+    font-weight: bold;
+    background: #224c15 !important;
+    color: #fff !important;
+    border: none !important;
+    box-shadow: 0 1px 3px #e3efcc55;
+    transition: background 0.2s;
+}
+form.form-row .button.default:hover,
+form.form-row a.button.default:hover {
+    background: #41762d !important;
+    color: #fff !important;
+}
+form.form-row a.button.default {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    line-height: 1 !important;
+    vertical-align: middle;
+    text-align: center;
+}

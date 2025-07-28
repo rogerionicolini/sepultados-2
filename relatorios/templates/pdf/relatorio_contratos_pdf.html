@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Relatório de Contratos de Concessão</title>
+    <style>
+        @page { size: A4; margin: 0; }
+        body { font-family: Arial, sans-serif; margin: 0; padding: 0; }
+        .a4-borda {
+            width: 18.5cm; height: 27.7cm;
+            margin: auto; margin-top: 1cm;
+            padding: 2cm; border: 2px solid black;
+            box-sizing: border-box;
+        }
+        .cabecalho {
+            display: flex; align-items: flex-start;
+            margin-bottom: 20px; margin-top: -35px;
+        }
+        .logo img { max-height: 75px; }
+        .dados {
+            margin-left: 12px; font-size: 11pt;
+            line-height: 1.4;
+        }
+        h1 {
+            text-align: center; font-size: 16pt;
+            margin-bottom: 15px;
+            background-color: #e3efcc;
+            border: 1px solid black;
+            padding: 4px;
+        }
+        .info {
+            font-size: 11pt;
+            margin-bottom: 15px;
+        }
+        .info p { margin: 2px 0; }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 10.5pt;
+            margin-top: 10px;
+        }
+        th, td {
+            border: 1px solid #333;
+            padding: 6px 4px;
+            vertical-align: top;
+            word-wrap: break-word;
+        }
+        th {
+            background-color: #e3efcc;
+            text-align: center;
+            font-weight: bold;
+        }
+        td {
+            text-align: left;
+        }
+
+        /* Ajustes de largura */
+        th:nth-child(1), td:nth-child(1) { width: 12%; }  /* Número */
+        th:nth-child(2), td:nth-child(2) { width: 12%; }  /* Data */
+        th:nth-child(3), td:nth-child(3) { width: 22%; }  /* Responsável */
+        th:nth-child(4), td:nth-child(4) { width: 15%; }  /* CPF */
+        th:nth-child(5), td:nth-child(5) { width: 17%; }  /* Túmulo */
+        th:nth-child(6), td:nth-child(6) { width: 12%; }  /* Valor */
+        th:nth-child(7), td:nth-child(7) { width: 10%; }  /* Pagamento */
+    </style>
+</head>
+<body>
+<div class="a4-borda">
+    <div class="cabecalho">
+        <div class="logo">
+            {% if brasao_url %}
+                <img src="{{ brasao_url }}" alt="Brasão da Prefeitura">
+            {% endif %}
+        </div>
+        <div class="dados">
+            <strong>Prefeitura Municipal de {{ prefeitura.nome }}</strong><br>
+            {{ prefeitura.logradouro }}, {{ prefeitura.endereco_numero }}<br>
+            {{ prefeitura.endereco_bairro }} – {{ prefeitura.endereco_cidade }} – {{ prefeitura.endereco_estado }}<br>
+            CEP {{ prefeitura.endereco_cep }}
+        </div>
+    </div>
+
+    <h1>Relatório de Contratos de Concessão</h1>
+
+    <div class="info">
+        <p><strong>Cemitério:</strong> {{ cemiterio.nome }}</p>
+        <p><strong>Período:</strong> {{ data_inicio|default:"–" }} a {{ data_fim|default:"–" }}</p>
+    </div>
+         <table>
+            <thead>
+                <tr>
+                    <th>Número</th>
+                    <th>Data do Contrato</th>
+                    <th>Nome</th>
+                    <th>CPF/CNPJ</th>
+                    <th>Túmulo</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for c in contratos %}
+                <tr>
+                    <td>{{ c.numero_contrato }}</td>
+                    <td>{{ c.data_contrato|date:"d/m/Y" }}</td>
+                    <td>{{ c.nome }}</td>
+                    <td>{{ c.cpf|stringformat:"s" }}</td>
+                    <td>{{ c.tumulo }}</td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="5">Nenhum contrato encontrado no período informado.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+</div>
+</body>
+</html>

@@ -1,0 +1,10 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block content %}
+    {% if not is_popup %}
+        <div id="content-main">
+            {# deixado em branco de propósito, já que o menu lateral é responsável pela navegação #}
+        </div>
+    {% endif %}
+{% endblock %}

@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <style>
+        @page { size: A4; margin: 0; }
+        body {
+            font-family: Arial, sans-serif;
+            font-size: 10pt;
+            margin: 0;
+            padding: 0;
+        }
+        .a4-borda {
+            width: 18cm;
+            min-height: 26.5cm;
+            margin: 0.7cm auto;
+            padding: 1.2cm 1cm;
+            border: 1px solid black;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+        .cabecalho {
+            display: flex;
+            align-items: flex-start;
+            justify-content: flex-start;
+            margin-bottom: 8px;
+        }
+        .logo img {
+            max-height: 55px;
+        }
+        .dados {
+            margin-left: 10px;
+            line-height: 1.2;
+        }
+        h1 {
+            text-align: center;
+            margin: 6px 0;
+            font-size: 14pt;
+            text-decoration: underline;
+        }
+        .conteudo {
+            line-height: 1.3;
+        }
+        .conteudo p {
+            margin: 0 0 4px;
+        }
+        .assinaturas {
+            margin-top: 10px;
+            display: flex;
+            justify-content: space-between;
+            padding: 0 20px;
+        }
+        .assinatura {
+            width: 45%;
+            text-align: center;
+        }
+        .linha {
+            border-top: 1px solid #000;
+            padding-top: 2px;
+            font-weight: bold;
+        }
+        .cpf {
+            font-size: 9pt;
+            margin-top: 1px;
+        }
+    </style>
+</head>
+<body>
+    <div class="a4-borda">
+        <div>
+            <div class="cabecalho">
+                <div class="logo">
+                    {% if brasao_path %}
+                        <img src="{{ brasao_path }}" alt="Brasão da Prefeitura">
+                    {% endif %}
+                </div>
+                <div class="dados">
+                    <strong>{{ sepultado.tumulo.quadra.cemiterio.prefeitura.nome }}</strong><br>
+                    {{ sepultado.tumulo.quadra.cemiterio.prefeitura.logradouro }}<br>
+                    {{ sepultado.tumulo.quadra.cemiterio.prefeitura.endereco_bairro }} – {{ sepultado.tumulo.quadra.cemiterio.prefeitura.endereco_cidade }} – {{ sepultado.tumulo.quadra.cemiterio.prefeitura.endereco_estado }}<br>
+                    CEP {{ sepultado.tumulo.quadra.cemiterio.prefeitura.endereco_cep }}
+                </div>
+            </div>
+
+            <h1>Guia de Sepultamento</h1>
+
+            <div class="conteudo">
+                <p><strong>Número:</strong> {{ sepultado.numero_controle }}</p>
+
+                <p><strong>Nome do Sepultado:</strong> {{ sepultado.nome }}</p>
+                <p><strong>CPF:</strong> {{ sepultado.cpf_sepultado }}</p>
+                <p><strong>Sexo:</strong> {{ sepultado.get_sexo_display }}</p>
+                <p><strong>Data de Nascimento:</strong> {{ sepultado.data_nascimento|date:"d/m/Y" }}</p>
+                <p><strong>Local de Nascimento:</strong> {{ sepultado.local_nascimento }}</p>
+                <p><strong>Nacionalidade:</strong> {{ sepultado.nacionalidade }}</p>
+                <p><strong>Cor/Raça:</strong> {{ sepultado.cor }}</p>
+                <p><strong>Estado Civil:</strong> {{ sepultado.get_estado_civil_display }}</p>
+                <p><strong>Cônjuge:</strong> {{ sepultado.conjuge }}</p>
+                <p><strong>Profissão:</strong> {{ sepultado.profissao }}</p>
+                <p><strong>Escolaridade:</strong> {{ sepultado.escolaridade }}</p>
+
+                <p><strong>Endereço:</strong> {{ sepultado.logradouro }}, Nº {{ sepultado.numero }} – {{ sepultado.bairro }} – {{ sepultado.cidade }} – {{ sepultado.estado }}</p>
+
+                <p><strong>Data do Falecimento:</strong> {{ sepultado.data_falecimento|date:"d/m/Y" }}</p>
+                <p><strong>Hora do Falecimento:</strong> {{ sepultado.hora_falecimento }}</p>
+                <p><strong>Local do Falecimento:</strong> {{ sepultado.local_falecimento }}</p>
+                <p><strong>Causa da Morte:</strong> {{ sepultado.causa_morte }}</p>
+                <p><strong>Médico:</strong> {{ sepultado.medico }}</p>
+                <p><strong>CRM:</strong> {{ sepultado.crm }}</p>
+
+                <p><strong>Registro em Cartório:</strong> {{ sepultado.registro_cartorio_nome }}</p>
+                <p><strong>Número Registro:</strong> {{ sepultado.registro_cartorio_numero }}</p>
+                <p><strong>Livro:</strong> {{ sepultado.registro_cartorio_livro }} – <strong>Folha:</strong> {{ sepultado.registro_cartorio_folha }}</p>
+                <p><strong>Data do Registro:</strong> {{ sepultado.registro_cartorio_data|date:"d/m/Y" }}</p>
+
+                <p><strong>Túmulo:</strong> {{ sepultado.tumulo.quadra.nome }} - {{ sepultado.tumulo.identificador }}</p>
+                <p><strong>Ordem no Túmulo:</strong> {{ sepultado.ordem }}</p>
+                <p><strong>Data do Sepultamento:</strong> {{ sepultado.data_sepultamento|date:"d/m/Y" }}</p>
+                <p><strong>Observações:</strong> {{ sepultado.observacoes }}</p>
+
+                <p><strong>Forma de Pagamento:</strong> {{ sepultado.get_forma_pagamento_display }}</p>
+                <p><strong>Quantidade de Parcelas:</strong> {{ sepultado.quantidade_parcelas }}</p>
+                <p><strong>Valor:</strong> R$ {{ sepultado.valor }}</p><br>
+
+                <p><strong>Responsável:</strong> {{ sepultado.nome_responsavel }}</p>
+                <p><strong>CPF:</strong> {{ sepultado.cpf_responsavel }}</p>
+                <p><strong>Endereço:</strong> {{ sepultado.endereco_responsavel }}</p>
+                <p><strong>Telefone:</strong> {{ sepultado.telefone_responsavel }}</p><br><br><br>
+            </div>
+        </div>
+
+        <div class="assinaturas">
+            <div class="assinatura">
+                <div class="linha">{{ sepultado.tumulo.quadra.cemiterio.prefeitura.nome }}</div>
+                <div class="cpf">CPF/CNPJ: {{ sepultado.tumulo.quadra.cemiterio.prefeitura.cnpj }}</div>
+            </div>
+            <div class="assinatura">
+                <div class="linha">{{ sepultado.nome_responsavel }}</div>
+                <div class="cpf">CPF: {{ sepultado.cpf_responsavel }}</div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

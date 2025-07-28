@@ -1,0 +1,56 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+
+{% block extrastyle %}
+    {{ block.super }}
+    <link rel="stylesheet" href="{% static 'css/relatorio.css' %}?v=8">
+{% endblock %}
+
+{% block content %}
+<h1>Relatório de Contratos de Concessão</h1>
+
+<form method="get" class="form-row" style="margin-bottom: 20px;">
+    <div style="display: flex; gap: 20px; flex-wrap: wrap; align-items: center;">
+        <label>Data início:
+            <input type="date" name="data_inicio" value="{{ data_inicio }}">
+        </label>
+        <label>Data fim:
+            <input type="date" name="data_fim" value="{{ data_fim }}">
+        </label>
+
+        <button type="submit" class="button default">Filtrar</button>
+
+        <a href="{% url 'relatorios:relatorio_contratos_pdf' %}?data_inicio={{ data_inicio }}&data_fim={{ data_fim }}"
+           class="button default" style="text-decoration: none; display: inline-block;">
+            📄 PDF
+        </a>
+    </div>
+</form>
+
+<table class="adminlist">
+    <thead>
+        <tr>
+            <th style="padding: 10px !important; min-width: 80px;">Número</th>
+            <th style="padding: 10px !important; min-width: 130px;">Data do Contrato</th>
+            <th style="padding: 10px !important; min-width: 180px;">Nome</th>
+            <th style="padding: 10px !important; min-width: 150px;">CPF/CNPJ</th>
+            <th style="padding: 10px !important; min-width: 150px;">Túmulo</th>
+            <th style="padding: 10px !important; min-width: 100px;">Quadra</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for contrato in contratos %}
+        <tr>
+            <td style="padding: 10px !important;">{{ contrato.numero_contrato }}</td>
+            <td style="padding: 10px !important;">{{ contrato.data_contrato|date:"d/m/Y" }}</td>
+            <td style="padding: 10px !important;">{{ contrato.nome }}</td>
+            <td style="padding: 10px !important;">{{ contrato.cpf }}</td>
+            <td style="padding: 10px !important;">{{ contrato.tumulo|default:"-" }}</td>
+            <td style="padding: 10px !important;">{{ contrato.tumulo.quadra.codigo|default:"-" }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="6" style="padding: 10px !important;">Nenhum contrato encontrado.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

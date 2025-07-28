@@ -1,0 +1,126 @@
+
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <style>
+        @page {
+            size: A4;
+            margin: 0;
+        }
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+        }
+        .a4-borda {
+            width: 18.5cm;
+            min-height: 27.7cm;
+            margin: auto;
+            margin-top: 1cm;
+            padding: 2cm 1.5cm 1.5cm 1.5cm;
+            border: 2px solid black;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+        .cabecalho {
+            display: flex;
+            align-items: flex-start;
+            justify-content: flex-start;
+            margin-bottom: 10px;
+            margin-top: -35px;
+        }
+        .logo img {
+            max-height: 75px;
+        }
+        .dados {
+            margin-left: 12px;
+            font-size: 11pt;
+            line-height: 1.3;
+            text-align: left;
+        }
+        h1 {
+            text-align: center;
+            margin: 10px 0;
+            font-size: 18pt;
+            text-decoration: underline;
+        }
+        .conteudo {
+            font-size: 11pt;
+            line-height: 1.4;
+        }
+        .conteudo p {
+            margin: 0 0 6px;
+        }
+        .assinaturas {
+            margin-top: auto;
+            display: flex;
+            justify-content: space-between;
+            padding: 0 20px;
+        }
+        .assinatura {
+            width: 45%;
+            text-align: center;
+        }
+        .linha {
+            border-top: 1px solid #000;
+            padding-top: 3px;
+            font-weight: bold;
+        }
+        .cpf {
+            font-size: 10pt;
+            margin-top: 2px;
+        }
+    </style>
+</head>
+<body>
+    <div class="a4-borda">
+        <div>
+            <div class="cabecalho">
+                <div class="logo">
+                    {% if brasao_path %}
+                        <img src="{{ brasao_path }}" alt="Brasão da Prefeitura">
+                    {% endif %}
+                </div>
+                <div class="dados">
+                    <strong>{{ movimentacao.prefeitura.nome }}</strong><br>
+                    {{ movimentacao.prefeitura.logradouro }}<br>
+                    {{ movimentacao.prefeitura.endereco_bairro }} – {{ movimentacao.prefeitura.endereco_cidade }} – {{ movimentacao.prefeitura.endereco_estado }}<br>
+                    CEP {{ movimentacao.prefeitura.endereco_cep }}
+                </div>
+            </div>
+
+            <h1>Guia de Exumação</h1>
+
+            <div class="conteudo">
+                <p><strong>Número da Movimentação:</strong> {{ movimentacao.numero_movimentacao }}</p>
+                <p><strong>Nome do Sepultado:</strong> {{ movimentacao.sepultado.nome }}</p>
+                <p><strong>Data da movimentação:</strong> {{ movimentacao.data|date:"d/m/Y" }}</p>
+                <p><strong>Motivo:</strong> {{ movimentacao.motivo }}</p>
+                <p><strong>Túmulo de origem:</strong> {{ movimentacao.tumulo_origem.quadra.nome }} - {{ movimentacao.tumulo_origem.identificador }}</p>
+                <p><strong>Forma de Pagamento:</strong> {{ movimentacao.get_forma_pagamento_display }}</p>
+                <p><strong>Valor:</strong> R$ {{ movimentacao.valor }}</p>
+                <br>
+                <p><strong>Nome:</strong> {{ movimentacao.nome }}</p>
+                <p><strong>CPF:</strong> {{ movimentacao.cpf }}</p>
+                <p><strong>Endereço:</strong> {{ movimentacao.endereco }}</p>
+                <p><strong>Telefone:</strong> {{ movimentacao.telefone }}</p>
+            </div>
+        </div>
+
+        <div class="assinaturas">
+            <div class="assinatura">
+                <div class="linha">{{ movimentacao.prefeitura.nome }}</div>
+                <div class="cpf">CPF/CNPJ: {{ movimentacao.prefeitura.cnpj }}</div>
+            </div>
+            <div class="assinatura">
+                <div class="linha">{{ movimentacao.nome }}</div>
+                <div class="cpf">CPF: {{ movimentacao.cpf }}</div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

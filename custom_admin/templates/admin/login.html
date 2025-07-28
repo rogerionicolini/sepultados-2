@@ -1,0 +1,36 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="pt-br">
+  <head>
+    <meta charset="utf-8">
+    <title>Login | Sepultados.com</title>
+    <link rel="stylesheet" type="text/css" href="{% static 'custom_admin/custom_admin_login.css' %}">
+  </head>
+  <body>
+    <div class="login-container">
+      <div class="login-logo">
+        <img src="{% static 'custom_admin/logo.png' %}" alt="Sepultados.com">
+      </div>
+      <div class="login-box">
+        <h1>Administração</h1>
+        <form method="post" action="">
+          {% csrf_token %}
+          {% if form.errors %}
+            <p class="error">Usuário ou senha inválidos.</p>
+          {% endif %}
+          <div class="form-row">
+            <label for="id_username">Usuário:</label>
+            {{ form.username }}
+          </div>
+          <div class="form-row">
+            <label for="id_password">Senha:</label>
+            {{ form.password }}
+          </div>
+          <div class="form-row">
+            <button type="submit">Acessar</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </body>
+</html>

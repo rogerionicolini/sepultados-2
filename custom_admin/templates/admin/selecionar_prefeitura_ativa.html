@@ -1,0 +1,58 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+
+{% block title %}Selecionar Prefeitura Ativa{% endblock %}
+
+{% block content %}
+  <div style="max-width: 420px; margin: 40px auto; background-color: #f5fbe8; padding: 30px; border-radius: 12px; box-shadow: 0 0 10px rgba(0,0,0,0.1);">
+    <h2 style="color: #003300; font-size: 18px; font-weight: bold; text-align: center; margin-bottom: 25px;">
+      Selecionar Prefeitura Ativa
+    </h2>
+
+    <form method="post">
+      {% csrf_token %}
+      
+      <div style="margin-bottom: 18px;">
+        <label for="prefeitura" style="display: block; font-weight: bold; color: #003300; font-size: 14px; margin-bottom: 6px;">
+          Prefeitura:
+        </label>
+        <select name="prefeitura_id" id="prefeitura"
+                style="width: 100%; padding: 10px; border-radius: 6px;
+                       border: 1px solid #b4c9a8; background-color: #ffffff;
+                       box-sizing: border-box;">
+          {% for prefeitura in prefeituras %}
+            <option value="{{ prefeitura.id }}">{{ prefeitura.nome }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div style="margin-bottom: 20px;">
+        <label for="senha" style="display: block; font-weight: bold; color: #003300; font-size: 14px; margin-bottom: 6px;">
+          Confirme sua senha:
+        </label>
+        <input type="password" name="senha" id="senha" required
+               style="width: 100%; padding: 10px; border-radius: 6px;
+                      border: 1px solid #b4c9a8; background-color: #ffffff;
+                      box-sizing: border-box;">
+      </div>
+
+      <button type="submit"
+              style="width: 100%; background-color: #9bbf80; color: #003300;
+                     padding: 10px; border: none; border-radius: 6px;
+                     font-weight: bold; font-size: 14px;">
+        Confirmar
+      </button>
+    </form>
+
+    {% if messages %}
+      <ul style="margin-top: 20px; list-style: none; padding-left: 0;">
+        {% for message in messages %}
+          <li style="color: {% if message.tags == 'error' %}red{% else %}green{% endif %};
+                     font-weight: bold;">
+            {{ message }}
+          </li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+  </div>
+{% endblock %}
