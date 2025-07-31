@@ -411,6 +411,9 @@ class Sepultado(models.Model):
         default=0.00
     )
 
+    importado = models.BooleanField(default=False, verbose_name="Importado via planilha")
+
+
     from functools import cached_property
 
     @cached_property
@@ -504,6 +507,7 @@ class Sepultado(models.Model):
         capacidade = tumulo.capacidade
 
         # Filtra apenas os sepultados ainda ativos
+        from .models import Sepultado  # Importação defensiva
         sepultados_ativos = Sepultado.objects.filter(
             tumulo=tumulo,
             exumado=False,
@@ -513,29 +517,27 @@ class Sepultado(models.Model):
         if self.pk:
             sepultados_ativos = sepultados_ativos.exclude(pk=self.pk)
 
-        if sepultados_ativos.count() < capacidade:
-            return  # Ainda há espaço
+        # Valida capacidade + exumações apenas se for um novo sepultamento
+        if not self.pk:
+            if sepultados_ativos.count() >= capacidade:
+                try:
+                    cemit = tumulo.quadra.cemiterio
+                except Exception:
+                    raise ValidationError('Não foi possível verificar o cemitério do túmulo selecionado.')
 
-        # Capacidade já está cheia — verifica se há exumação antiga
-        try:
-            cemit = tumulo.quadra.cemiterio
-        except Exception:
-            raise ValidationError('Não foi possível verificar o cemitério do túmulo selecionado.')
+                meses_minimos = cemit.tempo_minimo_exumacao or 36
+                data_limite = timezone.now().date() - relativedelta(months=meses_minimos)
 
-        meses_minimos = cemit.tempo_minimo_exumacao or 36
-        data_limite = timezone.now().date() - relativedelta(months=meses_minimos)
+                exumacoes_validas = Exumacao.objects.filter(
+                    tumulo=tumulo,
+                    data__lte=data_limite
+                ).count()
 
-        exumacoes_validas = MovimentacaoSepultado.objects.filter(
-            sepultado__tumulo=tumulo,
-            tipo='EXUMACAO',
-            data__lte=data_limite
-        ).count()
-
-        if exumacoes_validas == 0:
-            raise ValidationError(
-                f"Este túmulo já atingiu a capacidade máxima de {capacidade} sepultados. "
-                f"É necessário que pelo menos uma exumação tenha ocorrido há mais de {meses_minimos} meses."
-            )
+                if exumacoes_validas == 0:
+                    raise ValidationError(
+                        f"Este túmulo já atingiu a capacidade máxima de {capacidade} sepultados. "
+                        f"É necessário que pelo menos uma exumação tenha ocorrido há mais de {meses_minimos} meses."
+                    )
 
     def delete(self, *args, **kwargs):
         tumulo = self.tumulo
@@ -556,11 +558,17 @@ class Sepultado(models.Model):
         verbose_name_plural = "Sepultados"
 
 
-from .utils import gerar_receitas_para_servico  # se você colocou essa função em um util separado
+from .utils import gerar_receitas_para_servico
 from dateutil.relativedelta import relativedelta
 from datetime import datetime, date
+from decimal import Decimal
+from django.db import models
+from django.core.exceptions import ValidationError
+from django.utils import timezone
+from django.core.validators import RegexValidator
+from django.contrib.auth import get_user_model
 
-from .models import NumeroSequencialGlobal
+
 
 class ConcessaoContrato(models.Model):
     numero_contrato = models.CharField(
@@ -582,7 +590,6 @@ class ConcessaoContrato(models.Model):
             )
         ]
     )
-
 
     telefone = models.CharField(max_length=20, verbose_name="Telefone", null=True, blank=True)
 
@@ -623,19 +630,20 @@ class ConcessaoContrato(models.Model):
         if self.pk is None and ConcessaoContrato.objects.filter(tumulo_id=self.tumulo_id).exists():
             raise ValidationError({"tumulo": "Este túmulo já está vinculado a outro contrato."})
 
-        if self.tumulo and self.tumulo.status in ['reservado', 'ocupado']:
-            raise ValidationError({"tumulo": f"Túmulo {self.tumulo} está marcado como '{self.tumulo.get_status_display()}'. Só é possível gerar contrato para túmulo disponível."})
+        if self.tumulo:
+            sepultados = Sepultado.objects.filter(tumulo=self.tumulo)
+            tem_nao_importado = sepultados.filter(importado=False).exists()
+
+            if self.tumulo.status in ['reservado', 'ocupado'] and tem_nao_importado:
+                raise ValidationError({
+                    "tumulo": f"Túmulo {self.tumulo} está marcado como '{self.tumulo.get_status_display()}'. "
+                              f"Só é possível gerar contrato se o túmulo estiver disponível ou ocupado apenas com registros históricos."
+                })
 
         if self.forma_pagamento == 'gratuito' and self.valor_total != Decimal("0.00"):
             raise ValidationError({'valor_total': "Contratos gratuitos devem ter valor R$ 0,00."})
 
     def save(self, *args, **kwargs):
-        from django.utils import timezone
-        from .models import NumeroSequencialGlobal, Receita
-        from decimal import Decimal
-        from datetime import date
-        from .utils import gerar_numero_sequencial_global
-
         criando = self.pk is None
         print(">>> Entrou no save() de ConcessaoContrato")
 
@@ -661,8 +669,6 @@ class ConcessaoContrato(models.Model):
             )
 
     def delete(self, *args, **kwargs):
-        from .models import Receita, Sepultado
-
         if Receita.objects.filter(contrato=self).exists():
             raise Exception("Não é possível excluir este contrato. Existem receitas vinculadas.")
 
@@ -672,13 +678,8 @@ class ConcessaoContrato(models.Model):
 
         super().delete(*args, **kwargs)
 
-        # ✅ Atualiza o status do túmulo após exclusão do contrato
         self.tumulo.status = self.tumulo.calcular_status_dinamico()
         self.tumulo.save(update_fields=["status"])
-
-        
-
-
 
     def __str__(self):
         return f"{self.numero_contrato or 'Contrato'} - {self.nome} - {self.tumulo.identificador}"
@@ -687,8 +688,7 @@ class ConcessaoContrato(models.Model):
         verbose_name = "Contrato de Concessão"
         verbose_name_plural = "Contratos de Concessão"
         app_label = "sepultados_gestao"
-    
-              
+
 
 from django.db import models
 from django.utils import timezone

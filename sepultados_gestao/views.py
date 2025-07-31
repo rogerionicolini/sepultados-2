@@ -469,7 +469,7 @@ def importar_tumulos(request):
 from django.contrib import messages
 from django.shortcuts import render
 from django.contrib.admin.views.decorators import staff_member_required
-from sepultados_gestao.models import Sepultado, Tumulo
+from sepultados_gestao.models import Sepultado, Tumulo, Quadra
 import pandas as pd
 
 @staff_member_required
@@ -492,13 +492,24 @@ def importar_sepultados(request):
             for i, row in df.iterrows():
                 try:
                     identificador_tumulo = str(row.get("identificador_tumulo")).strip()
+                    nome_quadra = str(row.get("quadra")).strip()
+
+                    quadra = Quadra.objects.filter(
+                        codigo=nome_quadra,
+                        cemiterio_id=request.session["cemiterio_ativo_id"]
+                    ).first()
+
+                    if not quadra:
+                        erros.append(f"Linha {i+2}: Quadra '{nome_quadra}' não encontrada.")
+                        continue
+
                     tumulo = Tumulo.objects.filter(
                         identificador=identificador_tumulo,
-                        quadra__cemiterio_id=request.session["cemiterio_ativo_id"]
+                        quadra=quadra
                     ).first()
 
                     if not tumulo:
-                        erros.append(f"Linha {i+2}: Túmulo '{identificador_tumulo}' não encontrado.")
+                        erros.append(f"Linha {i+2}: Túmulo '{identificador_tumulo}' não encontrado na quadra '{nome_quadra}'.")
                         continue
 
                     sep = Sepultado(
@@ -513,6 +524,7 @@ def importar_sepultados(request):
                         nome_pai=row.get("nome_pai"),
                         nome_mae=row.get("nome_mae"),
                         tumulo=tumulo,
+                        importado=True  # ✅ agora marca como importado
                     )
                     sep.save(ignorar_validacao_contrato=True)
                     total += 1
@@ -529,7 +541,6 @@ def importar_sepultados(request):
         except Exception as e:
             messages.error(request, f"Erro ao processar a planilha: {str(e)}")
 
-    # Esse render está fora do if POST: será usado tanto no GET quanto após o POST
     return render(request, "admin/importar_base.html", {
         "title": "Importar Sepultados",
         "titulo_pagina": "Importar Sepultados",
