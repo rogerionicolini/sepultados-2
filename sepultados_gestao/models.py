@@ -184,9 +184,6 @@ class Quadra(models.Model):
         app_label = "sepultados_gestao"
 
 
-
-
-
 from django.db import models
 from django.core.exceptions import ValidationError
 from django.utils.functional import cached_property
@@ -246,14 +243,18 @@ class Tumulo(models.Model):
         validar_prefeitura_obrigatoria(self)
 
         if self.quadra_id and self.cemiterio_id:
-            try:
-                if self.quadra.cemiterio_id != self.cemiterio_id:
-                    raise ValidationError({'quadra': 'A quadra selecionada não pertence ao cemitério informado.'})
-            except:
+            from .models import Quadra
+            quadra = Quadra.objects.filter(id=self.quadra_id).first()
+            if not quadra:
                 raise ValidationError({'quadra': 'A quadra informada não foi encontrada.'})
+            if quadra.cemiterio_id != self.cemiterio_id:
+                raise ValidationError({'quadra': 'A quadra selecionada não pertence ao cemitério informado.'})
 
     def calcular_status_dinamico(self):
         from .models import Sepultado
+
+        if not self.pk:
+            return self.status  # ou 'disponivel'
 
         if self.reservado:
             return 'reservado'
@@ -267,9 +268,13 @@ class Tumulo(models.Model):
         return 'ocupado' if sepultados_ativos >= self.capacidade else 'disponivel'
 
     def save(self, *args, **kwargs):
+        is_new = self.pk is None
         self.full_clean()
-        self.status = self.calcular_status_dinamico()
         super().save(*args, **kwargs)
+
+        if is_new:
+            self.status = self.calcular_status_dinamico()
+            super().save(update_fields=["status"])
 
     def __str__(self):
         identificador = self.identificador
@@ -285,7 +290,6 @@ class Tumulo(models.Model):
     def atualizar_status(self):
         self.status = self.calcular_status_dinamico()
         self.save(update_fields=["status"])
-
 
     class Meta:
         verbose_name = "Túmulo"

@@ -415,6 +415,7 @@ class TumuloAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
 
     painel_sepultados.short_description = "Sepultados neste Túmulo"
 
+    
 
 
 from django.contrib import admin

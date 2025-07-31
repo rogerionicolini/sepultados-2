@@ -423,23 +423,24 @@ def importar_tumulos(request):
                 tipo_estrutura = MAPA_TIPO_ESTRUTURA.get(tipo_raw, 'tumulo')
 
                 capacidade = int(float(linha["capacidade"])) if pd.notna(linha["capacidade"]) else 1
-                usar_linha = str(linha["usar_linha"]).strip().lower() == "sim"
+                usar_linha = str(linha["usar_linha"]).strip().lower() == "sim" if pd.notna(linha["usar_linha"]) else False
                 linha_valor = int(linha["linha"]) if usar_linha and pd.notna(linha["linha"]) else None
 
                 print(f"[DEBUG] Buscando quadra: '{quadra_codigo}' no cemitério ID {request.session['cemiterio_ativo_id']}")
-                quadra = Quadra.objects.filter(
+
+                quadra_id = Quadra.objects.filter(
                     codigo__iexact=quadra_codigo,
                     cemiterio_id=request.session["cemiterio_ativo_id"]
-                ).first()
+                ).values_list("id", flat=True).first()
 
-                if not quadra:
+                if not quadra_id:
                     print(f"❌ Quadra não encontrada: '{quadra_codigo}'")
                     continue
 
-                print(f"✅ Quadra encontrada: ID={quadra.id} - {quadra.codigo}")
+                print(f"✅ Quadra encontrada com ID: {quadra_id}")
 
                 Tumulo.objects.create(
-                    quadra=quadra,
+                    quadra_id=quadra_id,
                     cemiterio_id=request.session["cemiterio_ativo_id"],
                     identificador=identificador,
                     tipo_estrutura=tipo_estrutura,
@@ -454,6 +455,7 @@ def importar_tumulos(request):
             except Exception as e:
                 print(f"❌ Erro ao importar túmulo da linha: {linha}\nMotivo: {e}")
                 continue
+
 
         messages.success(request, f"{total} túmulo(s) importado(s) com sucesso.")
 

@@ -244,7 +244,7 @@ class LicencaForm(forms.ModelForm):
         self.current_user = user
 
 from django import forms
-from .models import Tumulo
+from .models import Tumulo, Quadra
 
 class TumuloForm(forms.ModelForm):
     class Meta:
@@ -253,33 +253,38 @@ class TumuloForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         request = kwargs.pop('request', None)
-        self.request = request  # necessário para usar no save()
+        self.request = request
         super().__init__(*args, **kwargs)
 
-        # ✅ Remove o widget Select customizado para permitir autocomplete
-        # self.fields['quadra'].widget = forms.Select(...)  <-- REMOVIDO
-
-        # ✅ Filtra as quadras com base no cemitério ativo
-        if request and hasattr(request, 'cemiterio_ativo') and request.cemiterio_ativo:
-            self.fields['quadra'].queryset = Quadra.objects.filter(cemiterio=request.cemiterio_ativo)
+        # ✅ Filtra quadras com base no ID do cemitério ativo
+        cemiterio_id = getattr(request.cemiterio_ativo, 'id', None) if request else None
+        if cemiterio_id:
+            self.fields['quadra'].queryset = Quadra.objects.filter(cemiterio_id=cemiterio_id)
         else:
             self.fields['quadra'].queryset = Quadra.objects.none()
 
-        # ✅ Oculta o campo cemiterio no formulário (será preenchido automaticamente)
+        # ✅ Oculta o campo cemitério (é automático)
         if 'cemiterio' in self.fields:
             self.fields['cemiterio'].required = False
             self.fields['cemiterio'].widget = forms.HiddenInput()
 
     def save(self, commit=True):
         tumulo = super().save(commit=False)
-        # ✅ Define automaticamente o cemitério com base na quadra ou cemitério ativo
+
         if self.cleaned_data.get('quadra'):
-            tumulo.cemiterio = self.cleaned_data['quadra'].cemiterio
+            tumulo.cemiterio_id = self.cleaned_data['quadra'].cemiterio_id
         elif self.request and hasattr(self.request, 'cemiterio_ativo'):
-            tumulo.cemiterio = self.request.cemiterio_ativo
+            tumulo.cemiterio_id = getattr(self.request.cemiterio_ativo, 'id', None)
+
         if commit:
             tumulo.save()
         return tumulo
+
+
+
+
+    
+
 
 from .models import Cemiterio
 
