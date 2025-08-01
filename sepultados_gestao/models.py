@@ -734,11 +734,8 @@ class Exumacao(models.Model):
         if not sepultado:
             return
 
-        if self.sepultado and self.sepultado.exumado and not self.pk:
+        if sepultado.exumado and not self.pk:
             raise ValidationError("Este sepultado já foi exumado. Não é possível registrar outra exumação.")
-        sepultado = getattr(self, 'sepultado', None)
-        if not sepultado:
-            return
 
         sepultamento_data = sepultado.data_sepultamento
         tumulo = getattr(sepultado, 'tumulo', None)
@@ -756,6 +753,12 @@ class Exumacao(models.Model):
                 raise ValidationError(
                     f"É necessário aguardar no mínimo {minimo_meses} meses após o sepultamento para realizar a exumação."
                 )
+
+        # NOVA REGRA — exigir contrato de concessão no túmulo
+        if tumulo:
+            contrato_existe = ConcessaoContrato.objects.filter(tumulo=tumulo).exists()
+            if not contrato_existe:
+                raise ValidationError({'tumulo': 'Este túmulo não possui contrato de concessão. A exumação não é permitida.'})
 
 
     def save(self, *args, **kwargs):
