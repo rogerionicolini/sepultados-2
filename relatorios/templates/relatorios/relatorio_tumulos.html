@@ -43,6 +43,7 @@
     <thead>
     <tr>
         <th>Identificador</th>
+        <th>Linha</th>
         <th>Quadra</th>
         <th>Tipo</th>
         <th>Capacidade</th>
@@ -57,6 +58,7 @@
         {% for tumulo in tumulos %}
         <tr>
             <td>{{ tumulo.identificador }}</td>
+            <td>{% if tumulo.usar_linha and tumulo.linha %}{{ tumulo.linha }}{% else %}-{% endif %}</td>
             <td>{{ tumulo.quadra }}</td>
             <td>{{ tumulo.get_tipo_estrutura_display }}</td>
             <td>{{ tumulo.capacidade }}</td>
