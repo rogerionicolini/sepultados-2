@@ -262,7 +262,7 @@ from .mixins import PrefeituraObrigatoriaAdminMixin
 class TumuloAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
     form = TumuloForm
     autocomplete_fields = ['quadra']
-    search_fields = ['identificacao', 'quadra__nome']
+    search_fields = ['identificador', 'linha', 'quadra__codigo']
     list_display = (
         "tipo_estrutura", "identificador", "quadra",
         "status_com_cor", "usar_linha", "linha", "reservado", "link_pdf"

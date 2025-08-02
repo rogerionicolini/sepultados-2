@@ -277,15 +277,19 @@ class Tumulo(models.Model):
             super().save(update_fields=["status"])
 
     def __str__(self):
-        identificador = self.identificador
-        if not identificador.upper().startswith("T"):
-            identificador = f"T {identificador}"
+        partes = []
+        if self.identificador is not None:
+            partes.append(f"{self.identificador:02}")
+        if self.usar_linha and self.linha is not None:
+            partes.append(f"L {self.linha:02}")
+        if self.quadra:
+            partes.append(str(self.quadra))  # já está formatado como "Quadra 01"
+        return " ".join(partes)
 
-        quadra_codigo = str(self.quadra)
-        if not quadra_codigo.upper().startswith("Q"):
-            quadra_codigo = f"Q {quadra_codigo}"
 
-        return f"{identificador} - {quadra_codigo}"
+
+
+
 
     def atualizar_status(self):
         self.status = self.calcular_status_dinamico()
