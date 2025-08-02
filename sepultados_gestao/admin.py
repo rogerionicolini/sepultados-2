@@ -844,6 +844,25 @@ class TransladoAdmin(admin.ModelAdmin):
             return qs.filter(sepultado__tumulo__quadra__cemiterio__prefeitura=pref)
         return qs.none()
 
+    def delete_model(self, request, obj):
+        if obj.receitas.exists():
+            from django.contrib import messages
+            messages.error(request, "Não é possível excluir: existem receitas vinculadas.")
+            return
+
+        sep = obj.sepultado
+
+        # Reverter status para exumado no túmulo original
+        sep.trasladado = False
+        sep.data_translado = None
+        sep.exumado = True
+        sep.save(update_fields=['trasladado', 'data_translado', 'exumado'])
+
+        super().delete_model(request, obj)
+
+
+
+
     def link_pdf(self, obj):
         url = reverse('sepultados_gestao:pdf_translado', args=[obj.pk])
         return format_html('<a href="{}" target="_blank">📄 PDF</a>', url)

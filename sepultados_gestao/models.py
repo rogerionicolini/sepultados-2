@@ -547,11 +547,12 @@ class Sepultado(models.Model):
             tumulo.save(update_fields=["status"])
     @property
     def status_display(self):
-        if self.data_translado:
+        if self.trasladado:
             return "Transladado"
-        elif self.data_exumacao:
+        if self.exumado:
             return "Exumado"
         return "Sepultado"
+
 
     class Meta:
         verbose_name = "Sepultado"
@@ -813,6 +814,7 @@ from django.db import models
 from django.utils import timezone
 from django.core.exceptions import ValidationError
 from decimal import Decimal
+from datetime import timedelta
 
 class Translado(models.Model):
     sepultado = models.ForeignKey("Sepultado", on_delete=models.PROTECT)
@@ -848,6 +850,7 @@ class Translado(models.Model):
 
     def clean(self):
         super().clean()
+        from .models import ConcessaoContrato, Exumacao
 
         if not self.sepultado:
             raise ValidationError("O campo Sepultado é obrigatório.")
@@ -862,33 +865,58 @@ class Translado(models.Model):
         if translados_existentes.exists():
             raise ValidationError("Este sepultado já foi trasladado anteriormente. Não é possível duplicar.")
 
-
-
-    def save(self, *args, **kwargs):
-        from .utils import gerar_receitas_para_servico, gerar_numero_sequencial_global
-        from .models import ConcessaoContrato
-
-        criando = self.pk is None
-        sep = self.sepultado  # ✅ Define sempre no início
-
-        self.full_clean()
-
+        # Verifica a capacidade e contrato do túmulo de destino, se for outro túmulo
         if self.destino == 'outro_tumulo' and self.tumulo_destino:
+            # Verifica se há contrato de concessão
             contrato_existe = ConcessaoContrato.objects.filter(tumulo=self.tumulo_destino).exists()
             if not contrato_existe:
                 raise ValidationError({
                     'tumulo_destino': "Este túmulo não possui contrato de concessão. A transferência não é permitida."
                 })
 
+            sepultados_no_destino = self.tumulo_destino.sepultado_set.filter(trasladado=False)
+            capacidade = self.tumulo_destino.capacidade or 1
+
+            if sepultados_no_destino.count() >= capacidade:
+                # Se está cheio, verifica se existe exumação válida
+                cemit = self.tumulo_destino.quadra.cemiterio
+                meses_min = cemit.tempo_minimo_exumacao or 0
+                dias_min = meses_min * 30
+
+                exumacoes_validas = []
+                for s in sepultados_no_destino:
+                    data_exumacao = getattr(s, 'data_exumacao', None)
+                    if not data_exumacao:
+                        ex = Exumacao.objects.filter(sepultado=s).order_by('-data').first()
+                        data_exumacao = ex.data if ex else None
+                    if data_exumacao and (self.data - data_exumacao).days >= dias_min:
+                        exumacoes_validas.append(s)
+
+                if not exumacoes_validas:
+                    raise ValidationError({
+                        'tumulo_destino': f"O túmulo de destino atingiu sua capacidade máxima de {capacidade} sepultados. "
+                                          f"É necessário que pelo menos uma exumação tenha ocorrido há mais de {meses_min} meses."
+                    })
+
+        # Validação do valor gratuito
+        if self.forma_pagamento == 'gratuito' and self.valor > 0:
+            raise ValidationError("Translado gratuito deve ter valor 0,00.")
+
+    def save(self, *args, **kwargs):
+        from .utils import gerar_receitas_para_servico, gerar_numero_sequencial_global
+
+        criando = self.pk is None
+        sep = self.sepultado
+
+        # número do documento
         if criando and not self.numero_documento:
             self.numero_documento = gerar_numero_sequencial_global(self.prefeitura)
 
+        # salva o translado
         super().save(*args, **kwargs)
 
         if criando:
-            if self.forma_pagamento == 'gratuito' and self.valor > 0:
-                raise ValidationError("Translado gratuito deve ter valor 0,00.")
-
+            # receita
             gerar_receitas_para_servico(
                 servico=self,
                 descricao="Taxa de Translado",
@@ -900,15 +928,28 @@ class Translado(models.Model):
                 numero_documento=self.numero_documento
             )
 
+            # atualiza status do sepultado (mantendo-o no túmulo de origem)
             sep.trasladado = True
+            sep.exumado = True
             sep.data_translado = self.data
-            sep.save(update_fields=['trasladado', 'data_translado'])
+            # ⚠️ não altere sep.tumulo aqui – isso preserva o histórico no túmulo de origem
+            sep.save(update_fields=['trasladado', 'exumado', 'data_translado'])
 
-        if self.destino == 'outro_tumulo' and self.tumulo_destino:
-            sep.exumado = True  # mantém exumado = True após translado
-            sep.save(update_fields=['trasladado', 'data_translado', 'tumulo', 'exumado'])
-        else:
-            sep.save(update_fields=['trasladado', 'data_translado'])
+    def delete(self, *args, **kwargs):
+        if self.receitas.exists():
+            raise ValidationError("Não é possível excluir: existem receitas vinculadas.")
+
+        sep = self.sepultado
+
+        # Reverter status do sepultado
+        sep.trasladado = False
+        sep.data_translado = None
+        sep.exumado = True  # Garante que ele volte a aparecer como exumado
+        sep.save(update_fields=['trasladado', 'data_translado', 'exumado'])
+
+        super().delete(*args, **kwargs)
+
+
 
     @property
     def tumulo_origem(self):
@@ -923,7 +964,6 @@ class Translado(models.Model):
         elif self.destino == 'outro_cemiterio':
             return f"{self.cemiterio_nome or ''}".strip()
         return "Não informado"
-
 
     @property
     def prefeitura(self):
