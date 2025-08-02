@@ -764,6 +764,37 @@ class ExumacaoAdmin(admin.ModelAdmin):
 
         return FormComRequest
 
+    def delete_model(self, request, obj):
+        if obj.receitas.exists():
+            self.message_user(
+                request,
+                "Não é possível excluir esta exumação porque há receita vinculada.",
+                level=messages.ERROR
+            )
+            return
+
+        sepultado = obj.sepultado
+        super().delete_model(request, obj)
+
+        # Restaurar status do sepultado
+        sepultado.exumado = False
+        sepultado.save()
+
+    def delete_queryset(self, request, queryset):
+        for obj in queryset:
+            if obj.receitas.exists():
+                self.message_user(
+                    request,
+                    f"Não é possível excluir a exumação de {obj.sepultado} porque há receita vinculada.",
+                    level=messages.ERROR
+                )
+                continue
+
+            sepultado = obj.sepultado
+            obj.delete()
+            sepultado.exumado = False
+            sepultado.save()
+
     def link_pdf(self, obj):
         url = reverse('sepultados_gestao:pdf_exumacao', args=[obj.pk])
         return format_html('<a href="{}" target="_blank">📄 PDF</a>', url)

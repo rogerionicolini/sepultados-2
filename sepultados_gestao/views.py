@@ -493,6 +493,8 @@ def importar_sepultados(request):
                 try:
                     identificador_tumulo = str(row.get("identificador_tumulo")).strip()
                     nome_quadra = str(row.get("quadra")).strip()
+                    usar_linha = str(row.get("usar_linha", "")).strip().lower()
+                    linha = row.get("linha")
 
                     quadra = Quadra.objects.filter(
                         codigo=nome_quadra,
@@ -512,6 +514,20 @@ def importar_sepultados(request):
                         erros.append(f"Linha {i+2}: Túmulo '{identificador_tumulo}' não encontrado na quadra '{nome_quadra}'.")
                         continue
 
+                    # Atualiza os campos usar_linha e linha se fornecidos
+                    if usar_linha in ["sim", "s", "true", "1"]:
+                        tumulo.usar_linha = True
+                    elif usar_linha in ["não", "nao", "n", "false", "0"]:
+                        tumulo.usar_linha = False
+
+                    if linha and not pd.isna(linha):
+                        try:
+                            tumulo.linha = int(linha)
+                        except ValueError:
+                            erros.append(f"Linha {i+2}: valor inválido para linha: {linha}")
+
+                    tumulo.save()
+
                     sep = Sepultado(
                         nome=row.get("nome") or "",
                         cpf_sepultado=row.get("cpf_sepultado"),
@@ -524,7 +540,7 @@ def importar_sepultados(request):
                         nome_pai=row.get("nome_pai"),
                         nome_mae=row.get("nome_mae"),
                         tumulo=tumulo,
-                        importado=True  # ✅ agora marca como importado
+                        importado=True
                     )
                     sep.save(ignorar_validacao_contrato=True)
                     total += 1
@@ -547,3 +563,4 @@ def importar_sepultados(request):
         "mostrar_formulario": True,
         "link_planilha": "/media/planilhas/Planilha de Sepultados.xlsx"
     })
+
