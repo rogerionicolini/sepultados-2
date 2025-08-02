@@ -748,18 +748,27 @@ class Exumacao(models.Model):
 
         minimo_meses = cemiterio.tempo_minimo_exumacao or 0
 
+        if not self.data:
+            raise ValidationError("A data da exumação é obrigatória.")
+
         if self.data and sepultamento_data:
-            dias_entre = (self.data - sepultamento_data).days
-            if dias_entre < minimo_meses * 30:
-                raise ValidationError(
-                    f"É necessário aguardar no mínimo {minimo_meses} meses após o sepultamento para realizar a exumação."
-                )
+            try:
+                dias_entre = (self.data - sepultamento_data).days
+                if dias_entre < minimo_meses * 30:
+                    raise ValidationError(
+                        f"É necessário aguardar no mínimo {minimo_meses} meses após o sepultamento para realizar a exumação."
+                    )
+            except Exception:
+                raise ValidationError("Não foi possível validar a data da exumação. Verifique se a data foi preenchida corretamente.")
 
         # NOVA REGRA — exigir contrato de concessão no túmulo
         if tumulo:
             contrato_existe = ConcessaoContrato.objects.filter(tumulo=tumulo).exists()
             if not contrato_existe:
-                raise ValidationError({'tumulo': 'Este túmulo não possui contrato de concessão. A exumação não é permitida.'})
+                raise ValidationError({
+                    'tumulo': 'Este túmulo não possui contrato de concessão. A exumação não é permitida.'
+                })
+
 
 
     def save(self, *args, **kwargs):
@@ -936,18 +945,40 @@ class Translado(models.Model):
             sep.save(update_fields=['trasladado', 'exumado', 'data_translado'])
 
     def delete(self, *args, **kwargs):
+        from .models import Sepultado
+
         if self.receitas.exists():
             raise ValidationError("Não é possível excluir: existem receitas vinculadas.")
 
-        sep = self.sepultado
+        sep = self.sepultado  # Sepultado original
 
-        # Reverter status do sepultado
+        # Reverte status no sepultado de origem
         sep.trasladado = False
         sep.data_translado = None
-        sep.exumado = True  # Garante que ele volte a aparecer como exumado
-        sep.save(update_fields=['trasladado', 'data_translado', 'exumado'])
+
+        # ⚠️ Verifica se ele já havia sido exumado antes do translado
+        havia_exumacao = Sepultado.objects.filter(
+            id=sep.id,
+            exumado=True
+        ).exists()
+
+        sep.exumado = True if havia_exumacao else False
+        sep.save(update_fields=["trasladado", "data_translado", "exumado"])
+
+        # Exclui o clone do túmulo de destino
+        if self.destino == 'outro_tumulo' and self.tumulo_destino:
+            Sepultado.objects.filter(
+                tumulo=self.tumulo_destino,
+                nome=sep.nome,
+                data_falecimento=sep.data_falecimento,
+                data_sepultamento=sep.data_sepultamento,
+                exumado=True,
+                trasladado=False
+            ).exclude(id=sep.id).delete()
 
         super().delete(*args, **kwargs)
+
+
 
 
 

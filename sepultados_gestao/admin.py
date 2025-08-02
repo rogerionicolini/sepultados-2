@@ -351,11 +351,8 @@ class TumuloAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
 
         # Sepultados diretamente ligados ao túmulo
         for s in sepultados:
-            status = "Sepultado"
-            if s.trasladado:
-                status = "Trasladado"
-            elif s.exumado:
-                status = "Exumado"
+            status = s.status_display
+
 
             if s.data_sepultamento:
                 data_permitida = s.data_sepultamento + relativedelta(months=tempo_minimo_meses)
@@ -432,8 +429,9 @@ class SepultadoAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
     autocomplete_fields = ['tumulo']
     list_display = (
         'nome', 'data_nascimento', 'data_falecimento',
-        'idade_ao_falecer', 'tumulo', 'link_pdf'
+        'idade_ao_falecer', 'tumulo', 'status_display', 'link_pdf'
     )
+
     list_filter = ('estado_civil',)
     search_fields = (
         'nome', 'cartorio_nome', 'cartorio_numero_registro',
@@ -489,28 +487,36 @@ class SepultadoAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
         }),
     )
 
+    from sepultados_gestao.models import Exumacao, Translado
+
     def informacoes_movimentacoes(self, obj):
         if not obj:
-            return "Informações disponíveis após salvar o sepultado."
-        
-        exumacoes = obj.movimentacaosepultado_set.filter(tipo='EXUMACAO').order_by('-data')
-        translados = obj.movimentacaosepultado_set.filter(tipo='TRANSLADO').order_by('-data')
+            return format_html(
+                "<div class='caixa-movimentacoes'>Informações disponíveis após salvar o sepultado.</div>"
+            )
 
-        html = "<div style='padding:8px; border:1px solid #ccc; background:#f8f8f8;'>"
+        exumacoes = Exumacao.objects.filter(sepultado=obj).order_by('-data')
+        translados = Translado.objects.filter(sepultado=obj).order_by('-data')
+
+        html = "<div class='caixa-movimentacoes'>"
+
         if exumacoes.exists():
-            html += f"<p><strong>Exumado em:</strong> {exumacoes.first().data.strftime('%d/%m/%Y')}</p>"
+            html += f"<strong>Exumado em:</strong> {exumacoes.first().data.strftime('%d/%m/%Y')}<br>"
         else:
-            html += "<p><strong>Exumado:</strong> Não</p>"
+            html += "<strong>Exumado:</strong> Não<br>"
 
         if translados.exists():
-            html += f"<p><strong>Transladado em:</strong> {translados.first().data.strftime('%d/%m/%Y')}</p>"
+            html += f"<strong>Trasladado em:</strong> {translados.first().data.strftime('%d/%m/%Y')}<br>"
         else:
-            html += "<p><strong>Transladado:</strong> Não</p>"
+            html += "<strong>Trasladado:</strong> Não<br>"
 
         html += "</div>"
+
         return format_html(html)
 
-    informacoes_movimentacoes.short_description = "Exumações / Translado"
+    informacoes_movimentacoes.short_description = "Informações de movimentações"
+
+
 
     def get_form(self, request, obj=None, **kwargs):
         form = super().get_form(request, obj, **kwargs)
@@ -858,7 +864,12 @@ class TransladoAdmin(admin.ModelAdmin):
         sep.exumado = True
         sep.save(update_fields=['trasladado', 'data_translado', 'exumado'])
 
+        # Importante: limpa o cache da propriedade status_display
+        if 'status_display' in sep.__dict__:
+            del sep.__dict__['status_display']
+
         super().delete_model(request, obj)
+
 
 
 
