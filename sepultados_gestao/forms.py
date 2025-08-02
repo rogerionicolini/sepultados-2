@@ -163,9 +163,11 @@ class SelecionarPrefeituraForm(forms.Form):
             raise forms.ValidationError("Senha incorreta. Tente novamente.")
 
         return cleaned_data
+
+from decimal import Decimal, InvalidOperation
 from django import forms
-from .models import Licenca
-from dateutil.relativedelta import relativedelta
+from django.forms import TextInput
+from .models import Licenca  # ajuste conforme seu app
 
 class LicencaForm(forms.ModelForm):
     data_inicio = forms.DateField(
@@ -179,7 +181,7 @@ class LicencaForm(forms.ModelForm):
         model = Licenca
         fields = [
             'prefeitura', 'plano', 'data_inicio', 'anos_contratados',
-            'valor_mensal_atual', 
+            'valor_mensal_atual',
             'usuarios_min', 'usuarios_max', 'sepultados_max',
             'inclui_api', 'inclui_erp', 'inclui_suporte_prioritario',
         ]
@@ -202,9 +204,10 @@ class LicencaForm(forms.ModelForm):
         self.current_user = kwargs.pop('user', None)
         super().__init__(*args, **kwargs)
 
-        self.fields['valor_mensal_atual'].widget.attrs.update({
+        self.fields['valor_mensal_atual'].widget = TextInput(attrs={
             'placeholder': 'R$ 0,00',
-            'data-mask-moeda': 'true'
+            'class': 'vCurrencyField',  # isso ativa formatação no admin
+            'inputmode': 'decimal'
         })
 
         if self.current_user and not self.current_user.is_superuser:
@@ -215,15 +218,14 @@ class LicencaForm(forms.ModelForm):
                 self.fields.pop(field, None)
 
     def clean_valor_mensal_atual(self):
-        valor_str = self.cleaned_data.get('valor_mensal_atual')
-        if valor_str:
-            valor_str = str(valor_str).replace('R$', '').replace('.', '').replace(',', '.').strip()
+        valor = self.cleaned_data.get('valor_mensal_atual')
+        if isinstance(valor, str):
+            valor = valor.replace('R$', '').replace('.', '').replace(',', '.').strip()
             try:
-                return Decimal(valor_str)
-            except:
+                valor = Decimal(valor)
+            except InvalidOperation:
                 raise forms.ValidationError("Valor inválido.")
-        return Decimal("0.00")
-
+        return valor or Decimal("0.00")
 
     def save(self, commit=True):
         licenca = super().save(commit=False)
