@@ -1110,6 +1110,12 @@ class CustomAdminSite(AdminSite):
             "models": []
         }
 
+        grupo_relatorios = {
+            "name": "Relatórios",
+            "app_label": "menu_relatorios",
+            "models": []
+        }
+
         prefeitura_ativa_id = request.session.get("prefeitura_ativa_id")
         cemiterio_ativo_id = request.session.get("cemiterio_ativo_id")
 
@@ -1125,68 +1131,66 @@ class CustomAdminSite(AdminSite):
                     elif cemiterio_ativo_id:
                         grupo_gestao["models"].append(model)
 
-        # Adiciona o grupo de Importações se prefeitura e cemitério estiverem ativos
+        # Adiciona o botão de Backup do Sistema (visível apenas para superusuários)
+        if request.user.is_superuser:
+            grupo_geral["models"].append({
+                "name": "Backup do Sistema",
+                "object_name": "BackupSistema",
+                "admin_url": "/backup/"
+            })
+
         if prefeitura_ativa_id and cemiterio_ativo_id:
             grupo_importacoes["models"].append({
                 "name": "Importar Quadras",
                 "object_name": "ImportarQuadras",
-                "admin_url": "/importar/quadras/",   # ✅ Correto
+                "admin_url": "/importar/quadras/",
                 "add_url": "/importar/quadras/"
             })
             grupo_importacoes["models"].append({
                 "name": "Importar Túmulos",
                 "object_name": "ImportarTumulos",
-                "admin_url": "/importar/tumulos/",   # ✅ Correto
+                "admin_url": "/importar/tumulos/",
                 "add_url": "/importar/tumulos/"
             })
             grupo_importacoes["models"].append({
                 "name": "Importar Sepultados",
                 "object_name": "ImportarSepultados",
-                "admin_url": "/importar/sepultados/",  # ✅ Correto
+                "admin_url": "/importar/sepultados/",
                 "add_url": "/importar/sepultados/"
             })
 
-                    # Adiciona o grupo de Relatórios se prefeitura e cemitério estiverem ativos
-        grupo_relatorios = {
-            "name": "Relatórios",
-            "app_label": "menu_relatorios",  # ← nome fictício só para agrupar
-            "models": []
-        }
-
-
-        if prefeitura_ativa_id and cemiterio_ativo_id:
-            grupo_relatorios["models"].append({
-                "name": "Relatório de Sepultados",
-                "object_name": "RelatorioSepultados",
-                "admin_url": "/relatorios/sepultados/"
-            })
-            grupo_relatorios["models"].append({
-                "name": "Relatório de Exumações",
-                "object_name": "RelatorioExumacoes",
-                "admin_url": "/relatorios/exumacoes/"
-            })
-            grupo_relatorios["models"].append({
-                "name": "Relatório de Translados",
-                "object_name": "RelatorioTranslados",
-                "admin_url": "/relatorios/translados/"
-            })
-            grupo_relatorios["models"].append({
-                "name": "Relatório de Contratos",
-                "object_name": "RelatorioContratos",
-                "admin_url": "/relatorios/contratos/"
-            })
-            grupo_relatorios["models"].append({
-                "name": "Relatório de Receitas",  # ✅ Novo item
-                "object_name": "RelatorioReceitas",
-                "admin_url": "/relatorios/receitas/"
-            })
-            grupo_relatorios["models"].append({  # ✅ Adicionado corretamente
-                "name": "Relatório de Túmulos",
-                "object_name": "RelatorioTumulos",
-                "admin_url": "/relatorios/tumulos/"
-            })
-
-
+            grupo_relatorios["models"].extend([
+                {
+                    "name": "Relatório de Sepultados",
+                    "object_name": "RelatorioSepultados",
+                    "admin_url": "/relatorios/sepultados/"
+                },
+                {
+                    "name": "Relatório de Exumações",
+                    "object_name": "RelatorioExumacoes",
+                    "admin_url": "/relatorios/exumacoes/"
+                },
+                {
+                    "name": "Relatório de Translados",
+                    "object_name": "RelatorioTranslados",
+                    "admin_url": "/relatorios/translados/"
+                },
+                {
+                    "name": "Relatório de Contratos",
+                    "object_name": "RelatorioContratos",
+                    "admin_url": "/relatorios/contratos/"
+                },
+                {
+                    "name": "Relatório de Receitas",
+                    "object_name": "RelatorioReceitas",
+                    "admin_url": "/relatorios/receitas/"
+                },
+                {
+                    "name": "Relatório de Túmulos",
+                    "object_name": "RelatorioTumulos",
+                    "admin_url": "/relatorios/tumulos/"
+                },
+            ])
 
         resultado = []
         if grupo_geral["models"]:
@@ -1200,11 +1204,10 @@ class CustomAdminSite(AdminSite):
 
         return resultado
 
-
-
     def register_models(self):
         for model, model_admin in admin.site._registry.items():
             self.register(model, model_admin.__class__)
+
 
 from django.contrib import admin
 from django.urls import path, reverse

@@ -25,9 +25,21 @@ class Usuario(AbstractBaseUser, PermissionsMixin):
     email = models.EmailField(_("e-mail"), unique=True)
     first_name = models.CharField(_("nome"), max_length=150, blank=True)
     last_name = models.CharField(_("sobrenome"), max_length=150, blank=True)
-    is_staff = models.BooleanField(default=False)
-    is_active = models.BooleanField(default=True)
-    date_joined = models.DateTimeField(default=timezone.now)
+
+    is_staff = models.BooleanField(
+        _("é da equipe?"),
+        default=False,
+        help_text=_("Indica se o usuário pode acessar a área administrativa.")
+    )
+    is_active = models.BooleanField(
+        _("está ativo?"),
+        default=True,
+        help_text=_("Indica se este usuário deve ser tratado como ativo.")
+    )
+    date_joined = models.DateTimeField(
+        _("data de cadastro"),
+        default=timezone.now
+    )
 
     objects = UsuarioManager()
 
@@ -35,8 +47,8 @@ class Usuario(AbstractBaseUser, PermissionsMixin):
     REQUIRED_FIELDS = []
 
     class Meta:
-        verbose_name = "usuário"
-        verbose_name_plural = "usuários"
+        verbose_name = _("usuário")
+        verbose_name_plural = _("usuários")
 
     def __str__(self):
         return self.email

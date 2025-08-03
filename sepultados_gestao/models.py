@@ -556,6 +556,11 @@ class Sepultado(models.Model):
         if self.exumado:
             return "Exumado"
         return "Sepultado"
+    
+    @property
+    def idade(self):
+        return self.calcular_idade()
+
 
 
     class Meta:
