@@ -1,7 +1,7 @@
 from django.contrib.admin.views.decorators import staff_member_required
 from django.http import FileResponse, HttpResponseForbidden
 from django.conf import settings
-from django.utils.timezone import now
+from django.utils.timezone import localtime, now
 from django.core.management import call_command
 import os
 import zipfile
@@ -12,7 +12,7 @@ def backup_completo(request):
     if not request.user.is_superuser:
         return HttpResponseForbidden("Acesso restrito ao superusuário.")
 
-    timestamp = now().strftime('%Y%m%d_%H%M')
+    timestamp = localtime(now()).strftime('%Y%m%d_%H%M')
     zip_filename = f"backup_completo_{timestamp}.zip"
 
     temp_dir = tempfile.mkdtemp()
@@ -381,12 +381,19 @@ def backup_prefeitura_ativa(request):
                 if os.path.exists(caminho):
                     zip_file.write(caminho, arcname=os.path.join('midia', os.path.basename(anexo.arquivo.name)))
 
-    filename = f"backup_prefeitura_{prefeitura_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
+    from django.utils.timezone import localtime, now
+    from django.utils.text import slugify
+
+    nome_prefeitura = slugify(prefeitura_ativa.nome)
+    agora = localtime(now())
+    filename = f"backup_{nome_prefeitura}_{prefeitura_id}_{agora.strftime('%Y%m%d_%H%M%S')}.zip"
+
     return HttpResponse(
         zip_buffer.getvalue(),
         content_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'}
     )
+
 
 
 from django.shortcuts import render

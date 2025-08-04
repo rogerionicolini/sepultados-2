@@ -95,6 +95,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from django.contrib.auth import get_user_model
 from sepultados_gestao.models import Prefeitura, Plano, Licenca
+from sepultados_gestao.models import EmailConfirmacao  # certifique-se de importar
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.db import transaction
 from django.core.files.base import ContentFile
@@ -111,7 +112,6 @@ class RegistrarPrefeituraAPIView(APIView):
             with transaction.atomic():
                 dados = request.data
 
-                # Campos obrigatórios
                 nome = dados.get("nome")
                 cnpj = dados.get("cnpj")
                 responsavel = dados.get("responsavel")
@@ -132,6 +132,9 @@ class RegistrarPrefeituraAPIView(APIView):
 
                 if not all([nome, cnpj, responsavel, telefone, email, senha, logradouro, numero, cidade, estado, cep]):
                     return Response({"detail": "Todos os campos obrigatórios devem ser preenchidos."}, status=400)
+
+                if not EmailConfirmacao.objects.filter(email=email, usado=True).exists():
+                    return Response({"detail": "Confirmação de e-mail pendente. Verifique sua caixa de entrada."}, status=400)
 
                 if Prefeitura.objects.filter(cnpj=cnpj).exists():
                     return Response({"detail": "Já existe uma prefeitura com esse CNPJ."}, status=400)
@@ -161,7 +164,6 @@ class RegistrarPrefeituraAPIView(APIView):
                     endereco_cep=cep,
                 )
 
-                # Upload opcional
                 def salvar_imagem(base64_str):
                     format, imgstr = base64_str.split(';base64,')
                     ext = format.split('/')[-1]
@@ -174,12 +176,14 @@ class RegistrarPrefeituraAPIView(APIView):
                     prefeitura.brasao = salvar_imagem(dados["brasao_base64"])
                 prefeitura.save()
 
-                # Criar licença com base no plano
                 plano = Plano.objects.get(pk=plano_id)
+                duracao_anos = int(dados.get("duracao_anos", 1))
                 Licenca.objects.create(
                     prefeitura=prefeitura,
                     plano=plano,
                     valor_mensal_atual=plano.preco_mensal,
+                    percentual_reajuste_anual=5.0,
+                    anos_contratados=duracao_anos,
                     usuarios_min=plano.usuarios_min,
                     usuarios_max=plano.usuarios_max,
                     sepultados_max=plano.sepultados_max,
@@ -187,7 +191,6 @@ class RegistrarPrefeituraAPIView(APIView):
                     inclui_erp=plano.inclui_erp,
                     inclui_suporte_prioritario=plano.inclui_suporte_prioritario,
                 )
-
 
                 refresh = RefreshToken.for_user(user)
 
@@ -200,7 +203,6 @@ class RegistrarPrefeituraAPIView(APIView):
 
         except Exception as e:
             return Response({"detail": str(e)}, status=500)
-
 
 
 from rest_framework.views import APIView
@@ -232,3 +234,71 @@ def licenca_da_prefeitura(request, prefeitura_id):
     serializer = LicencaSerializer(licenca)
     return Response(serializer.data)
 
+
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+from django.core.mail import send_mail
+from django.conf import settings
+from sepultados_gestao.models import EmailConfirmacao
+from django.utils import timezone
+
+class EnviarConfirmacaoEmailAPIView(APIView):
+    permission_classes = []
+
+    def post(self, request):
+        email = request.data.get("email")
+        if not email:
+            return Response({"detail": "E-mail é obrigatório."}, status=400)
+
+        # Verifica se já existe token não usado
+        existente = EmailConfirmacao.objects.filter(email=email, usado=False).first()
+        if existente:
+            token = existente.token
+        else:
+            obj = EmailConfirmacao.objects.create(email=email)
+            token = obj.token
+
+        link_confirmacao = f"{settings.FRONTEND_URL}/confirmar-email/{token}/"
+
+        try:
+            send_mail(
+                subject="Confirmação de E-mail - Sepultados.com",
+                message=f"Clique no link para confirmar seu e-mail e prosseguir com o cadastro:\n\n{link_confirmacao}",
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                recipient_list=[email],
+                fail_silently=False,
+            )
+            return Response({"detail": "E-mail de confirmação enviado com sucesso."}, status=200)
+
+        except Exception as e:
+            return Response({"detail": f"Erro ao enviar e-mail: {str(e)}"}, status=500)
+
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+from sepultados_gestao.models import EmailConfirmacao
+from django.utils import timezone
+
+class VerificarTokenAPIView(APIView):
+    permission_classes = []
+
+    def get(self, request, token):
+        try:
+            confirmacao = EmailConfirmacao.objects.get(token=token)
+            if confirmacao.usado:
+                return Response({"detail": "Este link já foi utilizado."}, status=400)
+
+            # Verifica validade temporal (opcional, ex: 24h)
+            expiracao = confirmacao.criado_em + timezone.timedelta(hours=24)
+            if timezone.now() > expiracao:
+                return Response({"detail": "Este link expirou."}, status=400)
+
+            # Marcar como usado
+            confirmacao.usado = True
+            confirmacao.save()
+
+            return Response({"email": confirmacao.email, "detail": "E-mail confirmado com sucesso."})
+
+        except EmailConfirmacao.DoesNotExist:
+            return Response({"detail": "Token inválido ou não encontrado."}, status=404)

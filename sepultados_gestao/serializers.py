@@ -116,3 +116,60 @@ class LicencaSerializer(serializers.ModelSerializer):
 
     def get_expirada(self, obj):
         return obj.expirada
+
+
+from aaa_usuarios.models import Usuario
+from sepultados_gestao.models import Prefeitura, Licenca, Plano
+from django.utils import timezone
+
+class RegistrarPrefeituraSerializer(serializers.Serializer):
+    nome = serializers.CharField()
+    cnpj = serializers.CharField()
+    responsavel = serializers.CharField()
+    telefone = serializers.CharField()
+    email = serializers.EmailField()
+    senha = serializers.CharField(write_only=True)
+    logradouro = serializers.CharField()
+    endereco_numero = serializers.CharField()
+    endereco_bairro = serializers.CharField()
+    endereco_cidade = serializers.CharField()
+    endereco_estado = serializers.CharField()
+    endereco_cep = serializers.CharField()
+    plano_id = serializers.IntegerField()
+    duracao_anos = serializers.IntegerField(default=1)
+
+    def create(self, validated_data):
+        plano_id = validated_data.pop("plano_id")
+        duracao_anos = validated_data.pop("duracao_anos", 1)
+
+        plano = Plano.objects.get(id=plano_id)
+
+        # Cria prefeitura
+        prefeitura = Prefeitura.objects.create(**validated_data)
+
+        # Cria usuário master
+        usuario = Usuario.objects.create_superuser(
+            email=validated_data["email"],
+            password=validated_data["senha"],
+            nome=validated_data["responsavel"],
+            prefeitura=prefeitura,
+            is_master=True,
+        )
+
+        # Cria licença com anos corretos
+        Licenca.objects.create(
+            prefeitura=prefeitura,
+            plano=plano,
+            data_inicio=timezone.now(),
+            valor_mensal_atual=plano.preco_mensal,
+            percentual_reajuste_anual=5.0,
+            anos_contratados=duracao_anos,
+            usuarios_min=plano.usuarios_min,
+            usuarios_max=plano.usuarios_max,
+            sepultados_max=plano.sepultados_max,
+            inclui_api=plano.inclui_api,
+            inclui_erp=plano.inclui_erp,
+            inclui_suporte_prioritario=plano.inclui_suporte_prioritario,
+        )
+
+        return prefeitura

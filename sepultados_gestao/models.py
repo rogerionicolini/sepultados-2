@@ -1519,3 +1519,18 @@ def auditar_exclusao(sender, instance, **kwargs):
         representacao=str(instance),
         prefeitura=prefeitura
     )
+
+
+from django.db import models
+from django.contrib.auth.models import User
+from django.utils import timezone
+import uuid
+
+class EmailConfirmacao(models.Model):
+    email = models.EmailField(unique=True)
+    token = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    criado_em = models.DateTimeField(default=timezone.now)
+    usado = models.BooleanField(default=False)
+
+    def __str__(self):
+        return f"{self.email} - {'Usado' if self.usado else 'Pendente'}"
