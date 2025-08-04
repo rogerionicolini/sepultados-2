@@ -10,6 +10,9 @@ from .views_api import (
     SepultadoViewSet,
     TransladoViewSet,
     TumuloViewSet,
+    RegistrarPrefeituraAPIView,
+    ListaPlanosAPIView,
+    licenca_da_prefeitura
 )
 
 router = routers.DefaultRouter()
@@ -25,4 +28,8 @@ router.register(r'tumulos', TumuloViewSet)
 
 urlpatterns = [
     path('', include(router.urls)),
+    path('registrar-prefeitura/', RegistrarPrefeituraAPIView.as_view(), name='registrar-prefeitura'),  # ✅ adicione aqui
+    path("planos/", ListaPlanosAPIView.as_view(), name="listar-planos"),
+    path("licenca/<int:prefeitura_id>/", licenca_da_prefeitura, name="licenca-da-prefeitura"),
 ]
+

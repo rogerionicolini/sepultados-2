@@ -14,6 +14,8 @@ def prefeitura_context(request):
 
 # sepultados_gestao/context_processors.py
 
+# sepultados_gestao/context_processors.py
+
 from .models import Licenca, Prefeitura
 from datetime import date
 from dateutil.relativedelta import relativedelta
@@ -27,13 +29,12 @@ def licenca_ativa_context(request):
             prefeitura = Prefeitura.objects.get(id=prefeitura_id)
             licencas = Licenca.objects.filter(
                 prefeitura=prefeitura,
-                data_inicio__lte=date.today()
+                data_inicio__lte=date.today()  # CORRIGIDO
             )
-
 
             licenca_valida = None
             for lic in licencas:
-                data_fim = lic.data_inicio + relativedelta(years=lic.anos_contratados)
+                data_fim = lic.data_inicio + relativedelta(years=lic.anos_contratados)  # CORRIGIDO
                 if data_fim >= date.today():
                     licenca_valida = lic
                     contexto['licenca_ativa'] = licenca_valida
@@ -43,6 +44,4 @@ def licenca_ativa_context(request):
             contexto['licenca_ativa'] = None
 
     return contexto
-
-
 
