@@ -78,7 +78,7 @@ function Dashboard() {
             )}
           </div>
 
-          <SidebarItem icon={FileText} label="Receitas" />
+          
           <div>
             <div
               onClick={() => setRelatoriosOpen(!relatoriosOpen)}
@@ -100,10 +100,8 @@ function Dashboard() {
               </div>
             )}
           </div>
-
-          <SidebarItem icon={UserCircle} label="Usuários" />
-          <SidebarItem icon={Book} label="Importações" />
-          <SidebarItem icon={LogOut} label="Sair" />
+           <SidebarItem icon={FileText} label="Receitas" />      
+          
         </nav>
       </aside>
 
