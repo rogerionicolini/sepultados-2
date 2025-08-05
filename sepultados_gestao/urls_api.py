@@ -13,7 +13,8 @@ from .views_api import (
     RegistrarPrefeituraAPIView,
     ListaPlanosAPIView,
     licenca_da_prefeitura,
-    verificar_email
+    verificar_email,
+    usuario_logado
 )
 
 router = routers.DefaultRouter()
@@ -33,5 +34,6 @@ urlpatterns = [
     path("planos/", ListaPlanosAPIView.as_view(), name="listar-planos"),
     path("licenca/<int:prefeitura_id>/", licenca_da_prefeitura, name="licenca-da-prefeitura"),
     path("verificar-email/<uuid:token>/", verificar_email, name="verificar-email"),
+    path("usuario-logado/", usuario_logado, name="usuario-logado"),
 ]
 

@@ -1,5 +1,4 @@
 from django.db import models
-from django.contrib.auth import get_user_model
 from django.core.validators import RegexValidator
 from django.core.exceptions import ValidationError
 from django.utils.functional import cached_property
@@ -24,7 +23,14 @@ def validar_prefeitura_obrigatoria(instance):
         raise ValidationError("Uma prefeitura ativa precisa estar selecionada para continuar.")
 
 class Prefeitura(models.Model):
-    usuario = models.ForeignKey(get_user_model(), on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Usuário responsável")
+    usuario = models.ForeignKey(
+        'aaa_usuarios.Usuario',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        verbose_name="Usuário responsável",
+        related_name="prefeituras_gerenciadas"
+    )
     nome = models.CharField(max_length=255, verbose_name="Nome da Prefeitura")
     cnpj = models.CharField(max_length=18, verbose_name="CNPJ")
     responsavel = models.CharField(max_length=255, verbose_name="Responsável")
@@ -50,7 +56,6 @@ class Prefeitura(models.Model):
     )
     endereco_cep = models.CharField(max_length=10, verbose_name="CEP")
 
-    logo = models.ImageField(upload_to='logos/', blank=True, null=True, verbose_name="Logotipo da Prefeitura")
     brasao = models.ImageField(upload_to='brasoes/', blank=True, null=True, verbose_name="Brasão da Prefeitura")
 
     # Campos de multa e juros
@@ -631,8 +636,13 @@ class ConcessaoContrato(models.Model):
     quantidade_parcelas = models.PositiveIntegerField(verbose_name="Quantidade de Parcelas", null=True, blank=True)
     valor_total = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Valor total")
     observacoes = models.TextField(blank=True, null=True, verbose_name="Observações")
-    usuario_registro = models.ForeignKey(get_user_model(), on_delete=models.SET_NULL, null=True, verbose_name="Usuário responsável")
-
+    usuario_registro = models.ForeignKey(
+        'aaa_usuarios.Usuario',
+        on_delete=models.SET_NULL,
+        null=True,
+        verbose_name="Usuário responsável",
+        related_name="contratos_registrados"
+    )
     def clean(self):
         if not self.tumulo_id:
             raise ValidationError({"tumulo": "Selecione um túmulo para o contrato."})

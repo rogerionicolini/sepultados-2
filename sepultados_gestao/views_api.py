@@ -282,12 +282,6 @@ from sepultados_gestao.models import (
     Plano,
     Licenca
 )
-from django.core.files.base import ContentFile
-from django.utils import timezone
-import base64
-import uuid
-
-User = get_user_model()
 
 @api_view(['GET'])
 def verificar_email(request, token):
@@ -342,6 +336,10 @@ def verificar_email(request, token):
             prefeitura.brasao = salvar_imagem(cadastro.brasao_base64)
         prefeitura.save()
 
+        # 🔴 ESSENCIAL: vincular prefeitura ao usuário
+        user.prefeitura = prefeitura
+        user.save()
+
         # Criar licença
         plano = Plano.objects.get(pk=cadastro.plano_id)
         Licenca.objects.create(
@@ -366,3 +364,34 @@ def verificar_email(request, token):
 
     except EmailConfirmacao.DoesNotExist:
         return Response({"detail": "Token inválido ou inexistente."}, status=400)
+
+
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from sepultados_gestao.models import Prefeitura
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def usuario_logado(request):
+    user = request.user
+    prefeitura = Prefeitura.objects.filter(usuario=user).first()
+
+    brasao_url = None
+    if prefeitura and prefeitura.brasao and hasattr(prefeitura.brasao, 'url'):
+        try:
+            brasao_url = request.build_absolute_uri(prefeitura.brasao.url)
+        except ValueError:
+            brasao_url = None
+
+    return Response({
+        "usuario": {
+            "nome": getattr(user, "nome", user.email),
+            "email": user.email,
+        },
+        "prefeitura": {
+            "id": prefeitura.id if prefeitura else None,
+            "nome": prefeitura.nome if prefeitura else None,
+            "logo_url": brasao_url,  # <- substitui o logo pela imagem realmente usada
+        }
+    })

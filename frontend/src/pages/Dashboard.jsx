@@ -11,11 +11,12 @@ import {
   ScrollText,
   ClipboardList,
   FileBarChart,
-  Globe2,
   ChevronDown,
   ChevronRight,
 } from "lucide-react";
-import MapaCemiterio from "../components/MapaCemiterio"; // ← Adicionado aqui
+
+import MapaCemiterio from "../components/MapaCemiterio";
+import UserHeader from "../components/UserHeader";
 
 const SidebarItem = ({ icon: Icon, label }) => (
   <div className="flex items-center gap-3 px-4 py-3 hover:bg-[#d8e9c0] rounded-xl cursor-pointer transition">
@@ -49,11 +50,7 @@ function Dashboard() {
             >
               <Building className="w-5 h-5 text-green-900" />
               <span className="text-green-900 font-medium flex-1">Cemitérios</span>
-              {cemiterioOpen ? (
-                <ChevronDown className="w-4 h-4 text-green-900" />
-              ) : (
-                <ChevronRight className="w-4 h-4 text-green-900" />
-              )}
+              {cemiterioOpen ? <ChevronDown className="w-4 h-4 text-green-900" /> : <ChevronRight className="w-4 h-4 text-green-900" />}
             </div>
             {cemiterioOpen && (
               <div className="ml-8 mt-1 flex flex-col gap-1">
@@ -70,11 +67,7 @@ function Dashboard() {
             >
               <Users className="w-5 h-5 text-green-900" />
               <span className="text-green-900 font-medium flex-1">Sepultados</span>
-              {sepultadosOpen ? (
-                <ChevronDown className="w-4 h-4 text-green-900" />
-              ) : (
-                <ChevronRight className="w-4 h-4 text-green-900" />
-              )}
+              {sepultadosOpen ? <ChevronDown className="w-4 h-4 text-green-900" /> : <ChevronRight className="w-4 h-4 text-green-900" />}
             </div>
             {sepultadosOpen && (
               <div className="ml-8 mt-1 flex flex-col gap-1">
@@ -93,11 +86,7 @@ function Dashboard() {
             >
               <FileBarChart className="w-5 h-5 text-green-900" />
               <span className="text-green-900 font-medium flex-1">Relatórios</span>
-              {relatoriosOpen ? (
-                <ChevronDown className="w-4 h-4 text-green-900" />
-              ) : (
-                <ChevronRight className="w-4 h-4 text-green-900" />
-              )}
+              {relatoriosOpen ? <ChevronDown className="w-4 h-4 text-green-900" /> : <ChevronRight className="w-4 h-4 text-green-900" />}
             </div>
             {relatoriosOpen && (
               <div className="ml-8 mt-1 flex flex-col gap-1">
@@ -111,38 +100,27 @@ function Dashboard() {
               </div>
             )}
           </div>
+
           <SidebarItem icon={UserCircle} label="Usuários" />
           <SidebarItem icon={Book} label="Importações" />
           <SidebarItem icon={LogOut} label="Sair" />
         </nav>
       </aside>
 
-      {/* Main Content */}
+      {/* Conteúdo */}
       <div className="flex-1 flex flex-col">
-        {/* Top bar */}
-        <header className="bg-[#cde1b1] px-8 py-4 shadow-md">
-          <div className="grid grid-cols-3 items-center">
-            <div></div>
-            <div className="flex justify-center">
-              <h1 className="text-2xl font-bold text-green-900">Gestão de Cemitérios</h1>
-            </div>
-            <div className="flex justify-end items-center gap-4">
-              <span className="text-green-900 font-semibold">Usuário: Digital Copy</span>
-              <div className="flex items-center gap-2 cursor-pointer text-green-900">
-                <Globe2 className="w-5 h-5" />
-                <select className="bg-transparent outline-none">
-                  <option>PT</option>
-                  <option>ES</option>
-                  <option>EN</option>
-                  <option>FR</option>
-                  <option>IT</option>
-                </select>
-              </div>
-            </div>
+        {/* Cabeçalho fixo sem curva */}
+        <header className="bg-[#cde1b1] px-6 py-4 relative flex items-center justify-end">
+          <div className="absolute left-1/2 transform -translate-x-1/2">
+            <h1 className="text-2xl font-bold text-green-900">
+              Gestão de Cemitérios
+            </h1>
           </div>
+          <UserHeader />
         </header>
 
-        <main className="flex-1 bg-white p-8 rounded-tl-3xl mt-[-5px] ml-[-20px]">
+        {/* Conteúdo principal com canto superior esquerdo arredondado */}
+        <main className="flex-1 bg-white p-8 rounded-tl-3xl">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
             <div className="bg-[#f0f8ea] p-6 rounded-xl shadow text-green-900 flex flex-col items-center justify-center text-center">
               <p className="text-sm mb-1">Total de Sepultados</p>
@@ -162,7 +140,7 @@ function Dashboard() {
             </div>
           </div>
 
-          {/* Mapa do Cemitério */}
+          {/* Mapa */}
           <div>
             <h2 className="text-lg font-bold text-green-900 mb-3">Mapa do Cemitério</h2>
             <MapaCemiterio />

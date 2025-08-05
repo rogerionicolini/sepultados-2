@@ -2,6 +2,7 @@ from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, Permis
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 from django.utils import timezone
+from sepultados_gestao.models import Prefeitura
 
 
 class UsuarioManager(BaseUserManager):
@@ -40,6 +41,16 @@ class Usuario(AbstractBaseUser, PermissionsMixin):
         _("data de cadastro"),
         default=timezone.now
     )
+
+    prefeitura = models.ForeignKey(
+        Prefeitura,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="usuarios",
+        verbose_name="prefeitura vinculada"
+    )
+
 
     objects = UsuarioManager()
 
