@@ -12,7 +12,8 @@ from .views_api import (
     TumuloViewSet,
     RegistrarPrefeituraAPIView,
     ListaPlanosAPIView,
-    licenca_da_prefeitura
+    licenca_da_prefeitura,
+    verificar_email
 )
 
 router = routers.DefaultRouter()
@@ -31,5 +32,6 @@ urlpatterns = [
     path('registrar-prefeitura/', RegistrarPrefeituraAPIView.as_view(), name='registrar-prefeitura'),  # ✅ adicione aqui
     path("planos/", ListaPlanosAPIView.as_view(), name="listar-planos"),
     path("licenca/<int:prefeitura_id>/", licenca_da_prefeitura, name="licenca-da-prefeitura"),
+    path("verificar-email/<uuid:token>/", verificar_email, name="verificar-email"),
 ]
 

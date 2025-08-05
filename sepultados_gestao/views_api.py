@@ -94,12 +94,11 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from django.contrib.auth import get_user_model
-from sepultados_gestao.models import Prefeitura, Plano, Licenca
-from sepultados_gestao.models import EmailConfirmacao  # certifique-se de importar
-from rest_framework_simplejwt.tokens import RefreshToken
+from sepultados_gestao.models import EmailConfirmacao, CadastroPrefeituraPendente
 from django.db import transaction
-from django.core.files.base import ContentFile
-import base64
+from django.core.mail import send_mail
+from django.utils import timezone
+from django.conf import settings
 import uuid
 
 User = get_user_model()
@@ -107,99 +106,85 @@ User = get_user_model()
 class RegistrarPrefeituraAPIView(APIView):
     permission_classes = []
 
+    def enviar_email_confirmacao(self, email):
+        token = uuid.uuid4()
+        EmailConfirmacao.objects.update_or_create(
+            email=email,
+            defaults={
+                'token': token,
+                'criado_em': timezone.now(),
+                'usado': False,
+            }
+        )
+        link = f"{settings.FRONTEND_URL}/verificar-email/{token}"
+        from django.template.loader import render_to_string
+
+        html_content = render_to_string("emails/confirmar_email.html", {"link": link})
+
+        send_mail(
+            subject="Confirmação de E-mail - Sepultados.com",
+            message=f"Olá! Confirme seu e-mail clicando no link: {link}",
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[email],
+            html_message=html_content,
+            fail_silently=False,
+        )
+
+
     def post(self, request):
         try:
             with transaction.atomic():
                 dados = request.data
 
-                nome = dados.get("nome")
-                cnpj = dados.get("cnpj")
-                responsavel = dados.get("responsavel")
-                telefone = dados.get("telefone")
-                email = dados.get("email")
-                senha = dados.get("senha")
+                # Dados principais
+                campos = {
+                    "nome": dados.get("nome"),
+                    "cnpj": dados.get("cnpj"),
+                    "responsavel": dados.get("responsavel"),
+                    "telefone": dados.get("telefone"),
+                    "email": dados.get("email"),
+                    "senha": dados.get("senha"),
+                    "logradouro": dados.get("logradouro"),
+                    "endereco_numero": dados.get("endereco_numero"),
+                    "endereco_bairro": dados.get("endereco_bairro"),
+                    "endereco_cidade": dados.get("endereco_cidade"),
+                    "endereco_estado": dados.get("endereco_estado"),
+                    "endereco_cep": dados.get("endereco_cep"),
+                    "plano_id": int(dados.get("plano_id")),
+                    "duracao_anos": int(dados.get("duracao_anos", 1)),
+                    "logo_base64": dados.get("logo_base64"),
+                    "brasao_base64": dados.get("brasao_base64"),
+                }
 
-                logradouro = dados.get("logradouro")
-                numero = dados.get("endereco_numero")
-                bairro = dados.get("endereco_bairro")
-                cidade = dados.get("endereco_cidade")
-                estado = dados.get("endereco_estado")
-                cep = dados.get("endereco_cep")
-
-                plano_id = dados.get("plano_id")
-                if not plano_id:
-                    return Response({"detail": "O plano selecionado é obrigatório."}, status=400)
-
-                if not all([nome, cnpj, responsavel, telefone, email, senha, logradouro, numero, cidade, estado, cep]):
+                if not all([campos["nome"], campos["cnpj"], campos["responsavel"], campos["telefone"], campos["email"], campos["senha"], campos["logradouro"], campos["endereco_numero"], campos["endereco_cidade"], campos["endereco_estado"], campos["endereco_cep"], campos["plano_id"]]):
                     return Response({"detail": "Todos os campos obrigatórios devem ser preenchidos."}, status=400)
 
-                if not EmailConfirmacao.objects.filter(email=email, usado=True).exists():
-                    return Response({"detail": "Confirmação de e-mail pendente. Verifique sua caixa de entrada."}, status=400)
+                # Verifica duplicidade ativa
+                if User.objects.filter(email=campos["email"], is_active=True).exists():
+                    return Response({"detail": "Já existe um usuário ativo com esse e-mail."}, status=400)
 
-                if Prefeitura.objects.filter(cnpj=cnpj).exists():
-                    return Response({"detail": "Já existe uma prefeitura com esse CNPJ."}, status=400)
-
-                if User.objects.filter(email=email).exists():
-                    return Response({"detail": "Já existe um usuário com esse e-mail."}, status=400)
-
-                user = User.objects.create_user(
-                    email=email,
-                    password=senha,
-                    is_active=True,
-                    is_staff=True
+                # Cria ou atualiza o cadastro pendente
+                CadastroPrefeituraPendente.objects.update_or_create(
+                    email=campos["email"],
+                    defaults=campos
                 )
 
-                prefeitura = Prefeitura.objects.create(
-                    usuario=user,
-                    nome=nome,
-                    cnpj=cnpj,
-                    responsavel=responsavel,
-                    telefone=telefone,
-                    email=email,
-                    logradouro=logradouro,
-                    endereco_numero=numero,
-                    endereco_bairro=bairro,
-                    endereco_cidade=cidade,
-                    endereco_estado=estado,
-                    endereco_cep=cep,
-                )
+                # Cria usuário inativo se não existir
+                user = User.objects.filter(email=campos["email"]).first()
+                if not user:
+                    user = User.objects.create_user(
+                        email=campos["email"],
+                        password=campos["senha"],
+                        is_active=False,
+                        is_staff=True
+                    )
 
-                def salvar_imagem(base64_str):
-                    format, imgstr = base64_str.split(';base64,')
-                    ext = format.split('/')[-1]
-                    nome_arquivo = f"{uuid.uuid4()}.{ext}"
-                    return ContentFile(base64.b64decode(imgstr), name=nome_arquivo)
-
-                if dados.get("logo_base64"):
-                    prefeitura.logo = salvar_imagem(dados["logo_base64"])
-                if dados.get("brasao_base64"):
-                    prefeitura.brasao = salvar_imagem(dados["brasao_base64"])
-                prefeitura.save()
-
-                plano = Plano.objects.get(pk=plano_id)
-                duracao_anos = int(dados.get("duracao_anos", 1))
-                Licenca.objects.create(
-                    prefeitura=prefeitura,
-                    plano=plano,
-                    valor_mensal_atual=plano.preco_mensal,
-                    percentual_reajuste_anual=5.0,
-                    anos_contratados=duracao_anos,
-                    usuarios_min=plano.usuarios_min,
-                    usuarios_max=plano.usuarios_max,
-                    sepultados_max=plano.sepultados_max,
-                    inclui_api=plano.inclui_api,
-                    inclui_erp=plano.inclui_erp,
-                    inclui_suporte_prioritario=plano.inclui_suporte_prioritario,
-                )
-
-                refresh = RefreshToken.for_user(user)
+                # Envia e-mail de confirmação
+                self.enviar_email_confirmacao(campos["email"])
 
                 return Response({
-                    "access": str(refresh.access_token),
-                    "refresh": str(refresh),
-                    "usuario": user.email,
-                    "prefeitura": prefeitura.nome
-                }, status=201)
+                    "detail": "Enviamos um e-mail para confirmação. Verifique sua caixa de entrada."
+                }, status=200)
 
         except Exception as e:
             return Response({"detail": str(e)}, status=500)
@@ -235,70 +220,149 @@ def licenca_da_prefeitura(request, prefeitura_id):
     return Response(serializer.data)
 
 
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status
+import uuid
 from django.core.mail import send_mail
-from django.conf import settings
-from sepultados_gestao.models import EmailConfirmacao
 from django.utils import timezone
+from django.conf import settings
+from .models import EmailConfirmacao  # ajuste o import se necessário
 
-class EnviarConfirmacaoEmailAPIView(APIView):
-    permission_classes = []
+def enviar_email_confirmacao(email):
+    token = uuid.uuid4()
 
-    def post(self, request):
-        email = request.data.get("email")
-        if not email:
-            return Response({"detail": "E-mail é obrigatório."}, status=400)
+    EmailConfirmacao.objects.update_or_create(
+        email=email,
+        defaults={
+            'token': token,
+            'criado_em': timezone.now(),
+            'usado': False,
+        }
+    )
 
-        # Verifica se já existe token não usado
-        existente = EmailConfirmacao.objects.filter(email=email, usado=False).first()
-        if existente:
-            token = existente.token
-        else:
-            obj = EmailConfirmacao.objects.create(email=email)
-            token = obj.token
+    link = f"{settings.FRONTEND_URL}/verificar-email/{token}"
 
-        link_confirmacao = f"{settings.FRONTEND_URL}/confirmar-email/{token}/"
+    html_content = f"""
+    <div style="font-family: Arial, sans-serif; background: #f4f4f4; padding: 40px;">
+      <div style="max-width: 600px; background: #ffffff; margin: auto; padding: 30px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.05);">
+        <h2 style="color: #2f855a; text-align: center;">Confirmação de E-mail</h2>
+        <p>Olá,</p>
+        <p>Recebemos seu cadastro no <strong>Sepultados.com</strong>.</p>
+        <p>Para ativar sua conta, clique no botão abaixo:</p>
 
-        try:
-            send_mail(
-                subject="Confirmação de E-mail - Sepultados.com",
-                message=f"Clique no link para confirmar seu e-mail e prosseguir com o cadastro:\n\n{link_confirmacao}",
-                from_email=settings.DEFAULT_FROM_EMAIL,
-                recipient_list=[email],
-                fail_silently=False,
-            )
-            return Response({"detail": "E-mail de confirmação enviado com sucesso."}, status=200)
+        <div style="text-align: center; margin: 30px 0;">
+          <a href="{link}" target="_blank" style="background-color: #2f855a; color: white; padding: 14px 28px; border-radius: 6px; text-decoration: none; font-weight: bold;">
+            Confirmar E-mail
+          </a>
+        </div>
 
-        except Exception as e:
-            return Response({"detail": f"Erro ao enviar e-mail: {str(e)}"}, status=500)
+        <p style="font-size: 14px; color: #666;">Se você não fez esse cadastro, ignore esta mensagem.</p>
+        <hr style="margin: 30px 0;">
+        <p style="font-size: 12px; text-align: center; color: #aaa;">Sepultados.com • Sistema de Gestão de Cemitérios</p>
+      </div>
+    </div>
+    """
 
-from rest_framework.views import APIView
+    send_mail(
+        subject="Confirmação de E-mail - Sepultados.com",
+        message=f"Olá! Confirme seu e-mail clicando neste link: {link}",  # fallback
+        from_email=settings.DEFAULT_FROM_EMAIL,
+        recipient_list=[email],
+        html_message=html_content,
+        fail_silently=False,
+    )
+
+
+from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from rest_framework import status
-from sepultados_gestao.models import EmailConfirmacao
+from django.contrib.auth import get_user_model
+from sepultados_gestao.models import (
+    EmailConfirmacao,
+    CadastroPrefeituraPendente,
+    Prefeitura,
+    Plano,
+    Licenca
+)
+from django.core.files.base import ContentFile
 from django.utils import timezone
+import base64
+import uuid
 
-class VerificarTokenAPIView(APIView):
-    permission_classes = []
+User = get_user_model()
 
-    def get(self, request, token):
-        try:
-            confirmacao = EmailConfirmacao.objects.get(token=token)
-            if confirmacao.usado:
-                return Response({"detail": "Este link já foi utilizado."}, status=400)
+@api_view(['GET'])
+def verificar_email(request, token):
+    try:
+        confirmacao = EmailConfirmacao.objects.get(token=token)
 
-            # Verifica validade temporal (opcional, ex: 24h)
-            expiracao = confirmacao.criado_em + timezone.timedelta(hours=24)
-            if timezone.now() > expiracao:
-                return Response({"detail": "Este link expirou."}, status=400)
+        if confirmacao.usado:
+            return Response({"detail": "Este link já foi utilizado."}, status=400)
 
-            # Marcar como usado
-            confirmacao.usado = True
-            confirmacao.save()
+        # Confirmação marcada como usada
+        confirmacao.usado = True
+        confirmacao.save()
 
-            return Response({"email": confirmacao.email, "detail": "E-mail confirmado com sucesso."})
+        user = User.objects.filter(email=confirmacao.email).first()
+        if not user:
+            return Response({"detail": "Usuário não encontrado para este e-mail."}, status=404)
 
-        except EmailConfirmacao.DoesNotExist:
-            return Response({"detail": "Token inválido ou não encontrado."}, status=404)
+        user.is_active = True
+        user.save()
+
+        # Buscar os dados pendentes
+        cadastro = CadastroPrefeituraPendente.objects.filter(email=confirmacao.email).first()
+        if not cadastro:
+            return Response({"detail": "Cadastro pendente não encontrado."}, status=404)
+
+        # Criar prefeitura
+        prefeitura = Prefeitura.objects.create(
+            usuario=user,
+            nome=cadastro.nome,
+            cnpj=cadastro.cnpj,
+            responsavel=cadastro.responsavel,
+            telefone=cadastro.telefone,
+            email=cadastro.email,
+            logradouro=cadastro.logradouro,
+            endereco_numero=cadastro.endereco_numero,
+            endereco_bairro=cadastro.endereco_bairro,
+            endereco_cidade=cadastro.endereco_cidade,
+            endereco_estado=cadastro.endereco_estado,
+            endereco_cep=cadastro.endereco_cep,
+        )
+
+        # Salvar imagens se houver
+        def salvar_imagem(base64_str):
+            format, imgstr = base64_str.split(';base64,')
+            ext = format.split('/')[-1]
+            nome_arquivo = f"{uuid.uuid4()}.{ext}"
+            return ContentFile(base64.b64decode(imgstr), name=nome_arquivo)
+
+        if cadastro.logo_base64:
+            prefeitura.logo = salvar_imagem(cadastro.logo_base64)
+        if cadastro.brasao_base64:
+            prefeitura.brasao = salvar_imagem(cadastro.brasao_base64)
+        prefeitura.save()
+
+        # Criar licença
+        plano = Plano.objects.get(pk=cadastro.plano_id)
+        Licenca.objects.create(
+            prefeitura=prefeitura,
+            plano=plano,
+            valor_mensal_atual=plano.preco_mensal,
+            percentual_reajuste_anual=5.0,
+            anos_contratados=cadastro.duracao_anos,
+            usuarios_min=plano.usuarios_min,
+            usuarios_max=plano.usuarios_max,
+            sepultados_max=plano.sepultados_max,
+            inclui_api=plano.inclui_api,
+            inclui_erp=plano.inclui_erp,
+            inclui_suporte_prioritario=plano.inclui_suporte_prioritario,
+            data_inicio=timezone.now(),
+        )
+
+        # Apagar cadastro temporário
+        cadastro.delete()
+
+        return Response({"detail": "E-mail confirmado com sucesso. Prefeitura e licença criadas automaticamente."}, status=200)
+
+    except EmailConfirmacao.DoesNotExist:
+        return Response({"detail": "Token inválido ou inexistente."}, status=400)

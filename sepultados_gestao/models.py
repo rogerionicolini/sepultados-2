@@ -1534,3 +1534,34 @@ class EmailConfirmacao(models.Model):
 
     def __str__(self):
         return f"{self.email} - {'Usado' if self.usado else 'Pendente'}"
+
+from django.db import models
+from django.utils import timezone
+import uuid
+
+class CadastroPrefeituraPendente(models.Model):
+    email = models.EmailField(unique=True)
+    senha = models.CharField(max_length=128)
+
+    nome = models.CharField(max_length=255)
+    cnpj = models.CharField(max_length=25)
+    responsavel = models.CharField(max_length=255)
+    telefone = models.CharField(max_length=30)
+
+    logradouro = models.CharField(max_length=255)
+    endereco_numero = models.CharField(max_length=10)
+    endereco_bairro = models.CharField(max_length=100)
+    endereco_cidade = models.CharField(max_length=100)
+    endereco_estado = models.CharField(max_length=2)
+    endereco_cep = models.CharField(max_length=15)
+
+    plano_id = models.PositiveIntegerField()
+    duracao_anos = models.PositiveIntegerField(default=1)
+
+    logo_base64 = models.TextField(blank=True, null=True)
+    brasao_base64 = models.TextField(blank=True, null=True)
+
+    criado_em = models.DateTimeField(default=timezone.now)
+
+    def __str__(self):
+        return f"Cadastro pendente: {self.email}"
