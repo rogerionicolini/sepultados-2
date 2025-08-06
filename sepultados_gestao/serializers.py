@@ -173,3 +173,36 @@ class RegistrarPrefeituraSerializer(serializers.Serializer):
         )
 
         return prefeitura
+
+import base64
+from django.core.files.base import ContentFile
+from sepultados_gestao.models import Prefeitura
+from rest_framework import serializers
+
+class PrefeituraSerializer(serializers.ModelSerializer):
+    logo_base64 = serializers.CharField(write_only=True, required=False)
+
+    class Meta:
+        model = Prefeitura
+        fields = [
+            "id", "nome", "cnpj", "responsavel", "telefone", "email", "site",
+            "logradouro", "endereco_numero", "endereco_bairro", "endereco_cidade",
+            "endereco_estado", "endereco_cep", "brasao", "multa_percentual",
+            "juros_mensal_percentual", "clausulas_contrato", "logo_base64"
+        ]
+        read_only_fields = ["id", "brasao"]
+
+    def update(self, instance, validated_data):
+        logo_base64 = validated_data.pop("logo_base64", None)
+
+        if logo_base64:
+            try:
+                format, imgstr = logo_base64.split(';base64,')
+                ext = format.split('/')[-1]
+                filename = f"logo_{instance.pk}.{ext}"
+                instance.brasao = ContentFile(base64.b64decode(imgstr), name=filename)
+            except Exception:
+                raise serializers.ValidationError({"logo_base64": "Formato inválido para logo."})
+
+        return super().update(instance, validated_data)
+

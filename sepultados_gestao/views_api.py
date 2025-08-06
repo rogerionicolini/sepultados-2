@@ -395,3 +395,34 @@ def usuario_logado(request):
             "logo_url": brasao_url,  # <- substitui o logo pela imagem realmente usada
         }
     })
+
+
+from rest_framework.views import APIView
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework import status
+from sepultados_gestao.models import Prefeitura
+from .serializers import PrefeituraSerializer
+
+class PrefeituraLogadaAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        prefeitura = Prefeitura.objects.filter(usuario=request.user).first()
+        if not prefeitura:
+            return Response({"detail": "Prefeitura não encontrada."}, status=404)
+
+        serializer = PrefeituraSerializer(prefeitura)
+        return Response(serializer.data)
+
+    def put(self, request):
+        prefeitura = Prefeitura.objects.filter(usuario=request.user).first()
+        if not prefeitura:
+            return Response({"detail": "Prefeitura não encontrada."}, status=404)
+
+        serializer = PrefeituraSerializer(prefeitura, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+
+        return Response(serializer.errors, status=400)

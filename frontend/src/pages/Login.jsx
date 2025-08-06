@@ -14,17 +14,35 @@ function LoginPage() {
     setErro('');
 
     try {
+      // Obter tokens
       const response = await axios.post('http://127.0.0.1:8000/api/token/', {
         email,
         password: senha,
       });
 
-      localStorage.setItem('accessToken', response.data.access);
-      localStorage.setItem('refreshToken', response.data.refresh);
+      const accessToken = response.data.access;
+      const refreshToken = response.data.refresh;
 
-      navigate('/dashboard'); // Altere se o destino for outro
+      localStorage.setItem('accessToken', accessToken);
+      localStorage.setItem('refreshToken', refreshToken);
+
+      // Buscar dados do usuário e prefeitura
+      const userRes = await axios.get("http://127.0.0.1:8000/api/usuario-logado/", {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      });
+
+      const prefeituraId = userRes.data.prefeitura?.id;
+
+      if (prefeituraId) {
+        localStorage.setItem("prefeitura_ativa_id", prefeituraId);
+        navigate("/");
+      } else {
+        setErro("Prefeitura não encontrada para este usuário.");
+      }
     } catch (error) {
-      setErro('E-mail ou senha inválidos.');
+      setErro("E-mail ou senha inválidos.");
     }
   };
 
