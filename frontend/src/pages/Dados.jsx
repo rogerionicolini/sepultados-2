@@ -75,7 +75,7 @@ function Dados() {
   return (
     <div className="p-6 max-w-4xl mx-auto">
       <h1 className="text-2xl font-semibold text-green-900 mb-3 text-center">
-        Editar Dados da Prefeitura
+        Editar Dados
       </h1>
       <form onSubmit={handleSubmit} className="bg-white p-6 rounded-xl shadow space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

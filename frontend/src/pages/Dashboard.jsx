@@ -15,7 +15,7 @@ import {
   ChevronRight,
 } from "lucide-react";
 
-import { Outlet } from "react-router-dom";
+import { Outlet, useNavigate } from "react-router-dom";
 import UserHeader from "../components/UserHeader";
 
 const SidebarItem = ({ icon: Icon, label }) => (
@@ -29,6 +29,7 @@ function Dashboard() {
   const [cemiterioOpen, setCemiterioOpen] = useState(false);
   const [sepultadosOpen, setSepultadosOpen] = useState(false);
   const [relatoriosOpen, setRelatoriosOpen] = useState(false);
+  const navigate = useNavigate();
 
   return (
     <div className="flex min-h-screen bg-white">
@@ -38,7 +39,10 @@ function Dashboard() {
           <img src="/logo.png" alt="Logo" className="h-14" />
         </div>
         <nav className="flex flex-col gap-1">
-          <SidebarItem icon={LayoutDashboard} label="Dashboard" />
+          <div onClick={() => navigate("/")}>
+            <SidebarItem icon={LayoutDashboard} label="Dashboard" />
+          </div>
+
           <div>
             <div
               onClick={() => setCemiterioOpen(!cemiterioOpen)}
