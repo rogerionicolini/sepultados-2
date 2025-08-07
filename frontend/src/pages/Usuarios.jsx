@@ -9,6 +9,7 @@ function Usuarios() {
     email: "",
     senha: "",
   });
+  const [editandoId, setEditandoId] = useState(null);
   const [mensagem, setMensagem] = useState("");
   const [erro, setErro] = useState("");
 
@@ -18,7 +19,7 @@ function Usuarios() {
     if (token) {
       fetchUsuarios();
     } else {
-      setErro("Token de acesso não encontrado. Faça login novamente.");
+      setErro("Token de acesso n\u00e3o encontrado. Faça login novamente.");
     }
   }, []);
 
@@ -47,31 +48,83 @@ function Usuarios() {
     setErro("");
 
     try {
-      await axios.post(
-        "http://localhost:8000/api/usuarios/",
-        {
-          email: form.email,
-          senha: form.senha, // ✅ corrigido aqui
-          first_name: form.first_name,
-          last_name: form.last_name,
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
+      if (editandoId) {
+        await axios.put(
+          `http://localhost:8000/api/usuarios/${editandoId}/`,
+          {
+            first_name: form.first_name,
+            last_name: form.last_name,
           },
-        }
-      );
-      setMensagem("Usuário adicionado com sucesso.");
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+        setMensagem("Usuário atualizado com sucesso.");
+      } else {
+        await axios.post(
+          "http://localhost:8000/api/usuarios/",
+          {
+            email: form.email,
+            senha: form.senha,
+            first_name: form.first_name,
+            last_name: form.last_name,
+          },
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+        setMensagem("Usuário adicionado com sucesso. Um e-mail de confirmação foi enviado.");
+      }
       setForm({ first_name: "", last_name: "", email: "", senha: "" });
+      setEditandoId(null);
       fetchUsuarios();
     } catch (error) {
-      if (error.response?.data?.detail) {
-        setErro(error.response.data.detail);
-      } else if (error.response?.data?.email) {
-        setErro("E-mail já cadastrado.");
+      if (error.response?.data) {
+        const erroData = error.response.data;
+        if (typeof erroData === "string") {
+          setErro(erroData);
+        } else if (erroData.detail) {
+          setErro(erroData.detail);
+        } else if (erroData.email) {
+          setErro("E-mail j\u00e1 cadastrado.");
+        } else {
+          const mensagens = Object.values(erroData).flat().join(" ");
+          setErro(mensagens || "Erro ao adicionar/editar usuário.");
+        }
       } else {
-        setErro("Erro ao adicionar usuário.");
+        setErro("Erro ao adicionar/editar usuário.");
       }
+    }
+  };
+
+  const handleEditar = (usuario) => {
+    setForm({
+      first_name: usuario.first_name,
+      last_name: usuario.last_name,
+      email: usuario.email,
+      senha: "",
+    });
+    setEditandoId(usuario.id);
+    setMensagem("");
+    setErro("");
+  };
+
+  const handleExcluir = async (id) => {
+    if (!window.confirm("Tem certeza que deseja excluir este usuário?")) return;
+    try {
+      await axios.delete(`http://localhost:8000/api/usuarios/${id}/`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      setMensagem("Usuário excluído com sucesso.");
+      fetchUsuarios();
+    } catch (error) {
+      setErro("Erro ao excluir usuário.");
     }
   };
 
@@ -108,7 +161,8 @@ function Usuarios() {
             placeholder="E-mail"
             value={form.email}
             onChange={handleChange}
-            required
+            required={!editandoId}
+            disabled={!!editandoId}
             className="border border-gray-300 rounded px-3 py-2 w-full"
           />
           <input
@@ -117,7 +171,8 @@ function Usuarios() {
             placeholder="Senha"
             value={form.senha}
             onChange={handleChange}
-            required
+            required={!editandoId}
+            disabled={!!editandoId}
             className="border border-gray-300 rounded px-3 py-2 w-full"
           />
         </div>
@@ -125,8 +180,20 @@ function Usuarios() {
           type="submit"
           className="mt-4 bg-green-700 text-white px-6 py-2 rounded hover:bg-green-800"
         >
-          Adicionar Usuário
+          {editandoId ? "Salvar Alterações" : "Adicionar Usuário"}
         </button>
+        {editandoId && (
+          <button
+            type="button"
+            onClick={() => {
+              setForm({ first_name: "", last_name: "", email: "", senha: "" });
+              setEditandoId(null);
+            }}
+            className="ml-4 mt-4 bg-gray-500 text-white px-6 py-2 rounded hover:bg-gray-600"
+          >
+            Cancelar Edição
+          </button>
+        )}
       </form>
 
       <h2 className="text-xl font-semibold mb-2">Lista de Usuários</h2>
@@ -136,6 +203,7 @@ function Usuarios() {
             <th className="text-left px-4 py-2">Nome</th>
             <th className="text-left px-4 py-2">E-mail</th>
             <th className="text-left px-4 py-2">Status</th>
+            <th className="text-left px-4 py-2">Ações</th>
           </tr>
         </thead>
         <tbody>
@@ -144,6 +212,20 @@ function Usuarios() {
               <td className="px-4 py-2">{usuario.first_name} {usuario.last_name}</td>
               <td className="px-4 py-2">{usuario.email}</td>
               <td className="px-4 py-2">{usuario.is_active ? "Ativo" : "Inativo"}</td>
+              <td className="px-4 py-2 space-x-2">
+                <button
+                  onClick={() => handleEditar(usuario)}
+                  className="bg-yellow-500 text-white px-3 py-1 rounded hover:bg-yellow-600"
+                >
+                  Editar
+                </button>
+                <button
+                  onClick={() => handleExcluir(usuario.id)}
+                  className="bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700"
+                >
+                  Excluir
+                </button>
+              </td>
             </tr>
           ))}
         </tbody>

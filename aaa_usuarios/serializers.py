@@ -41,7 +41,7 @@ class CriarUsuarioSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         senha = validated_data.pop("senha")
-        prefeitura = self.context.get("prefeitura")
+        prefeitura = validated_data.pop("prefeitura", None)
 
         if not prefeitura:
             raise serializers.ValidationError("Prefeitura não encontrada na sessão.")

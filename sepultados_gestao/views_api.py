@@ -340,22 +340,27 @@ def verificar_email(request, token):
         user.prefeitura = prefeitura
         user.save()
 
-        # Criar licença
+        # Criar licença com debug
         plano = Plano.objects.get(pk=cadastro.plano_id)
-        Licenca.objects.create(
+        print(f"Plano selecionado: {plano.nome}, usuários_max = {plano.usuarios_max}")
+
+        licenca = Licenca.objects.create(
             prefeitura=prefeitura,
             plano=plano,
             valor_mensal_atual=plano.preco_mensal,
             percentual_reajuste_anual=5.0,
             anos_contratados=cadastro.duracao_anos,
             usuarios_min=plano.usuarios_min,
-            usuarios_max=plano.usuarios_max,
+            usuarios_max=plano.usuarios_max,  # vamos validar se vem certo aqui
             sepultados_max=plano.sepultados_max,
             inclui_api=plano.inclui_api,
             inclui_erp=plano.inclui_erp,
             inclui_suporte_prioritario=plano.inclui_suporte_prioritario,
             data_inicio=timezone.now(),
         )
+
+        print(f"Licença salva com usuarios_max = {licenca.usuarios_max}")
+
 
         # Apagar cadastro temporário
         cadastro.delete()
