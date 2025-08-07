@@ -3,8 +3,7 @@ from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from aaa_usuarios.models import Usuario
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
-    username_field = "email"  # ✅ Corrigido
-
+    username_field = "email"
 
     @classmethod
     def get_token(cls, user):
@@ -18,3 +17,37 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
 
     email = serializers.EmailField()
     password = serializers.CharField()
+
+
+class UsuarioSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Usuario
+        fields = [
+            'id',
+            'first_name',
+            'last_name',
+            'email',
+            'is_active',
+            'date_joined',
+        ]
+
+
+class CriarUsuarioSerializer(serializers.ModelSerializer):
+    senha = serializers.CharField(write_only=True)
+
+    class Meta:
+        model = Usuario
+        fields = ['first_name', 'last_name', 'email', 'senha']
+
+    def create(self, validated_data):
+        senha = validated_data.pop("senha")
+        prefeitura = self.context.get("prefeitura")
+
+        if not prefeitura:
+            raise serializers.ValidationError("Prefeitura não encontrada na sessão.")
+
+        user = Usuario(**validated_data)
+        user.set_password(senha)
+        user.prefeitura = prefeitura
+        user.save()
+        return user

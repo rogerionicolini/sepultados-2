@@ -1,7 +1,10 @@
 from django.urls import path
-from .views import RecuperarSenhaView, RedefinirSenhaView
+from .views import RecuperarSenhaView, RedefinirSenhaView, UsuarioListCreateAPIView, UsuarioListAPIView
+
 
 urlpatterns = [
     path("recuperar-senha/", RecuperarSenhaView.as_view(), name="recuperar-senha"),
     path("redefinir-senha/<uidb64>/<token>/", RedefinirSenhaView.as_view(), name="redefinir-senha"),
+    path("", UsuarioListCreateAPIView.as_view(), name="criar_usuario"),
+    path("lista/", UsuarioListAPIView.as_view(), name="listar_usuarios"),
 ]

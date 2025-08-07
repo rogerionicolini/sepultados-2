@@ -120,7 +120,13 @@ function UserHeader() {
             </div>
 
             {/* Usuários */}
-            <div className="flex items-center gap-3 p-3 rounded-lg hover:bg-[#cde1b1] cursor-pointer text-green-900">
+            <div
+              className="flex items-center gap-3 p-3 rounded-lg hover:bg-[#cde1b1] cursor-pointer text-green-900"
+              onClick={() => {
+                setDrawerOpen(false);
+                navigate("/usuarios");
+              }}
+            >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
                 className="w-5 h-5"

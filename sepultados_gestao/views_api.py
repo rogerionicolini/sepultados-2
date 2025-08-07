@@ -426,3 +426,5 @@ class PrefeituraLogadaAPIView(APIView):
             return Response(serializer.data)
 
         return Response(serializer.errors, status=400)
+
+

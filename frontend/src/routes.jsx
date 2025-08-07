@@ -11,7 +11,8 @@ import PrivateRoute from "./PrivateRoute";
 
 // Importações das páginas internas
 import Dados from './pages/Dados';
-import DashboardResumo from './pages/DashboardResumo'; // ✅ IMPORT AQUI
+import DashboardResumo from './pages/DashboardResumo';
+import Usuarios from './pages/Usuarios'; // ✅ NOVO
 
 const AppRoutes = () => (
   <Routes>
@@ -33,10 +34,11 @@ const AppRoutes = () => (
       }
     >
       {/* Página inicial do dashboard */}
-      <Route index element={<DashboardResumo />} /> {/* ✅ AQUI TROCA */}
+      <Route index element={<DashboardResumo />} />
 
-      {/* Página /dados */}
+      {/* Telas internas */}
       <Route path="dados" element={<Dados />} />
+      <Route path="usuarios" element={<Usuarios />} /> {/* ✅ NOVO */}
     </Route>
   </Routes>
 );
