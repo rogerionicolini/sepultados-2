@@ -19,16 +19,14 @@ function Usuarios() {
     if (token) {
       fetchUsuarios();
     } else {
-      setErro("Token de acesso n\u00e3o encontrado. Faça login novamente.");
+      setErro("Token de acesso não encontrado. Faça login novamente.");
     }
-  }, []);
+  }, [token]);
 
   const fetchUsuarios = async () => {
     try {
       const response = await axios.get("http://localhost:8000/api/usuarios/lista/", {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { Authorization: `Bearer ${token}` },
       });
       setUsuarios(response.data);
     } catch (error) {
@@ -39,7 +37,7 @@ function Usuarios() {
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setForm({ ...form, [name]: value });
+    setForm(prev => ({ ...prev, [name]: value }));
   };
 
   const handleSubmit = async (e) => {
@@ -54,11 +52,11 @@ function Usuarios() {
           {
             first_name: form.first_name,
             last_name: form.last_name,
+            // email não enviado
+            // senha não enviada
           },
           {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
+            headers: { Authorization: `Bearer ${token}` },
           }
         );
         setMensagem("Usuário atualizado com sucesso.");
@@ -72,9 +70,7 @@ function Usuarios() {
             last_name: form.last_name,
           },
           {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
+            headers: { Authorization: `Bearer ${token}` },
           }
         );
         setMensagem("Usuário adicionado com sucesso. Um e-mail de confirmação foi enviado.");
@@ -90,7 +86,7 @@ function Usuarios() {
         } else if (erroData.detail) {
           setErro(erroData.detail);
         } else if (erroData.email) {
-          setErro("E-mail j\u00e1 cadastrado.");
+          setErro("E-mail já cadastrado.");
         } else {
           const mensagens = Object.values(erroData).flat().join(" ");
           setErro(mensagens || "Erro ao adicionar/editar usuário.");
@@ -117,9 +113,7 @@ function Usuarios() {
     if (!window.confirm("Tem certeza que deseja excluir este usuário?")) return;
     try {
       await axios.delete(`http://localhost:8000/api/usuarios/${id}/`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { Authorization: `Bearer ${token}` },
       });
       setMensagem("Usuário excluído com sucesso.");
       fetchUsuarios();
@@ -203,6 +197,7 @@ function Usuarios() {
             <th className="text-left px-4 py-2">Nome</th>
             <th className="text-left px-4 py-2">E-mail</th>
             <th className="text-left px-4 py-2">Status</th>
+            <th className="text-left px-4 py-2">Tipo</th>
             <th className="text-left px-4 py-2">Ações</th>
           </tr>
         </thead>
@@ -212,6 +207,7 @@ function Usuarios() {
               <td className="px-4 py-2">{usuario.first_name} {usuario.last_name}</td>
               <td className="px-4 py-2">{usuario.email}</td>
               <td className="px-4 py-2">{usuario.is_active ? "Ativo" : "Inativo"}</td>
+              <td className="px-4 py-2">{usuario.tipo}</td>
               <td className="px-4 py-2 space-x-2">
                 <button
                   onClick={() => handleEditar(usuario)}

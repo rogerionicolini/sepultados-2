@@ -2,139 +2,128 @@ import React, { useEffect, useState } from "react";
 import axios from "axios";
 
 function Dados() {
-  const [dados, setDados] = useState(null);
+  const [form, setForm] = useState({});
   const [logo, setLogo] = useState(null);
   const [mensagem, setMensagem] = useState("");
+  const [erro, setErro] = useState("");
+
+  const estados = [
+    "AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", "MT",
+    "MS", "MG", "PA", "PB", "PR", "PE", "PI", "RJ", "RN", "RS", "RO",
+    "RR", "SC", "SP", "SE", "TO"
+  ];
+
+  const token = localStorage.getItem("accessToken");
 
   useEffect(() => {
-    const fetchDados = async () => {
-      const token = localStorage.getItem("accessToken");
-      const response = await axios.get("http://127.0.0.1:8000/api/prefeitura-logada/", {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-      setDados(response.data);
-    };
-    fetchDados();
+    if (token) {
+      axios
+        .get("http://localhost:8000/api/prefeitura-logada/", {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        .then((res) => setForm(res.data))
+        .catch(() => setErro("Erro ao carregar os dados."));
+    }
   }, []);
 
   const handleChange = (e) => {
-    setDados({ ...dados, [e.target.name]: e.target.value });
-  };
-
-  const handleLogoChange = (e) => {
-    setLogo(e.target.files[0]);
+    const { name, value } = e.target;
+    setForm((prev) => ({ ...prev, [name]: value }));
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const token = localStorage.getItem("accessToken");
+    setMensagem("");
+    setErro("");
 
-    const formData = new FormData();
-    for (const key in dados) {
-      if (dados[key] !== null && dados[key] !== undefined) {
-        formData.append(key, dados[key]);
-      }
-    }
+    const payload = { ...form };
 
     if (logo) {
       const reader = new FileReader();
       reader.onloadend = async () => {
-        const base64String = reader.result;
-        formData.append("logo_base64", base64String);
-
-        try {
-          await axios.put("http://127.0.0.1:8000/api/prefeitura-logada/", formData, {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          });
-          setMensagem("Dados atualizados com sucesso!");
-        } catch (error) {
-          setMensagem("Erro ao atualizar os dados.");
-        }
+        payload["logo_base64"] = reader.result;  // ✅ campo correto
+        await enviarParaAPI(payload);
       };
       reader.readAsDataURL(logo);
     } else {
-      try {
-        await axios.put("http://127.0.0.1:8000/api/prefeitura-logada/", formData, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
-        setMensagem("Dados atualizados com sucesso!");
-      } catch (error) {
-        setMensagem("Erro ao atualizar os dados.");
-      }
+      delete payload["logo_base64"];
+      await enviarParaAPI(payload);
     }
   };
 
-  if (!dados) return <div className="p-6 text-green-900">Carregando...</div>;
+  const enviarParaAPI = async (payload) => {
+    try {
+      await axios.patch("http://localhost:8000/api/prefeitura-logada/", payload, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setMensagem("Alterações salvas com sucesso.");
+    } catch (err) {
+      console.error(err);
+      setErro("Erro ao salvar as alterações. Verifique os dados.");
+    }
+  };
 
   return (
-    <div className="p-6 max-w-4xl mx-auto">
-      <h1 className="text-2xl font-semibold text-green-900 mb-3 text-center">
-        Editar Dados
-      </h1>
-      <form onSubmit={handleSubmit} className="bg-white p-6 rounded-xl shadow space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {Object.entries({
-            nome: "Nome",
-            responsavel: "Responsável",
-            telefone: "Telefone",
-            email: "E-mail",
-            cnpj: "CNPJ",
-            site: "Site",
-            logradouro: "Logradouro",
-            endereco_numero: "Número",
-            endereco_bairro: "Bairro",
-            endereco_cidade: "Cidade",
-            endereco_estado: "Estado",
-            endereco_cep: "CEP",
-          }).map(([key, label]) => (
-            <div key={key}>
-              <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
-              <input
-                type="text"
-                name={key}
-                value={dados[key] || ""}
-                onChange={handleChange}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2"
-              />
-            </div>
-          ))}
-
-          {/* Campo Cláusulas do Contrato */}
-          <div className="md:col-span-2">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Cláusulas do Contrato</label>
-            <textarea
-              name="clausulas_contrato"
-              value={dados.clausulas_contrato || ""}
-              onChange={handleChange}
-              rows={6}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2"
-            ></textarea>
-          </div>
-
-          {/* Campo de logo */}
-          <div className="md:col-span-2">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Nova Logo (opcional)</label>
-            <input type="file" accept="image/*" onChange={handleLogoChange} className="w-full" />
-          </div>
+    <div className="p-8">
+      <h2 className="text-2xl font-bold mb-6">Dados da Prefeitura</h2>
+      {mensagem && <p className="text-green-700 mb-4">{mensagem}</p>}
+      {erro && <p className="text-red-700 mb-4">{erro}</p>}
+      <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label className="block">Nome</label>
+          <input name="nome" value={form.nome || ""} onChange={handleChange} className="w-full p-2 border rounded" />
         </div>
-
-        {/* Mensagem */}
-        {mensagem && (
-          <p className="text-center text-sm text-green-800 font-semibold mt-2">{mensagem}</p>
-        )}
-
-        {/* Botão de salvar */}
-        <div className="pt-2">
-          <button
-            type="submit"
-            className="w-full bg-green-900 hover:bg-green-800 text-white font-semibold py-2 px-4 rounded-xl transition"
-          >
+        <div>
+          <label className="block">Responsável</label>
+          <input name="responsavel" value={form.responsavel || ""} onChange={handleChange} className="w-full p-2 border rounded" />
+        </div>
+        <div>
+          <label className="block">Telefone</label>
+          <input name="telefone" value={form.telefone || ""} onChange={handleChange} className="w-full p-2 border rounded" />
+        </div>
+        <div>
+          <label className="block">E-mail</label>
+          <input name="email" value={form.email || ""} onChange={handleChange} className="w-full p-2 border rounded" />
+        </div>
+        <div>
+          <label className="block">CNPJ</label>
+          <input name="cnpj" value={form.cnpj || ""} onChange={handleChange} className="w-full p-2 border rounded" />
+        </div>
+        <div>
+          <label className="block">Site</label>
+          <input name="site" value={form.site || ""} onChange={handleChange} className="w-full p-2 border rounded" />
+        </div>
+        <div>
+          <label className="block">Logradouro</label>
+          <input name="logradouro" value={form.logradouro || ""} onChange={handleChange} className="w-full p-2 border rounded" />
+        </div>
+        <div>
+          <label className="block">Número</label>
+          <input name="endereco_numero" value={form.endereco_numero || ""} onChange={handleChange} className="w-full p-2 border rounded" />
+        </div>
+        <div>
+          <label className="block">Bairro</label>
+          <input name="endereco_bairro" value={form.endereco_bairro || ""} onChange={handleChange} className="w-full p-2 border rounded" />
+        </div>
+        <div>
+          <label className="block">Cidade</label>
+          <input name="endereco_cidade" value={form.endereco_cidade || ""} onChange={handleChange} className="w-full p-2 border rounded" />
+        </div>
+        <div>
+          <label className="block">Estado</label>
+          <select name="endereco_estado" value={form.endereco_estado || ""} onChange={handleChange} className="w-full p-2 border rounded">
+            <option value="">Selecione</option>
+            {estados.map((uf) => (
+              <option key={uf} value={uf}>{uf}</option>
+            ))}
+          </select>
+        </div>
+        <div className="md:col-span-2">
+          <label className="block">Nova Logo (opcional)</label>
+          <input type="file" accept="image/*" onChange={(e) => setLogo(e.target.files[0])} className="w-full" />
+        </div>
+        <div className="md:col-span-2 text-center mt-4">
+          <button type="submit" className="bg-green-800 hover:bg-green-900 text-white font-bold py-2 px-4 rounded">
             Salvar Alterações
           </button>
         </div>

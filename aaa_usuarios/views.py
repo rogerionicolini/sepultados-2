@@ -9,6 +9,8 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import AllowAny
 from django.template.loader import render_to_string
+from django.conf import settings
+
 
 Usuario = get_user_model()
 
@@ -90,6 +92,8 @@ from django.template.loader import render_to_string
 from aaa_usuarios.models import Usuario
 from aaa_usuarios.serializers import UsuarioSerializer, CriarUsuarioSerializer
 from sepultados_gestao.models import Prefeitura, Licenca
+from datetime import date
+from django.urls import reverse
 
 
 class UsuarioListCreateAPIView(generics.ListCreateAPIView):
@@ -104,6 +108,12 @@ class UsuarioListCreateAPIView(generics.ListCreateAPIView):
         if self.request.method == 'POST':
             return CriarUsuarioSerializer
         return UsuarioSerializer
+    
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context["prefeitura"] = getattr(self.request.user, "prefeitura", None)
+        return context
+
 
     def perform_create(self, serializer):
         user = self.request.user
@@ -129,36 +139,44 @@ class UsuarioListCreateAPIView(generics.ListCreateAPIView):
         if not licenca:
             raise ValidationError("Nenhuma licença ativa encontrada para esta prefeitura.")
 
-        total_usuarios = Usuario.objects.filter(prefeitura=prefeitura, is_active=True).count()
-
+        # 🔒 Conta TODOS os usuários, inclusive inativos
+        total_usuarios = Usuario.objects.filter(prefeitura=prefeitura).count()
         if total_usuarios >= licenca.usuarios_max:
             raise ValidationError(f"Limite de usuários atingido ({licenca.usuarios_max}).")
 
-        # Criar novo usuário inativo
+        # ✅ Cria novo usuário inativo e vincula à prefeitura
         serializer.save(prefeitura=prefeitura, is_active=False)
 
-        # Enviar e-mail de confirmação
+        # 📧 Envia e-mail de confirmação
         self.enviar_email_confirmacao(self.request, serializer.instance)
 
+
     def enviar_email_confirmacao(self, request, usuario):
-        current_site = get_current_site(request)
         uid = urlsafe_base64_encode(force_bytes(usuario.pk))
         token = default_token_generator.make_token(usuario)
-        link = f"http://{current_site.domain}/api/usuarios/confirmar-email/{uid}/{token}/"
 
-        mensagem = render_to_string('email_confirmacao_usuario.html', {
+        # Link para a rota do backend que ativa o usuário e renderiza o HTML
+        link = request.build_absolute_uri(
+            reverse('confirmar-email', args=[uid, token])
+        )
+        # ex.: http://localhost:8000/api/usuarios/confirmar-email/<uid>/<token>/
+
+        context = {
             'usuario': usuario,
-            'link_confirmacao': link,
-        })
+            'link': link,
+            'ano_atual': date.today().year,
+        }
+
+        html_conteudo = render_to_string('emails/email_confirmacao_usuario.html', context)
 
         send_mail(
             subject='Confirme seu cadastro no Sepultados.com',
-            message=mensagem,
+            message=f"Olá {usuario.first_name}, confirme seu cadastro em: {link}",
             from_email='suporte@sepultados.com',
             recipient_list=[usuario.email],
+            html_message=html_conteudo,
             fail_silently=False,
         )
-
 
 
 class UsuarioListAPIView(generics.ListAPIView):
@@ -175,23 +193,57 @@ class UsuarioListAPIView(generics.ListAPIView):
 
 from rest_framework import generics, permissions
 from rest_framework.exceptions import PermissionDenied
-from django.contrib.auth import get_user_model
+from aaa_usuarios.models import Usuario
 from aaa_usuarios.serializers import UsuarioSerializer
 
-User = get_user_model()
-
 class UsuarioRetrieveUpdateDestroyAPIView(generics.RetrieveUpdateDestroyAPIView):
-    queryset = User.objects.all()
     serializer_class = UsuarioSerializer
     permission_classes = [permissions.IsAuthenticated]
 
+    def get_queryset(self):
+        usuario = self.request.user
+        # Retorna todos usuários da mesma prefeitura do usuário logado
+        return Usuario.objects.filter(prefeitura=usuario.prefeitura)
+
     def get_object(self):
         obj = super().get_object()
-        # Apenas o master da prefeitura pode editar/excluir
         user = self.request.user
-        if obj.prefeitura != user.prefeitura:
-            raise PermissionDenied("Você não tem permissão para acessar este usuário.")
-        return obj
+
+        print(f"[DEBUG] Usuário logado: ID={user.id}, Email={user.email}")
+        print(f"[DEBUG] Tentando acessar usuário: ID={obj.id}, Email={obj.email}")
+        print(f"[DEBUG] Prefeitura do logado: {user.prefeitura_id}, Prefeitura do alvo: {obj.prefeitura_id}")
+
+        if obj.pk == user.pk:
+            print("[DEBUG] Permitido: acesso ao próprio usuário")
+            return obj
+
+        if obj.prefeitura_id == user.prefeitura_id:
+            print("[DEBUG] Permitido: usuários da mesma prefeitura")
+            return obj
+
+        print("[DEBUG] Negado: permissão insuficiente")
+        raise PermissionDenied("Você não tem permissão para acessar este usuário.")
+
+    def perform_destroy(self, instance):
+        user = self.request.user
+
+        # 🔒 Não pode excluir o próprio usuário
+        if instance.pk == user.pk:
+            raise ValidationError("Você não pode excluir seu próprio usuário.")
+
+        # 🔒 Não pode excluir o master (prefeitura.usuario)
+        if Prefeitura.objects.filter(usuario=instance).exists():
+            raise ValidationError("Não é permitido excluir o usuário master da prefeitura.")
+
+        # 🔒 Só o master da prefeitura pode excluir outros usuários da MESMA prefeitura
+        pref = getattr(user, "prefeitura", None)
+        if not pref or pref.id != instance.prefeitura_id:
+            raise PermissionDenied("Você não tem permissão para excluir este usuário.")
+
+        if pref.usuario_id != user.id:
+            raise PermissionDenied("Apenas o usuário master pode excluir usuários.")
+
+        super().perform_destroy(instance)
 
 
 from rest_framework.views import APIView
@@ -239,8 +291,10 @@ from django.utils.encoding import force_str
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework import status
+from django.shortcuts import render  # ✅ necessário para renderizar o template
 
 User = get_user_model()
+
 
 class AtivarUsuarioView(APIView):
     def get(self, request, uidb64, token):
@@ -250,9 +304,26 @@ class AtivarUsuarioView(APIView):
         except (TypeError, ValueError, OverflowError, User.DoesNotExist):
             user = None
 
-        if user is not None and default_token_generator.check_token(user, token):
-            user.is_active = True
-            user.save()
-            return Response({'detail': 'Usuário ativado com sucesso.'}, status=status.HTTP_200_OK)
-        else:
-            return Response({'detail': 'Token inválido ou expirado.'}, status=status.HTTP_400_BAD_REQUEST)
+        if user and default_token_generator.check_token(user, token):
+            # ativa
+            if not user.is_active:
+                user.is_active = True
+                user.save()
+
+            # garante VÍNCULO com a prefeitura
+            if not getattr(user, "prefeitura_id", None):
+                from sepultados_gestao.models import Prefeitura
+                pref = Prefeitura.objects.filter(usuario=user).first()
+                if pref:
+                    user.prefeitura = pref
+                    user.save()
+
+            # seta prefeitura ativa na sessão
+            if getattr(user, "prefeitura_id", None):
+                request.session["prefeitura_ativa_id"] = user.prefeitura_id
+
+            return render(request, 'emails/confirmar_email.html', {'usuario': user})
+
+        return render(request, 'emails/confirmar_email.html', {'mensagem': 'Token inválido ou expirado.'})
+
+

@@ -99,6 +99,8 @@ from django.db import transaction
 from django.core.mail import send_mail
 from django.utils import timezone
 from django.conf import settings
+from django.template.loader import render_to_string  # ✅ correto
+from datetime import date
 import uuid
 
 User = get_user_model()
@@ -106,37 +108,47 @@ User = get_user_model()
 class RegistrarPrefeituraAPIView(APIView):
     permission_classes = []
 
-    def enviar_email_confirmacao(self, email):
+    def enviar_email_confirmacao(self, usuario):
+        """
+        Envia e-mail com LINK de confirmação (NÃO é a página de 'confirmado').
+        Usa o template: emails/email_confirmacao_usuario.html
+        """
         token = uuid.uuid4()
+
         EmailConfirmacao.objects.update_or_create(
-            email=email,
+            email=usuario.email,
             defaults={
                 'token': token,
                 'criado_em': timezone.now(),
                 'usado': False,
             }
         )
-        link = f"{settings.FRONTEND_URL}/verificar-email/{token}"
-        from django.template.loader import render_to_string
 
-        html_content = render_to_string("emails/confirmar_email.html", {"link": link})
+        link = f"{settings.FRONTEND_URL}/verificar-email/{token}"
+
+        html_content = render_to_string(
+            "emails/email_confirmacao_usuario.html",
+            {
+                "usuario": usuario,
+                "link": link,
+                "ano_atual": date.today().year,
+            }
+        )
 
         send_mail(
             subject="Confirmação de E-mail - Sepultados.com",
-            message=f"Olá! Confirme seu e-mail clicando no link: {link}",
+            message=f"Confirme seu e-mail acessando: {link}",
             from_email=settings.DEFAULT_FROM_EMAIL,
-            recipient_list=[email],
+            recipient_list=[usuario.email],
             html_message=html_content,
             fail_silently=False,
         )
-
 
     def post(self, request):
         try:
             with transaction.atomic():
                 dados = request.data
 
-                # Dados principais
                 campos = {
                     "nome": dados.get("nome"),
                     "cnpj": dados.get("cnpj"),
@@ -150,44 +162,52 @@ class RegistrarPrefeituraAPIView(APIView):
                     "endereco_cidade": dados.get("endereco_cidade"),
                     "endereco_estado": dados.get("endereco_estado"),
                     "endereco_cep": dados.get("endereco_cep"),
-                    "plano_id": int(dados.get("plano_id")),
+                    "plano_id": int(dados.get("plano_id")) if dados.get("plano_id") else None,
                     "duracao_anos": int(dados.get("duracao_anos", 1)),
                     "logo_base64": dados.get("logo_base64"),
                     "brasao_base64": dados.get("brasao_base64"),
                 }
 
-                if not all([campos["nome"], campos["cnpj"], campos["responsavel"], campos["telefone"], campos["email"], campos["senha"], campos["logradouro"], campos["endereco_numero"], campos["endereco_cidade"], campos["endereco_estado"], campos["endereco_cep"], campos["plano_id"]]):
+                obrigatorios = ["nome","cnpj","responsavel","telefone","email","senha",
+                                "logradouro","endereco_numero","endereco_cidade",
+                                "endereco_estado","endereco_cep","plano_id"]
+                if not all(campos[k] for k in obrigatorios):
                     return Response({"detail": "Todos os campos obrigatórios devem ser preenchidos."}, status=400)
 
-                # Verifica duplicidade ativa
+                # Se já existe um usuário ATIVO com esse e-mail, bloqueia
                 if User.objects.filter(email=campos["email"], is_active=True).exists():
                     return Response({"detail": "Já existe um usuário ativo com esse e-mail."}, status=400)
 
-                # Cria ou atualiza o cadastro pendente
+                # Salva/atualiza o cadastro pendente
                 CadastroPrefeituraPendente.objects.update_or_create(
                     email=campos["email"],
                     defaults=campos
                 )
 
-                # Cria usuário inativo se não existir
+                # Garante usuário INATIVO (cria se não existir)
                 user = User.objects.filter(email=campos["email"]).first()
                 if not user:
                     user = User.objects.create_user(
                         email=campos["email"],
                         password=campos["senha"],
                         is_active=False,
-                        is_staff=True
+                        is_staff=True,
                     )
+                else:
+                    # Se já existia, assegura desativado até confirmar
+                    if user.is_active:
+                        user.is_active = False
+                        user.save(update_fields=["is_active"])
 
-                # Envia e-mail de confirmação
-                self.enviar_email_confirmacao(campos["email"])
+                # Envia o e-mail de confirmação (template correto)
+                self.enviar_email_confirmacao(user)
 
-                return Response({
-                    "detail": "Enviamos um e-mail para confirmação. Verifique sua caixa de entrada."
-                }, status=200)
+                return Response({"detail": "Enviamos um e-mail para confirmação. Verifique sua caixa de entrada."}, status=200)
 
         except Exception as e:
-            return Response({"detail": str(e)}, status=500)
+            # Log simples no retorno para você ver no front
+            return Response({"detail": f"Erro: {e}"}, status=500)
+
 
 
 from rest_framework.views import APIView
@@ -380,7 +400,11 @@ from sepultados_gestao.models import Prefeitura
 @permission_classes([IsAuthenticated])
 def usuario_logado(request):
     user = request.user
-    prefeitura = Prefeitura.objects.filter(usuario=user).first()
+
+    # Suporte a master (prefeitura.usuario) e usuário normal (usuario.prefeitura)
+    prefeitura = getattr(user, "prefeitura", None)
+    if not prefeitura:
+        prefeitura = Prefeitura.objects.filter(usuario=user).first()
 
     brasao_url = None
     if prefeitura and prefeitura.brasao and hasattr(prefeitura.brasao, 'url'):
@@ -397,9 +421,10 @@ def usuario_logado(request):
         "prefeitura": {
             "id": prefeitura.id if prefeitura else None,
             "nome": prefeitura.nome if prefeitura else None,
-            "logo_url": brasao_url,  # <- substitui o logo pela imagem realmente usada
+            "logo_url": brasao_url,
         }
     })
+
 
 
 from rest_framework.views import APIView
@@ -420,16 +445,17 @@ class PrefeituraLogadaAPIView(APIView):
         serializer = PrefeituraSerializer(prefeitura)
         return Response(serializer.data)
 
-    def put(self, request):
+    def patch(self, request):
         prefeitura = Prefeitura.objects.filter(usuario=request.user).first()
         if not prefeitura:
             return Response({"detail": "Prefeitura não encontrada."}, status=404)
 
         serializer = PrefeituraSerializer(prefeitura, data=request.data, partial=True)
+
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data)
 
+        print(serializer.errors)  # 👈 Adicione esta linha
         return Response(serializer.errors, status=400)
-
 

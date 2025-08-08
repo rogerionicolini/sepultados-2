@@ -1,47 +1,40 @@
 <!DOCTYPE html>
-<html lang="pt-br">
+<html lang="pt-BR">
 <head>
-  <meta charset="UTF-8">
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      background-color: #f6f6f6;
-      padding: 20px;
-      color: #333;
-    }
-    .email-container {
-      background-color: white;
-      max-width: 600px;
-      margin: auto;
-      padding: 30px;
-      border-radius: 10px;
-      box-shadow: 0 0 10px rgba(0,0,0,0.05);
-    }
-    .button {
-      display: inline-block;
-      margin-top: 20px;
-      padding: 12px 24px;
-      background-color: #1a6e33;
-      color: white;
-      text-decoration: none;
-      border-radius: 6px;
-      font-weight: bold;
-    }
-    .footer {
-      margin-top: 40px;
-      font-size: 12px;
-      color: #777;
-      text-align: center;
-    }
-  </style>
+    <meta charset="UTF-8">
+    <title>Confirmação de E-mail</title>
+    <style>
+        body {
+            background-color: #f0f8e2;
+            font-family: Arial, sans-serif;
+            text-align: center;
+            padding: 100px;
+        }
+
+        .caixa {
+            background-color: white;
+            border: 1px solid #c2d9a3;
+            border-radius: 12px;
+            padding: 40px;
+            display: inline-block;
+            box-shadow: 0 0 20px rgba(0,0,0,0.1);
+        }
+
+        h1 {
+            color: #336600;
+        }
+
+        p {
+            font-size: 18px;
+            color: #333;
+        }
+    </style>
 </head>
 <body>
-  <div class="email-container">
-    <h2>Confirmação de E-mail</h2>
-    <p>Olá!</p>
-    <p>Para ativar sua conta no sistema <strong>Sepultados.com</strong>, clique no botão abaixo:</p>
-    <a href="{{ link }}" class="button">Confirmar E-mail</a>
-    <p class="footer">Se você não solicitou este cadastro, ignore esta mensagem.</p>
-  </div>
+    <div class="caixa">
+        <h1>✅ E-mail confirmado!</h1>
+        <p>Olá {{ usuario.first_name }}, seu e-mail foi confirmado com sucesso.</p>
+        <p>Agora você pode acessar o sistema normalmente.</p>
+    </div>
 </body>
 </html>

@@ -13,6 +13,10 @@ urlpatterns = [
     path("redefinir-senha/<uidb64>/<token>/", RedefinirSenhaView.as_view(), name="redefinir-senha"),
     path("", UsuarioListCreateAPIView.as_view(), name="criar_usuario"),
     path("lista/", UsuarioListAPIView.as_view(), name="listar_usuarios"),
-    path("usuarios/<int:pk>/", UsuarioRetrieveUpdateDestroyAPIView.as_view(), name="usuario-detalhe"),
+
+    # ✅ Alteração aqui:
+    path("<int:pk>/", UsuarioRetrieveUpdateDestroyAPIView.as_view(), name="usuario-detalhe"),
+
     path("confirmar-email/<uidb64>/<token>/", AtivarUsuarioView.as_view(), name="confirmar-email"),
+    path("<int:pk>/", UsuarioRetrieveUpdateDestroyAPIView.as_view(), name="usuario-detalhe"),
 ]
