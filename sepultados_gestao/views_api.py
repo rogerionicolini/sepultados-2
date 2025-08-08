@@ -223,21 +223,39 @@ class ListaPlanosAPIView(APIView):
         serializer = PlanoSerializer(planos, many=True)
         return Response(serializer.data)
 
-# views_api.py
-from rest_framework.decorators import api_view
-from rest_framework.response import Response
-from sepultados_gestao.models import Licenca
+
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response  # ✅ faltava
+from django.utils import timezone
+from django.shortcuts import get_object_or_404
+from rest_framework import status
+
+from .models import Licenca
 from .serializers import LicencaSerializer
 
 @api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def licenca_da_prefeitura(request, prefeitura_id):
-    try:
-        licenca = Licenca.objects.get(prefeitura_id=prefeitura_id)
-    except Licenca.DoesNotExist:
-        return Response({"detail": "Licença não encontrada."}, status=404)
+    # bloqueia acesso se não for da mesma prefeitura (exceto staff/superuser)
+    if not (request.user.is_superuser or request.user.is_staff):
+        if getattr(request.user, "prefeitura_id", None) != prefeitura_id:
+            return Response({"detail": "Proibido."}, status=status.HTTP_403_FORBIDDEN)
+
+    agora = timezone.now()
+    licenca = (
+        Licenca.objects
+        .filter(prefeitura_id=prefeitura_id, data_inicio__lte=agora)
+        .order_by('-data_inicio')
+        .first()
+    )
+    if not licenca:
+        return Response({"detail": "Licença não encontrada."}, status=status.HTTP_404_NOT_FOUND)
 
     serializer = LicencaSerializer(licenca)
-    return Response(serializer.data)
+    return Response(serializer.data, status=status.HTTP_200_OK)
+
+
 
 
 import uuid

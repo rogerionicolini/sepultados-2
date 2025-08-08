@@ -77,18 +77,23 @@ class PlanoSerializer(serializers.ModelSerializer):
             'inclui_suporte_prioritario',
         ]
 
-# serializers.py
-
 class LicencaSerializer(serializers.ModelSerializer):
+    id = serializers.IntegerField(read_only=True)
     data_fim = serializers.SerializerMethodField()
     valor_mensal_reajustado = serializers.SerializerMethodField()
     expirada = serializers.SerializerMethodField()
     plano_nome = serializers.CharField(source='plano.nome', read_only=True)
     meses_contrato = serializers.IntegerField(read_only=True)
 
+    # Se os inclui_* estiverem no Plano, descomente:
+    # inclui_api = serializers.BooleanField(source='plano.inclui_api', read_only=True)
+    # inclui_erp = serializers.BooleanField(source='plano.inclui_erp', read_only=True)
+    # inclui_suporte_prioritario = serializers.BooleanField(source='plano.inclui_suporte_prioritario', read_only=True)
+
     class Meta:
         model = Licenca
         fields = [
+            'id',
             'prefeitura',
             'plano',
             'plano_nome',
@@ -106,6 +111,10 @@ class LicencaSerializer(serializers.ModelSerializer):
             'inclui_suporte_prioritario',
             'expirada',
             'meses_contrato',
+        ]
+        read_only_fields = [
+            'id', 'prefeitura', 'plano', 'plano_nome',
+            'valor_mensal_reajustado', 'expirada', 'meses_contrato'
         ]
 
     def get_data_fim(self, obj):
