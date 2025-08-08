@@ -1,19 +1,24 @@
 import React from "react";
 import { Routes, Route } from "react-router-dom";
+
+// Públicas
 import Home from "./pages/Home";
 import Login from "./pages/Login";
-import Dashboard from "./pages/Dashboard";
-import RecuperarSenhaPage from './pages/RecuperarSenha';
-import RedefinirSenhaPage from './pages/RedefinirSenha';
-import CadastroPrefeitura from './pages/CadastroPrefeitura';
-import VerificarEmail from './pages/VerificarEmail';
-import PrivateRoute from "./PrivateRoute";
+import RecuperarSenhaPage from "./pages/RecuperarSenha";
+import RedefinirSenhaPage from "./pages/RedefinirSenha";
+import CadastroPrefeitura from "./pages/CadastroPrefeitura";
+import VerificarEmail from "./pages/VerificarEmail";
 
-// Importações das páginas internas
-import Dados from './pages/Dados';
-import DashboardResumo from './pages/DashboardResumo';
-import Usuarios from './pages/Usuarios';
-import Licenca from './pages/Licenca'; // ✅ NOVO
+// Layout/Proteção
+import PrivateRoute from "./PrivateRoute";
+import Dashboard from "./pages/Dashboard";
+
+// Internas (painel)
+import DashboardResumo from "./pages/DashboardResumo";
+import Dados from "./pages/Dados";
+import Usuarios from "./pages/Usuarios";
+import Licenca from "./pages/Licenca";
+import Cemiterios from "./pages/Cemiterios"; // ✅ NOVO
 
 const AppRoutes = () => (
   <Routes>
@@ -40,7 +45,12 @@ const AppRoutes = () => (
       {/* Telas internas */}
       <Route path="dados" element={<Dados />} />
       <Route path="usuarios" element={<Usuarios />} />
-      <Route path="licenca" element={<Licenca />} /> {/* ✅ NOVO */}
+      <Route path="licenca" element={<Licenca />} />
+      <Route path="cemiterios" element={<Cemiterios />} /> {/* ✅ NOVO */}
+      {/* Quando tiver as páginas, adicione:
+          <Route path="quadras" element={<Quadras />} />
+          <Route path="tumulos" element={<Tumulos />} />
+      */}
     </Route>
   </Routes>
 );

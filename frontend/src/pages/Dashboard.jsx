@@ -1,10 +1,7 @@
 import React, { useState } from "react";
 import {
   LayoutDashboard,
-  UserCircle,
-  Book,
   FileText,
-  LogOut,
   FolderKanban,
   Users,
   Building,
@@ -45,17 +42,28 @@ function Dashboard() {
 
           <div>
             <div
-              onClick={() => setCemiterioOpen(!cemiterioOpen)}
+              onClick={() => {
+                setCemiterioOpen((v) => !v);
+                navigate("/cemiterios"); // abre a página central
+              }}
               className="flex items-center gap-3 px-4 py-3 hover:bg-[#d8e9c0] rounded-xl cursor-pointer transition"
             >
               <Building className="w-5 h-5 text-green-900" />
               <span className="text-green-900 font-medium flex-1">Cemitérios</span>
-              {cemiterioOpen ? <ChevronDown className="w-4 h-4 text-green-900" /> : <ChevronRight className="w-4 h-4 text-green-900" />}
+              {cemiterioOpen ? (
+                <ChevronDown className="w-4 h-4 text-green-900" />
+              ) : (
+                <ChevronRight className="w-4 h-4 text-green-900" />
+              )}
             </div>
             {cemiterioOpen && (
               <div className="ml-8 mt-1 flex flex-col gap-1">
-                <SidebarItem icon={FolderKanban} label="Quadras" />
-                <SidebarItem icon={FolderKanban} label="Túmulos" />
+                <div onClick={() => navigate("/quadras")}>
+                  <SidebarItem icon={FolderKanban} label="Quadras" />
+                </div>
+                <div onClick={() => navigate("/tumulos")}>
+                  <SidebarItem icon={FolderKanban} label="Túmulos" />
+                </div>
               </div>
             )}
           </div>
@@ -67,7 +75,11 @@ function Dashboard() {
             >
               <Users className="w-5 h-5 text-green-900" />
               <span className="text-green-900 font-medium flex-1">Sepultados</span>
-              {sepultadosOpen ? <ChevronDown className="w-4 h-4 text-green-900" /> : <ChevronRight className="w-4 h-4 text-green-900" />}
+              {sepultadosOpen ? (
+                <ChevronDown className="w-4 h-4 text-green-900" />
+              ) : (
+                <ChevronRight className="w-4 h-4 text-green-900" />
+              )}
             </div>
             {sepultadosOpen && (
               <div className="ml-8 mt-1 flex flex-col gap-1">
@@ -85,7 +97,11 @@ function Dashboard() {
             >
               <FileBarChart className="w-5 h-5 text-green-900" />
               <span className="text-green-900 font-medium flex-1">Relatórios</span>
-              {relatoriosOpen ? <ChevronDown className="w-4 h-4 text-green-900" /> : <ChevronRight className="w-4 h-4 text-green-900" />}
+              {relatoriosOpen ? (
+                <ChevronDown className="w-4 h-4 text-green-900" />
+              ) : (
+                <ChevronRight className="w-4 h-4 text-green-900" />
+              )}
             </div>
             {relatoriosOpen && (
               <div className="ml-8 mt-1 flex flex-col gap-1">
@@ -105,7 +121,7 @@ function Dashboard() {
       </aside>
 
       {/* Conteúdo */}
-      <div className="flex-1 flex flex-col">
+      <div className="flex-1 flex flex-col bg-[#cde1b1]">
         {/* Cabeçalho */}
         <header className="bg-[#cde1b1] px-6 py-4 relative flex items-center justify-end">
           <div className="absolute left-1/2 transform -translate-x-1/2">

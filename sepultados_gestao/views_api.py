@@ -24,21 +24,61 @@ from .serializers import (
 
 # ✅ Mixin para filtrar os dados pela prefeitura ativa do usuário
 class PrefeituraRestritaQuerysetMixin:
-    prefeitura_field = "prefeitura"  # valor padrão
+    """
+    - Se existir request.prefeitura_ativa, usa ela.
+    - Caso contrário, aceita ?prefeitura=<id> na querystring.
+    - Se nada disso existir, retorna queryset vazio.
+    """
+    prefeitura_field = "prefeitura"  # padrão
 
     def get_queryset(self):
-        if not self.request.user.is_authenticated:
-            return self.queryset.none()
-        prefeitura = getattr(self.request, "prefeitura_ativa", None)
-        if not prefeitura:
-            return self.queryset.none()
-        return self.queryset.filter(**{self.prefeitura_field: prefeitura})
+        qs = self.queryset
+        req = self.request
+
+        if not req.user.is_authenticated:
+            return qs.none()
+
+        pref = getattr(req, "prefeitura_ativa", None)
+
+        # Fallback: aceita ?prefeitura=ID
+        if not pref:
+            pref_id = req.query_params.get("prefeitura")
+            if pref_id:
+                try:
+                    pref = Prefeitura.objects.get(pk=pref_id)
+                except Prefeitura.DoesNotExist:
+                    return qs.none()
+
+        if not pref:
+            return qs.none()
+
+        return qs.filter(**{self.prefeitura_field: pref})
 
 # ✅ Cemitérios
+# views_api.py
 class CemiterioViewSet(PrefeituraRestritaQuerysetMixin, viewsets.ModelViewSet):
     queryset = Cemiterio.objects.all()
     serializer_class = CemiterioSerializer
     prefeitura_field = "prefeitura"
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        # fallback local (afeta só CEMITÉRIO)
+        if not qs.exists():
+            pref_id = self.request.query_params.get("prefeitura")
+            if pref_id:
+                return Cemiterio.objects.filter(prefeitura_id=pref_id)
+        return qs
+
+    def perform_create(self, serializer):
+        pref = getattr(self.request, "prefeitura_ativa", None)
+        if not pref:
+            pref_id = self.request.query_params.get("prefeitura")
+            if pref_id:
+                from .models import Prefeitura
+                pref = Prefeitura.objects.filter(pk=pref_id).first()
+        serializer.save(prefeitura=pref)
+
 
 # ✅ Quadras
 class QuadraViewSet(PrefeituraRestritaQuerysetMixin, viewsets.ModelViewSet):
