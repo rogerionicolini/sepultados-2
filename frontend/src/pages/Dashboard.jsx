@@ -14,6 +14,7 @@ import {
 
 import { Outlet, useNavigate } from "react-router-dom";
 import UserHeader from "../components/UserHeader";
+import CemeterySelector from "../components/CemeterySelector";
 
 const SidebarItem = ({ icon: Icon, label }) => (
   <div className="flex items-center gap-3 px-4 py-3 hover:bg-[#d8e9c0] rounded-xl cursor-pointer transition">
@@ -123,13 +124,20 @@ function Dashboard() {
       {/* Conteúdo */}
       <div className="flex-1 flex flex-col bg-[#cde1b1]">
         {/* Cabeçalho */}
-        <header className="bg-[#cde1b1] px-6 py-4 relative flex items-center justify-end">
-          <div className="absolute left-1/2 transform -translate-x-1/2">
+        <header className="bg-[#cde1b1] px-6 py-4 relative header-elevate flex items-center justify-end">
+          {/* seletor à esquerda, centralizado verticalmente */}
+          <div className="absolute left-6 top-1/2 -translate-y-1/2">
+            <CemeterySelector onSelected={() => { /* opcional: window.location.reload(); */ }} />
+          </div>
+
+          {/* título central */}
+          <div className="absolute left-1/2 -translate-x-1/2">
             <h1 className="text-2xl font-bold text-green-900">Gestão de Cemitérios</h1>
           </div>
+
+          {/* usuário à direita */}
           <UserHeader />
         </header>
-
         {/* Conteúdo principal com rotas dinâmicas */}
         <main className="flex-1 bg-white p-8 rounded-tl-3xl">
           <Outlet />

@@ -53,9 +53,38 @@ class PrefeituraRestritaQuerysetMixin:
             return qs.none()
 
         return qs.filter(**{self.prefeitura_field: pref})
+    
+class ContextoRestritoQuerysetMixin:
+    """
+    Só filtra por cemitério se o ViewSet informar cemiterio_field.
+    Caso contrário, usa o filtro por prefeitura (prefeitura_field).
+    """
+    cemiterio_field = None       # ex.: "cemiterio", "quadra__cemiterio", ...
+    prefeitura_field = None      # ex.: "prefeitura", "cemiterio__prefeitura", ...
 
-# ✅ Cemitérios
-# views_api.py
+    def get_queryset(self):
+        qs = self.queryset
+        if not self.request.user.is_authenticated:
+            return qs.none()
+
+        cem_id = (self.request.query_params.get("cemiterio")
+                  or self.request.session.get("cemiterio_ativo"))
+        pref_id = self.request.query_params.get("prefeitura")
+        if not pref_id:
+            pref = getattr(self.request, "prefeitura_ativa", None)
+            pref_id = getattr(pref, "id", None) if pref else None
+
+        if cem_id and self.cemiterio_field:
+            return qs.filter(**{self.cemiterio_field: cem_id})
+
+        if pref_id and self.prefeitura_field:
+            return qs.filter(**{self.prefeitura_field: pref_id})
+
+        return qs.none()
+
+
+
+# ✅ Cemitérios – mantém como está (filtra só por prefeitura)
 class CemiterioViewSet(PrefeituraRestritaQuerysetMixin, viewsets.ModelViewSet):
     queryset = Cemiterio.objects.all()
     serializer_class = CemiterioSerializer
@@ -63,7 +92,6 @@ class CemiterioViewSet(PrefeituraRestritaQuerysetMixin, viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = super().get_queryset()
-        # fallback local (afeta só CEMITÉRIO)
         if not qs.exists():
             pref_id = self.request.query_params.get("prefeitura")
             if pref_id:
@@ -80,41 +108,53 @@ class CemiterioViewSet(PrefeituraRestritaQuerysetMixin, viewsets.ModelViewSet):
         serializer.save(prefeitura=pref)
 
 
-# ✅ Quadras
-class QuadraViewSet(PrefeituraRestritaQuerysetMixin, viewsets.ModelViewSet):
+# ✅ Quadras – agora filtra por cemitério se houver
+class QuadraViewSet(ContextoRestritoQuerysetMixin, viewsets.ModelViewSet):
     queryset = Quadra.objects.all()
     serializer_class = QuadraSerializer
+    cemiterio_field = "cemiterio"
     prefeitura_field = "cemiterio__prefeitura"
 
+
 # ✅ Túmulos
-class TumuloViewSet(PrefeituraRestritaQuerysetMixin, viewsets.ModelViewSet):
+class TumuloViewSet(ContextoRestritoQuerysetMixin, viewsets.ModelViewSet):
     queryset = Tumulo.objects.all()
     serializer_class = TumuloSerializer
+    cemiterio_field = "quadra__cemiterio"
     prefeitura_field = "quadra__cemiterio__prefeitura"
 
+
 # ✅ Sepultados
-class SepultadoViewSet(PrefeituraRestritaQuerysetMixin, viewsets.ModelViewSet):
+class SepultadoViewSet(ContextoRestritoQuerysetMixin, viewsets.ModelViewSet):
     queryset = Sepultado.objects.all()
     serializer_class = SepultadoSerializer
+    cemiterio_field = "tumulo__quadra__cemiterio"
     prefeitura_field = "tumulo__quadra__cemiterio__prefeitura"
+
 
 # ✅ Contratos de concessão
-class ConcessaoContratoViewSet(PrefeituraRestritaQuerysetMixin, viewsets.ModelViewSet):
+class ConcessaoContratoViewSet(ContextoRestritoQuerysetMixin, viewsets.ModelViewSet):
     queryset = ConcessaoContrato.objects.all()
     serializer_class = ConcessaoContratoSerializer
+    cemiterio_field = "tumulo__quadra__cemiterio"
     prefeitura_field = "tumulo__quadra__cemiterio__prefeitura"
+
 
 # ✅ Exumações
-class ExumacaoViewSet(PrefeituraRestritaQuerysetMixin, viewsets.ModelViewSet):
+class ExumacaoViewSet(ContextoRestritoQuerysetMixin, viewsets.ModelViewSet):
     queryset = Exumacao.objects.all()
     serializer_class = ExumacaoSerializer
+    cemiterio_field = "tumulo__quadra__cemiterio"
     prefeitura_field = "tumulo__quadra__cemiterio__prefeitura"
 
+
 # ✅ Translados
-class TransladoViewSet(PrefeituraRestritaQuerysetMixin, viewsets.ModelViewSet):
+class TransladoViewSet(ContextoRestritoQuerysetMixin, viewsets.ModelViewSet):
     queryset = Translado.objects.all()
     serializer_class = TransladoSerializer
+    cemiterio_field = "tumulo_destino__quadra__cemiterio"
     prefeitura_field = "tumulo_destino__quadra__cemiterio__prefeitura"
+
 
 # ✅ Receitas
 class ReceitaViewSet(PrefeituraRestritaQuerysetMixin, viewsets.ModelViewSet):
@@ -516,4 +556,36 @@ class PrefeituraLogadaAPIView(APIView):
 
         print(serializer.errors)  # 👈 Adicione esta linha
         return Response(serializer.errors, status=400)
+
+
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
+
+class CemiterioLogadoAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        cem_id = request.session.get("cemiterio_ativo")
+        cem = Cemiterio.objects.filter(id=cem_id).first() if cem_id else None
+        data = CemiterioSerializer(cem).data if cem else None
+        return Response(data)
+
+    def post(self, request):
+        cem_id = request.data.get("cemiterio")
+        if not cem_id:
+            return Response({"detail": "Campo 'cemiterio' obrigatório."}, status=400)
+
+        # opcional: garantir que é da prefeitura ativa
+        pref = getattr(request, "prefeitura_ativa", None)
+        qs = Cemiterio.objects.all()
+        if pref:
+            qs = qs.filter(prefeitura=pref)
+
+        cem = qs.filter(id=cem_id).first()
+        if not cem:
+            return Response({"detail": "Cemitério inválido."}, status=400)
+
+        request.session["cemiterio_ativo"] = cem.id
+        return Response({"ok": True})
 

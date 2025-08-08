@@ -32,3 +32,17 @@
 .home-button:hover {
   background-color: #41762d;
 }
+
+/* Header acima do mapa */
+.header-elevate { position: relative; z-index: 6000 !important; }
+
+/* Pane/controles do Leaflet ficam abaixo do header e dropdown */
+.leaflet-container,
+.leaflet-pane,
+.leaflet-map-pane,
+.leaflet-top,
+.leaflet-bottom,
+.leaflet-control,
+.leaflet-control-container {
+  z-index: 0 !important;
+}
