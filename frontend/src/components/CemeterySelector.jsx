@@ -1,3 +1,4 @@
+// Projeto/frontend/src/components/CemeterySelector.jsx
 import React, { useEffect, useMemo, useState, useRef } from "react";
 import axios from "axios";
 
@@ -27,11 +28,26 @@ export default function CemeterySelector({ onSelected }) {
     [token]
   );
 
+  // ---- helper: sincroniza sessão do backend com o cemitério escolhido ----
+  async function syncSessaoBackend(cemiterioId) {
+    if (!cemiterioId) return;
+    try {
+      await api.post("selecionar-cemiterio/", { cemiterio_id: Number(cemiterioId) });
+    } catch (e) {
+      console.error(
+        "Falha ao sincronizar cemitério na sessão do backend:",
+        e?.response?.data || e
+      );
+    }
+  }
+
+  // Carrega a lista de cemitérios (com fallbacks de filtro)
   useEffect(() => {
     const fetch = async () => {
       try {
         setLoading(true);
-        // carrega a PREF com prioridade quando disponível
+
+        // tenta descobrir a prefeitura do usuário (opcional, só para fallback)
         let prefId = null;
         try {
           const a = await api.get("prefeitura-logada/");
@@ -44,17 +60,31 @@ export default function CemeterySelector({ onSelected }) {
           } catch {}
         }
 
-        const url = prefId ? `${ENDPOINT}?prefeitura=${prefId}` : ENDPOINT;
-        const res = await api.get(url);
-        const data = Array.isArray(res.data) ? res.data : res.data?.results || [];
+        // 1) Tenta SEM filtro (se o backend já usa prefeitura/cemitério da sessão)
+        let res = await api.get(ENDPOINT);
+        let data = Array.isArray(res.data) ? res.data : res.data?.results || [];
+
+        // 2) Se vier vazio, tenta com ?prefeitura=
+        if ((!data || data.length === 0) && prefId) {
+          res = await api.get(`${ENDPOINT}?prefeitura=${prefId}`);
+          data = Array.isArray(res.data) ? res.data : res.data?.results || [];
+        }
+
+        // 3) Se ainda vazio, tenta com ?prefeitura_id=
+        if ((!data || data.length === 0) && prefId) {
+          res = await api.get(`${ENDPOINT}?prefeitura_id=${prefId}`);
+          data = Array.isArray(res.data) ? res.data : res.data?.results || [];
+        }
 
         setLista(data);
 
-        // se tem ativo salvo, tente achar o nome certo
-        if (ativoId && !ativoNome) {
+        // se tem ativo salvo, tente achar o nome certo e reconfirmar sessão
+        if (ativoId) {
           const achado = data.find((c) => String(c.id) === String(ativoId));
           if (achado) {
-            setAtivoNome(achado.nome);
+            if (!ativoNome || ativoNome === "Cemitério") setAtivoNome(achado.nome);
+            // Garante que a sessão do backend está alinhada após refresh
+            syncSessaoBackend(achado.id);
           }
         }
       } catch (e) {
@@ -65,9 +95,10 @@ export default function CemeterySelector({ onSelected }) {
       }
     };
     fetch();
-  }, [api]); // token muda api
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [api]);
 
-  const filtrados = useMemo(() => {
+  const filtrados = React.useMemo(() => {
     const q = busca.trim().toLowerCase();
     if (!q) return lista;
     return lista.filter((c) => {
@@ -78,17 +109,28 @@ export default function CemeterySelector({ onSelected }) {
     });
   }, [lista, busca]);
 
-  function escolher(cem) {
-    localStorage.setItem("cemiterioAtivoId", cem.id);
+  async function escolher(cem) {
+    // 1) Persistência local (duplo formato para compatibilidade)
+    localStorage.setItem("cemiterioAtivoId", String(cem.id));
     localStorage.setItem("cemiterioAtivoNome", cem.nome);
+    localStorage.setItem(
+      "cemiterioAtivo",
+      JSON.stringify({ id: Number(cem.id), nome: cem.nome })
+    );
+
+    // 2) Estado do componente
     setAtivoId(String(cem.id));
     setAtivoNome(cem.nome);
     setOpen(false);
 
-    // callback opcional
+    // 3) Sessão no backend (DRF vai herdar automaticamente)
+    await syncSessaoBackend(cem.id);
+
+    // 4) Callback e broadcast (outras telas podem ouvir e recarregar)
     onSelected?.(cem);
-    // evento global opcional (outra telas podem ouvir)
     window.dispatchEvent(new CustomEvent("cemiterio:changed", { detail: cem }));
+    // Se preferir forçar reload da página atual:
+    // window.location.reload();
   }
 
   // fecha dropdown ao clicar fora
@@ -113,9 +155,7 @@ export default function CemeterySelector({ onSelected }) {
       >
         <span className="truncate">{ativoNome || "Cemitério"}</span>
         <svg
-          className={`w-4 h-4 ml-2 transition-transform ${
-            open ? "rotate-180" : ""
-          }`}
+          className={`w-4 h-4 ml-2 transition-transform ${open ? "rotate-180" : ""}`}
           fill="none"
           stroke="currentColor"
           viewBox="0 0 24 24"
@@ -124,11 +164,9 @@ export default function CemeterySelector({ onSelected }) {
         </svg>
       </button>
 
-      {/* Dropdown */}
+      {/* Dropdown (exatamente abaixo do botão) */}
       {open && (
-        <div
-          className="absolute top-full left-0 mt-2 w-full bg-white rounded-xl shadow-2xl border border-[#e0efcf] z-[9999]"
-        >
+        <div className="absolute top-full left-0 mt-2 w-full bg-white rounded-xl shadow-2xl border border-[#e0efcf] z-[9999]">
           {/* Campo de busca */}
           <div className="p-2 border-b border-[#e6f2d9]">
             <input
@@ -141,9 +179,8 @@ export default function CemeterySelector({ onSelected }) {
           </div>
 
           <div className="max-h-[340px] overflow-auto">
-            {loading && (
-              <div className="px-3 py-3 text-sm text-gray-600">Carregando…</div>
-            )}
+            {loading && <div className="px-3 py-3 text-sm text-gray-600">Carregando…</div>}
+
             {!loading &&
               filtrados.map((c) => (
                 <div

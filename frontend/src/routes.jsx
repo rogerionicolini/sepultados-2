@@ -18,7 +18,8 @@ import DashboardResumo from "./pages/DashboardResumo";
 import Dados from "./pages/Dados";
 import Usuarios from "./pages/Usuarios";
 import Licenca from "./pages/Licenca";
-import Cemiterios from "./pages/Cemiterios"; // ✅ NOVO
+import Cemiterios from "./pages/Cemiterios"; 
+import Quadras from "./pages/Quadras";
 
 const AppRoutes = () => (
   <Routes>
@@ -46,7 +47,8 @@ const AppRoutes = () => (
       <Route path="dados" element={<Dados />} />
       <Route path="usuarios" element={<Usuarios />} />
       <Route path="licenca" element={<Licenca />} />
-      <Route path="cemiterios" element={<Cemiterios />} /> {/* ✅ NOVO */}
+      <Route path="cemiterios" element={<Cemiterios />} />
+      <Route path="/quadras" element={<Quadras />} />
       {/* Quando tiver as páginas, adicione:
           <Route path="quadras" element={<Quadras />} />
           <Route path="tumulos" element={<Tumulos />} />
