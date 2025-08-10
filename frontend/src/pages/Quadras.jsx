@@ -1,23 +1,39 @@
 // src/pages/Quadras.jsx
-import React, { useEffect, useMemo, useState, useCallback } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import axios from "axios";
+import { getCemiterioAtivo } from "../utils/cemiterioStorage";
 
 const API_BASE = "http://127.0.0.1:8000/api/";
-const ENDPOINT = "quadras/";
+const QUADRAS_EP = "quadras/";
+const TUMULOS_EP = "tumulos/";
 
-// Lê o cemitério ativo do localStorage (aceita os dois formatos usados no app)
-function getCemiterioAtivo() {
-  try {
-    const raw = localStorage.getItem("cemiterioAtivo");
-    if (raw) {
-      const o = JSON.parse(raw);
-      if (o?.id) return { id: Number(o.id), nome: o.nome || "Cemitério" };
-    }
-  } catch {}
-  const id = localStorage.getItem("cemiterioAtivoId");
-  const nome = localStorage.getItem("cemiterioAtivoNome");
-  if (id) return { id: Number(id), nome: nome || "Cemitério" };
-  return null;
+/* --- helpers de status (mesmo critério em todas as telas) --- */
+function normalizeStatus(raw) {
+  if (raw == null) return null;
+  const s = String(raw)
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, ""); // tira acento
+  if (s.includes("ocup")) return "ocupado";
+  if (s.includes("reserv")) return "reservado";
+  if (s.includes("disp")) return "disponivel";
+  return s || null;
+}
+
+function StatusPill({ status }) {
+  const s = normalizeStatus(status);
+  const cls =
+    s === "ocupado"
+      ? "bg-red-100 text-red-800 border-red-300"
+      : s === "reservado"
+      ? "bg-amber-100 text-amber-800 border-amber-300"
+      : "bg-green-100 text-green-800 border-green-300";
+  return (
+    <span className={`px-2 py-0.5 rounded border font-semibold ${cls}`}>
+      {s ?? "-"}
+    </span>
+  );
 }
 
 export default function Quadras() {
@@ -29,71 +45,63 @@ export default function Quadras() {
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState("");
 
+  // expansão + túmulos por quadra
+  const [expanded, setExpanded] = useState({});
+  const [loadingTumulos, setLoadingTumulos] = useState({});
+  const [tumulosByQuadra, setTumulosByQuadra] = useState({});
+
+  // modal (se estiver usando criação/edição)
   const [modalOpen, setModalOpen] = useState(false);
   const [editando, setEditando] = useState(null);
   const [salvando, setSalvando] = useState(false);
   const [form, setForm] = useState({ codigo: "" });
 
   const token = localStorage.getItem("accessToken");
-  const api = useMemo(
-    () =>
-      axios.create({
-        baseURL: API_BASE,
-        headers: { Authorization: `Bearer ${token}` },
-      }),
-    [token]
-  );
+  const api = axios.create({
+    baseURL: API_BASE,
+    headers: { Authorization: `Bearer ${token}` },
+  });
 
-  // -------- helpers (mesmo padrão do Cemitérios: usa ?prefeitura=) ----------
-  const listar = async () => {
-    // sempre filtra pelo cemitério ativo se existir
+  const qsWith = (base, params = {}) => {
     const qs = new URLSearchParams();
     if (prefeituraId) qs.set("prefeitura", prefeituraId);
-    if (cemAtivo?.id) qs.set("cemiterio", cemAtivo.id);
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== "") qs.set(k, v);
+    });
+    const s = qs.toString();
+    return s ? `${base}?${s}` : base;
+  };
 
-    const url = qs.toString()
-      ? `${ENDPOINT}?${qs.toString()}`
-      : ENDPOINT;
-
+  // ------- API helpers -------
+  const listarQuadras = async () => {
+    const url = qsWith(QUADRAS_EP, { cemiterio: cemAtivo?.id });
     const res = await api.get(url);
     const data = res.data;
     return Array.isArray(data) ? data : data?.results ?? [];
   };
 
-  const criar = (payload) => {
-    const qs = prefeituraId ? `?prefeitura=${prefeituraId}` : "";
-    return api.post(`${ENDPOINT}${qs}`, payload, {
+  const listarTumulosDaQuadra = async (quadraId) => {
+    // IMPORTANTE: filtra por quadra + cemitério
+    const url = qsWith(TUMULOS_EP, { quadra: quadraId, cemiterio: cemAtivo?.id });
+    const res = await api.get(url);
+    const data = res.data;
+    return Array.isArray(data) ? data : data?.results ?? [];
+  };
+
+  const criar = (payload) =>
+    api.post(qsWith(QUADRAS_EP, { cemiterio: cemAtivo?.id }), payload, {
       headers: { "Content-Type": "application/json" },
     });
-  };
 
-  const atualizar = (id, payload) => {
-    const qs = prefeituraId ? `?prefeitura=${prefeituraId}` : "";
-    return api.put(`${ENDPOINT}${id}/${qs}`, payload, {
+  const atualizar = (id, payload) =>
+    api.put(qsWith(`${QUADRAS_EP}${id}/`, { cemiterio: cemAtivo?.id }), payload, {
       headers: { "Content-Type": "application/json" },
     });
-  };
 
-  const deletar = (id) => {
-    const qs = prefeituraId ? `?prefeitura=${prefeituraId}` : "";
-    return api.delete(`${ENDPOINT}${id}/${qs}`);
-  };
+  const deletar = (id) =>
+    api.delete(qsWith(`${QUADRAS_EP}${id}/`, { cemiterio: cemAtivo?.id }));
 
-  async function carregar() {
-    try {
-      setLoading(true);
-      setErro("");
-      const data = await listar();
-      setItens(data);
-    } catch (e) {
-      console.error("listar ERRO:", e?.response?.status, e?.response?.data || e);
-      setErro("Não foi possível carregar as quadras.");
-      setItens([]);
-    } finally {
-      setLoading(false);
-    }
-  }
-
+  // ------- carregadores -------
   async function carregarPrefeitura() {
     try {
       let id = null;
@@ -111,7 +119,30 @@ export default function Quadras() {
     }
   }
 
-  // Ouve troca do cemitério (seletor)
+  async function carregar() {
+    if (!cemAtivo?.id) {
+      setItens([]);
+      setLoading(false);
+      return;
+    }
+    try {
+      setLoading(true);
+      setErro("");
+      const data = await listarQuadras();
+      setItens(data);
+      // ao trocar de cemitério, limpa expansões e caches
+      setExpanded({});
+      setTumulosByQuadra({});
+    } catch (e) {
+      console.error("listar ERRO:", e?.response?.status, e?.response?.data || e);
+      setErro("Não foi possível carregar as quadras.");
+      setItens([]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // ouvir troca do cemitério (broadcast do selector/utils)
   useEffect(() => {
     const onChanged = (e) => setCemAtivo(e?.detail || getCemiterioAtivo());
     const onStorage = () => setCemAtivo(getCemiterioAtivo());
@@ -141,7 +172,7 @@ export default function Quadras() {
     );
   }, [itens, busca]);
 
-  // --------- ações ---------
+  // ------- UI actions -------
   function abrirCriar() {
     setEditando(null);
     setForm({ codigo: "" });
@@ -169,17 +200,12 @@ export default function Quadras() {
       const payload = {
         codigo: (form.codigo || "").trim(),
         cemiterio: Number(cemAtivo.id),
-        // não enviamos prefeitura no payload para evitar erro de campo desconhecido
       };
-
       if (!payload.codigo) return setErro("Informe o código da quadra.");
 
       const id = editando?.id ?? editando?.pk;
-      if (id) {
-        await atualizar(id, payload); // PUT (padrão do Cemitérios)
-      } else {
-        await criar(payload);
-      }
+      if (id) await atualizar(id, payload);
+      else await criar(payload);
 
       setModalOpen(false);
       await carregar();
@@ -206,7 +232,25 @@ export default function Quadras() {
     }
   }
 
-  // Sem cemitério = aviso imediato
+  async function toggleExpand(q) {
+    const qid = q.id ?? q.pk;
+    setExpanded((s) => ({ ...s, [qid]: !s[qid] }));
+
+    if (!tumulosByQuadra[qid]) {
+      try {
+        setLoadingTumulos((m) => ({ ...m, [qid]: true }));
+        const lista = await listarTumulosDaQuadra(qid);
+        setTumulosByQuadra((m) => ({ ...m, [qid]: lista }));
+      } catch (e) {
+        console.warn("tumulos da quadra erro:", e?.response?.status, e?.response?.data || e);
+        setTumulosByQuadra((m) => ({ ...m, [qid]: [] }));
+      } finally {
+        setLoadingTumulos((m) => ({ ...m, [qid]: false }));
+      }
+    }
+  }
+
+  // ------- render -------
   if (!cemAtivo?.id) {
     return (
       <div className="text-sm text-red-600">
@@ -217,10 +261,8 @@ export default function Quadras() {
 
   return (
     <div className="space-y-6">
-      {/* Header (mesmo padrão do Cemitérios) */}
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-bold text-green-900">Quadras</h2>
-
         <div className="flex items-center gap-2">
           <button
             onClick={abrirCriar}
@@ -256,41 +298,114 @@ export default function Quadras() {
             <table className="min-w-full text-sm">
               <thead>
                 <tr className="text-left text-green-900 bg-[#e6f3d7]">
-                  <th className="py-2 px-3 rounded-l-lg">Código</th>
+                  <th className="py-2 px-3 rounded-l-lg w-6"></th>
+                  <th className="py-2 px-3">Código</th>
                   <th className="py-2 px-3 w-40 rounded-r-lg">Ações</th>
                 </tr>
               </thead>
               <tbody className="bg-white/50">
                 {filtrados.map((q, idx) => {
-                  const id = q.id ?? q.pk;
+                  const qid = q.id ?? q.pk;
                   return (
-                    <tr
-                      key={id ?? `${q.codigo || q.nome}-${idx}`}
-                      className="border-top border-[#d8e9c0] hover:bg-white"
-                    >
-                      <td className="py-2 px-3">{q.codigo || q.nome}</td>
-                      <td className="py-2 px-3">
-                        <div className="flex gap-2">
+                    <React.Fragment key={qid ?? `${q.codigo || q.nome}-${idx}`}>
+                      <tr className="border-top border-[#d8e9c0] hover:bg-white">
+                        <td className="py-2 px-3">
                           <button
-                            onClick={() => abrirEditar(q)}
-                            className="px-3 py-1 rounded bg-[#f2b705] text-white hover:opacity-90"
+                            onClick={() => toggleExpand(q)}
+                            className="rounded border border-[#bcd2a7] px-1.5 text-xs bg-white hover:bg-[#f7fbf2]"
+                            title={expanded[qid] ? "Fechar" : "Abrir"}
                           >
-                            Editar
+                            {expanded[qid] ? "▲" : "▼"}
                           </button>
-                          <button
-                            onClick={() => excluir(id)}
-                            className="px-3 py-1 rounded bg-[#e05151] text-white hover:opacity-90"
-                          >
-                            Excluir
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
+                        </td>
+                        <td className="py-2 px-3">{q.codigo || q.nome}</td>
+                        <td className="py-2 px-3">
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => abrirEditar(q)}
+                              className="px-3 py-1 rounded bg-[#f2b705] text-white hover:opacity-90"
+                            >
+                              Editar
+                            </button>
+                            <button
+                              onClick={() => excluir(qid)}
+                              className="px-3 py-1 rounded bg-[#e05151] text-white hover:opacity-90"
+                            >
+                              Excluir
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+
+                      {expanded[qid] && (
+                        <tr className="bg-white">
+                          <td colSpan={3} className="px-3 py-3">
+                            <div className="rounded-lg border border-[#e0efcf] p-3">
+                              <div className="text-green-900 font-semibold mb-2">
+                                Túmulos da quadra {q.codigo || q.nome}
+                              </div>
+
+                              {loadingTumulos[qid] ? (
+                                <div className="text-gray-600">Carregando…</div>
+                              ) : (tumulosByQuadra[qid] || []).length === 0 ? (
+                                <div className="text-gray-600">Nenhum túmulo nesta quadra.</div>
+                              ) : (
+                                <div className="overflow-x-auto">
+                                  <table className="min-w-full text-sm">
+                                    <thead>
+                                      <tr className="text-left bg-[#eef7e6] text-green-900">
+                                        <th className="py-1 px-2 rounded-l">Identificador</th>
+                                        <th className="py-1 px-2">Linha</th>
+                                        <th className="py-1 px-2">Capacidade</th>
+                                        <th className="py-1 px-2 rounded-r">Status</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {(tumulosByQuadra[qid] || []).map((t, i2) => {
+                                        const backendStatus =
+                                          t.status ??
+                                          t.status_display ??
+                                          t.status_text ??
+                                          t.status_label;
+                                        const status =
+                                          normalizeStatus(backendStatus) ??
+                                          // fallback antigo (evitar inconsistência, só se backend não enviar nada)
+                                          (t.reservado
+                                            ? "reservado"
+                                            : Number(t.sepultados_total || 0) > 0
+                                            ? "ocupado"
+                                            : "disponivel");
+
+                                        return (
+                                          <tr key={t.id ?? i2} className="border-t">
+                                            <td className="py-1 px-2">{t.identificador || t.nome || "-"}</td>
+                                            <td className="py-1 px-2">
+                                              {t.usar_linha && (t.linha || t.linha === 0) ? t.linha : "-"}
+                                            </td>
+                                            <td className="py-1 px-2">
+                                              {t.capacidade || t.capacidade === 0 ? t.capacidade : "-"}
+                                            </td>
+                                            <td className="py-1 px-2">
+                                              <StatusPill status={status} />
+                                            </td>
+                                          </tr>
+                                        );
+                                      })}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
                   );
                 })}
+
                 {filtrados.length === 0 && (
                   <tr>
-                    <td className="py-6 px-3 text-gray-600" colSpan={2}>
+                    <td className="py-6 px-3 text-gray-600" colSpan={3}>
                       Nada encontrado.
                     </td>
                   </tr>
@@ -300,12 +415,10 @@ export default function Quadras() {
           </div>
         )}
 
-        {erro && itens.length > 0 && (
-          <div className="text-red-600 mt-3">{erro}</div>
-        )}
+        {erro && itens.length > 0 && <div className="text-red-600 mt-3">{erro}</div>}
       </div>
 
-      {/* Modal criar/editar (mesma paleta do Cemitérios) */}
+      {/* Modal criar/editar (opcional) */}
       {modalOpen && (
         <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
           <div className="bg-white w-full max-w-md rounded-2xl p-6 shadow-2xl">

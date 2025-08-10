@@ -1,5 +1,24 @@
-from rest_framework import viewsets
+# sepultados_gestao/views_api.py
+from datetime import date
+import uuid
+import base64
+
+from django.conf import settings
+from django.core.files.base import ContentFile
+from django.core.mail import send_mail
+from django.http import HttpResponse
+from django.shortcuts import get_object_or_404
+from django.utils import timezone
+from django.contrib.auth import get_user_model
+
+from rest_framework import status, viewsets
+from rest_framework.decorators import action, api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.views import APIView
+
 from .models import (
+    Prefeitura,
     Cemiterio,
     ConcessaoContrato,
     Exumacao,
@@ -9,8 +28,14 @@ from .models import (
     Sepultado,
     Translado,
     Tumulo,
+    EmailConfirmacao,
+    CadastroPrefeituraPendente,
+    Plano,
+    Licenca,
 )
 from .serializers import (
+    PrefeituraSerializer,
+    PlanoSerializer,
     CemiterioSerializer,
     ConcessaoContratoSerializer,
     ExumacaoSerializer,
@@ -22,14 +47,24 @@ from .serializers import (
     TumuloSerializer,
 )
 
-# ✅ Mixin para filtrar os dados pela prefeitura ativa do usuário
+# Tenta importar a função que gera o PDF do túmulo (ajuste o caminho se necessário)
+try:
+    # Ex.: arquivo sepultados_gestao/relatorios/tumulo.py com função build_tumulo_pdf(tumulo) -> bytes
+    from .relatorios.tumulo import build_tumulo_pdf  # <-- AJUSTE se o caminho for outro
+except Exception:
+    build_tumulo_pdf = None
+
+
+# ===========================
+# MIXINS DE FILTRAGEM
+# ===========================
 class PrefeituraRestritaQuerysetMixin:
     """
     - Se existir request.prefeitura_ativa, usa ela.
     - Caso contrário, aceita ?prefeitura=<id> na querystring.
     - Se nada disso existir, retorna queryset vazio.
     """
-    prefeitura_field = "prefeitura"  # padrão
+    prefeitura_field = "prefeitura"  # nome do campo FK para Prefeitura
 
     def get_queryset(self):
         qs = self.queryset
@@ -39,39 +74,39 @@ class PrefeituraRestritaQuerysetMixin:
             return qs.none()
 
         pref = getattr(req, "prefeitura_ativa", None)
-
-        # Fallback: aceita ?prefeitura=ID
         if not pref:
             pref_id = req.query_params.get("prefeitura")
             if pref_id:
-                try:
-                    pref = Prefeitura.objects.get(pk=pref_id)
-                except Prefeitura.DoesNotExist:
-                    return qs.none()
+                pref = Prefeitura.objects.filter(pk=pref_id).first()
 
         if not pref:
             return qs.none()
 
+        # aceita objeto ou id; se seu campo for *_id, troque para f"{self.prefeitura_field}_id"
         return qs.filter(**{self.prefeitura_field: pref})
-    
+
+
 class ContextoRestritoQuerysetMixin:
     """
-    Só filtra por cemitério se o ViewSet informar cemiterio_field.
-    Caso contrário, usa o filtro por prefeitura (prefeitura_field).
+    Filtra por cemitério (se informado `cemiterio_field` e houver `cemiterio` na query/sessão)
+    ou então por prefeitura (se informado `prefeitura_field`).
+    Se nada disso existir, retorna vazio.
     """
-    cemiterio_field = None       # ex.: "cemiterio", "quadra__cemiterio", ...
-    prefeitura_field = None      # ex.: "prefeitura", "cemiterio__prefeitura", ...
+    cemiterio_field = None       # ex.: "cemiterio", "quadra__cemiterio"
+    prefeitura_field = None      # ex.: "prefeitura", "cemiterio__prefeitura"
 
     def get_queryset(self):
         qs = self.queryset
-        if not self.request.user.is_authenticated:
+        req = self.request
+
+        if not req.user.is_authenticated:
             return qs.none()
 
-        cem_id = (self.request.query_params.get("cemiterio")
-                  or self.request.session.get("cemiterio_ativo"))
-        pref_id = self.request.query_params.get("prefeitura")
+        cem_id = req.query_params.get("cemiterio") or req.session.get("cemiterio_ativo")
+
+        pref_id = req.query_params.get("prefeitura")
         if not pref_id:
-            pref = getattr(self.request, "prefeitura_ativa", None)
+            pref = getattr(req, "prefeitura_ativa", None)
             pref_id = getattr(pref, "id", None) if pref else None
 
         if cem_id and self.cemiterio_field:
@@ -83,12 +118,14 @@ class ContextoRestritoQuerysetMixin:
         return qs.none()
 
 
-
-# ✅ Cemitérios – mantém como está (filtra só por prefeitura)
+# ===========================
+# VIEWSETS PRINCIPAIS
+# ===========================
 class CemiterioViewSet(PrefeituraRestritaQuerysetMixin, viewsets.ModelViewSet):
     queryset = Cemiterio.objects.all()
     serializer_class = CemiterioSerializer
     prefeitura_field = "prefeitura"
+    permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -103,96 +140,201 @@ class CemiterioViewSet(PrefeituraRestritaQuerysetMixin, viewsets.ModelViewSet):
         if not pref:
             pref_id = self.request.query_params.get("prefeitura")
             if pref_id:
-                from .models import Prefeitura
                 pref = Prefeitura.objects.filter(pk=pref_id).first()
         serializer.save(prefeitura=pref)
 
 
-# ✅ Quadras – agora filtra por cemitério se houver
 class QuadraViewSet(ContextoRestritoQuerysetMixin, viewsets.ModelViewSet):
     queryset = Quadra.objects.all()
     serializer_class = QuadraSerializer
     cemiterio_field = "cemiterio"
     prefeitura_field = "cemiterio__prefeitura"
+    permission_classes = [IsAuthenticated]
 
 
-# ✅ Túmulos
-class TumuloViewSet(ContextoRestritoQuerysetMixin, viewsets.ModelViewSet):
+# --- INÍCIO: trecho para colar no views_api.py ---
+
+from django.http import HttpResponse
+from django.shortcuts import get_object_or_404
+from rest_framework import status, viewsets
+from rest_framework.decorators import action
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+
+from .models import Tumulo
+from .serializers import TumuloSerializer
+
+# Importa a MESMA view de PDF usada no admin (no seu views.py)
+from .views import gerar_pdf_sepultados_tumulo as pdf_view
+
+
+class TumuloViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet dos Túmulos com:
+      - filtro por quadra/cemitério/prefeitura (via querystring ou sessão)
+      - action GET /api/tumulos/<id>/pdf_sepultados/ para abrir o mesmo PDF do admin
+    """
     queryset = Tumulo.objects.all()
     serializer_class = TumuloSerializer
-    cemiterio_field = "quadra__cemiterio"
-    prefeitura_field = "quadra__cemiterio__prefeitura"
+    permission_classes = [IsAuthenticated]
+
+    _cemiterio_field = "quadra__cemiterio_id"
+    _prefeitura_field = "quadra__cemiterio__prefeitura_id"
+
+    def _to_int(self, v):
+        try:
+            return int(v)
+        except Exception:
+            return None
+
+    def _context_ids(self, request):
+        """Coleta ids de contexto; querystring tem prioridade sobre sessão."""
+        pref_qs   = request.query_params.get("prefeitura") or request.query_params.get("prefeitura_id")
+        cem_qs    = request.query_params.get("cemiterio")  or request.query_params.get("cemiterio_id")
+        quadra_qs = request.query_params.get("quadra")     or request.query_params.get("quadra_id")
+
+        pref_sess = request.session.get("prefeitura_ativa_id")
+        cem_sess  = request.session.get("cemiterio_ativo")
+
+        pref_id   = self._to_int(pref_qs)   or self._to_int(pref_sess)
+        cem_id    = self._to_int(cem_qs)    or self._to_int(cem_sess)
+        quadra_id = self._to_int(quadra_qs)
+
+        return pref_id, cem_id, quadra_id
+
+    def get_queryset(self):
+        qs = super().get_queryset().select_related("quadra", "quadra__cemiterio")
+        if not self.request.user.is_authenticated:
+            return qs.none()
+
+        pref_id, cem_id, quadra_id = self._context_ids(self.request)
+
+        # PRIORIDADE: quadra > cemitério > prefeitura
+        if quadra_id:
+            qs = qs.filter(quadra_id=quadra_id)
+        elif cem_id:
+            qs = qs.filter(**{self._cemiterio_field: cem_id})
+        elif pref_id:
+            qs = qs.filter(**{self._prefeitura_field: pref_id})
+        else:
+            return qs.none()
+
+        return qs
+
+    @action(detail=True, methods=["get"], url_path="pdf_sepultados")
+    def pdf_sepultados(self, request, pk=None):
+        """
+        Abre o mesmo PDF do admin.
+        Ex.: GET /api/tumulos/<id>/pdf_sepultados/?cemiterio=<id>&prefeitura=<id>
+        """
+        tumulo = get_object_or_404(
+            Tumulo.objects.select_related("quadra", "quadra__cemiterio"), pk=pk
+        )
+
+        pref_id, cem_id, _ = self._context_ids(request)
+        if cem_id and str(tumulo.quadra.cemiterio_id) != str(cem_id):
+            return Response({"detail": "Acesso negado para este túmulo (cemitério)."}, status=403)
+        if pref_id and str(tumulo.quadra.cemiterio.prefeitura_id) != str(pref_id):
+            return Response({"detail": "Acesso negado para este túmulo (prefeitura)."}, status=403)
+
+        try:
+            return pdf_view(request._request, tumulo_pk=tumulo.pk)
+        except TypeError:
+            try:
+                return pdf_view(request._request, pk=tumulo.pk)
+            except TypeError:
+                try:
+                    return pdf_view(request._request, id=tumulo.pk)
+                except TypeError as e:
+                    return Response(
+                        {"detail": f"Assinatura inesperada da view de PDF: {e}"},
+                        status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    )
+        except Exception as e:
+            return Response({"detail": f"Erro ao gerar PDF: {e}"}, status=500)
 
 
-# ✅ Sepultados
+
+# views_api.py
+from rest_framework import viewsets
+from rest_framework.permissions import IsAuthenticated
+
 class SepultadoViewSet(ContextoRestritoQuerysetMixin, viewsets.ModelViewSet):
     queryset = Sepultado.objects.all()
     serializer_class = SepultadoSerializer
     cemiterio_field = "tumulo__quadra__cemiterio"
     prefeitura_field = "tumulo__quadra__cemiterio__prefeitura"
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        # aplica o filtro de prefeitura/cemitério do mixin
+        qs = (
+            super()
+            .get_queryset()
+            .select_related(
+                "tumulo",
+                "tumulo__quadra",
+                "tumulo__quadra__cemiterio",
+            )
+            .order_by("-data_sepultamento", "-id")
+        )
+
+        # 🔴 filtro específico do túmulo passado na query (?tumulo=ID)
+        tumulo_id = self.request.query_params.get("tumulo")
+        if tumulo_id:
+            qs = qs.filter(tumulo_id=tumulo_id)
+
+        return qs
 
 
-# ✅ Contratos de concessão
+
 class ConcessaoContratoViewSet(ContextoRestritoQuerysetMixin, viewsets.ModelViewSet):
     queryset = ConcessaoContrato.objects.all()
     serializer_class = ConcessaoContratoSerializer
     cemiterio_field = "tumulo__quadra__cemiterio"
     prefeitura_field = "tumulo__quadra__cemiterio__prefeitura"
+    permission_classes = [IsAuthenticated]
 
 
-# ✅ Exumações
 class ExumacaoViewSet(ContextoRestritoQuerysetMixin, viewsets.ModelViewSet):
     queryset = Exumacao.objects.all()
     serializer_class = ExumacaoSerializer
     cemiterio_field = "tumulo__quadra__cemiterio"
     prefeitura_field = "tumulo__quadra__cemiterio__prefeitura"
+    permission_classes = [IsAuthenticated]
 
 
-# ✅ Translados
 class TransladoViewSet(ContextoRestritoQuerysetMixin, viewsets.ModelViewSet):
     queryset = Translado.objects.all()
     serializer_class = TransladoSerializer
     cemiterio_field = "tumulo_destino__quadra__cemiterio"
     prefeitura_field = "tumulo_destino__quadra__cemiterio__prefeitura"
+    permission_classes = [IsAuthenticated]
 
 
-# ✅ Receitas
 class ReceitaViewSet(PrefeituraRestritaQuerysetMixin, viewsets.ModelViewSet):
     queryset = Receita.objects.all()
     serializer_class = ReceitaSerializer
     prefeitura_field = "prefeitura"
+    permission_classes = [IsAuthenticated]
 
-# ✅ Auditoria
+
 class RegistroAuditoriaViewSet(PrefeituraRestritaQuerysetMixin, viewsets.ModelViewSet):
     queryset = RegistroAuditoria.objects.all()
     serializer_class = RegistroAuditoriaSerializer
     prefeitura_field = "prefeitura"
+    permission_classes = [IsAuthenticated]
 
 
-
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status
-from django.contrib.auth import get_user_model
-from sepultados_gestao.models import EmailConfirmacao, CadastroPrefeituraPendente
-from django.db import transaction
-from django.core.mail import send_mail
-from django.utils import timezone
-from django.conf import settings
-from django.template.loader import render_to_string  # ✅ correto
-from datetime import date
-import uuid
-
+# ===========================
+# FLUXO DE CADASTRO/EMAIL
+# ===========================
 User = get_user_model()
 
 class RegistrarPrefeituraAPIView(APIView):
     permission_classes = []
 
     def enviar_email_confirmacao(self, usuario):
-        """
-        Envia e-mail com LINK de confirmação (NÃO é a página de 'confirmado').
-        Usa o template: emails/email_confirmacao_usuario.html
-        """
         token = uuid.uuid4()
 
         EmailConfirmacao.objects.update_or_create(
@@ -206,13 +348,10 @@ class RegistrarPrefeituraAPIView(APIView):
 
         link = f"{settings.FRONTEND_URL}/verificar-email/{token}"
 
+        from django.template.loader import render_to_string
         html_content = render_to_string(
             "emails/email_confirmacao_usuario.html",
-            {
-                "usuario": usuario,
-                "link": link,
-                "ano_atual": date.today().year,
-            }
+            {"usuario": usuario, "link": link, "ano_atual": date.today().year}
         )
 
         send_mail(
@@ -226,74 +365,59 @@ class RegistrarPrefeituraAPIView(APIView):
 
     def post(self, request):
         try:
+            from django.db import transaction
             with transaction.atomic():
-                dados = request.data
-
+                d = request.data
                 campos = {
-                    "nome": dados.get("nome"),
-                    "cnpj": dados.get("cnpj"),
-                    "responsavel": dados.get("responsavel"),
-                    "telefone": dados.get("telefone"),
-                    "email": dados.get("email"),
-                    "senha": dados.get("senha"),
-                    "logradouro": dados.get("logradouro"),
-                    "endereco_numero": dados.get("endereco_numero"),
-                    "endereco_bairro": dados.get("endereco_bairro"),
-                    "endereco_cidade": dados.get("endereco_cidade"),
-                    "endereco_estado": dados.get("endereco_estado"),
-                    "endereco_cep": dados.get("endereco_cep"),
-                    "plano_id": int(dados.get("plano_id")) if dados.get("plano_id") else None,
-                    "duracao_anos": int(dados.get("duracao_anos", 1)),
-                    "logo_base64": dados.get("logo_base64"),
-                    "brasao_base64": dados.get("brasao_base64"),
+                    "nome": d.get("nome"),
+                    "cnpj": d.get("cnpj"),
+                    "responsavel": d.get("responsavel"),
+                    "telefone": d.get("telefone"),
+                    "email": d.get("email"),
+                    "senha": d.get("senha"),
+                    "logradouro": d.get("logradouro"),
+                    "endereco_numero": d.get("endereco_numero"),
+                    "endereco_bairro": d.get("endereco_bairro"),
+                    "endereco_cidade": d.get("endereco_cidade"),
+                    "endereco_estado": d.get("endereco_estado"),
+                    "endereco_cep": d.get("endereco_cep"),
+                    "plano_id": int(d.get("plano_id")) if d.get("plano_id") else None,
+                    "duracao_anos": int(d.get("duracao_anos", 1)),
+                    "logo_base64": d.get("logo_base64"),
+                    "brasao_base64": d.get("brasao_base64"),
                 }
 
-                obrigatorios = ["nome","cnpj","responsavel","telefone","email","senha",
-                                "logradouro","endereco_numero","endereco_cidade",
-                                "endereco_estado","endereco_cep","plano_id"]
-                if not all(campos[k] for k in obrigatorios):
+                obrig = ["nome","cnpj","responsavel","telefone","email","senha",
+                         "logradouro","endereco_numero","endereco_cidade",
+                         "endereco_estado","endereco_cep","plano_id"]
+                if not all(campos[k] for k in obrig):
                     return Response({"detail": "Todos os campos obrigatórios devem ser preenchidos."}, status=400)
 
-                # Se já existe um usuário ATIVO com esse e-mail, bloqueia
                 if User.objects.filter(email=campos["email"], is_active=True).exists():
                     return Response({"detail": "Já existe um usuário ativo com esse e-mail."}, status=400)
 
-                # Salva/atualiza o cadastro pendente
                 CadastroPrefeituraPendente.objects.update_or_create(
-                    email=campos["email"],
-                    defaults=campos
+                    email=campos["email"], defaults=campos
                 )
 
-                # Garante usuário INATIVO (cria se não existir)
                 user = User.objects.filter(email=campos["email"]).first()
                 if not user:
                     user = User.objects.create_user(
-                        email=campos["email"],
-                        password=campos["senha"],
-                        is_active=False,
-                        is_staff=True,
+                        email=campos["email"], password=campos["senha"],
+                        is_active=False, is_staff=True
                     )
                 else:
-                    # Se já existia, assegura desativado até confirmar
                     if user.is_active:
                         user.is_active = False
                         user.save(update_fields=["is_active"])
 
-                # Envia o e-mail de confirmação (template correto)
                 self.enviar_email_confirmacao(user)
 
                 return Response({"detail": "Enviamos um e-mail para confirmação. Verifique sua caixa de entrada."}, status=200)
 
         except Exception as e:
-            # Log simples no retorno para você ver no front
             return Response({"detail": f"Erro: {e}"}, status=500)
 
-
-
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from sepultados_gestao.models import Plano
-from .serializers import PlanoSerializer
 
 class ListaPlanosAPIView(APIView):
     permission_classes = []
@@ -304,20 +428,9 @@ class ListaPlanosAPIView(APIView):
         return Response(serializer.data)
 
 
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.response import Response  # ✅ faltava
-from django.utils import timezone
-from django.shortcuts import get_object_or_404
-from rest_framework import status
-
-from .models import Licenca
-from .serializers import LicencaSerializer
-
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def licenca_da_prefeitura(request, prefeitura_id):
-    # bloqueia acesso se não for da mesma prefeitura (exceto staff/superuser)
     if not (request.user.is_superuser or request.user.is_staff):
         if getattr(request.user, "prefeitura_id", None) != prefeitura_id:
             return Response({"detail": "Proibido."}, status=status.HTTP_403_FORBIDDEN)
@@ -332,28 +445,17 @@ def licenca_da_prefeitura(request, prefeitura_id):
     if not licenca:
         return Response({"detail": "Licença não encontrada."}, status=status.HTTP_404_NOT_FOUND)
 
+    from .serializers import LicencaSerializer
     serializer = LicencaSerializer(licenca)
     return Response(serializer.data, status=status.HTTP_200_OK)
 
-
-
-
-import uuid
-from django.core.mail import send_mail
-from django.utils import timezone
-from django.conf import settings
-from .models import EmailConfirmacao  # ajuste o import se necessário
 
 def enviar_email_confirmacao(email):
     token = uuid.uuid4()
 
     EmailConfirmacao.objects.update_or_create(
         email=email,
-        defaults={
-            'token': token,
-            'criado_em': timezone.now(),
-            'usado': False,
-        }
+        defaults={'token': token, 'criado_em': timezone.now(), 'usado': False}
     )
 
     link = f"{settings.FRONTEND_URL}/verificar-email/{token}"
@@ -365,13 +467,11 @@ def enviar_email_confirmacao(email):
         <p>Olá,</p>
         <p>Recebemos seu cadastro no <strong>Sepultados.com</strong>.</p>
         <p>Para ativar sua conta, clique no botão abaixo:</p>
-
         <div style="text-align: center; margin: 30px 0;">
           <a href="{link}" target="_blank" style="background-color: #2f855a; color: white; padding: 14px 28px; border-radius: 6px; text-decoration: none; font-weight: bold;">
             Confirmar E-mail
           </a>
         </div>
-
         <p style="font-size: 14px; color: #666;">Se você não fez esse cadastro, ignore esta mensagem.</p>
         <hr style="margin: 30px 0;">
         <p style="font-size: 12px; text-align: center; color: #aaa;">Sepultados.com • Sistema de Gestão de Cemitérios</p>
@@ -381,25 +481,13 @@ def enviar_email_confirmacao(email):
 
     send_mail(
         subject="Confirmação de E-mail - Sepultados.com",
-        message=f"Olá! Confirme seu e-mail clicando neste link: {link}",  # fallback
+        message=f"Olá! Confirme seu e-mail clicando neste link: {link}",
         from_email=settings.DEFAULT_FROM_EMAIL,
         recipient_list=[email],
         html_message=html_content,
         fail_silently=False,
     )
 
-
-from rest_framework.decorators import api_view
-from rest_framework.response import Response
-from rest_framework import status
-from django.contrib.auth import get_user_model
-from sepultados_gestao.models import (
-    EmailConfirmacao,
-    CadastroPrefeituraPendente,
-    Prefeitura,
-    Plano,
-    Licenca
-)
 
 @api_view(['GET'])
 def verificar_email(request, token):
@@ -409,7 +497,6 @@ def verificar_email(request, token):
         if confirmacao.usado:
             return Response({"detail": "Este link já foi utilizado."}, status=400)
 
-        # Confirmação marcada como usada
         confirmacao.usado = True
         confirmacao.save()
 
@@ -420,12 +507,10 @@ def verificar_email(request, token):
         user.is_active = True
         user.save()
 
-        # Buscar os dados pendentes
         cadastro = CadastroPrefeituraPendente.objects.filter(email=confirmacao.email).first()
         if not cadastro:
             return Response({"detail": "Cadastro pendente não encontrado."}, status=404)
 
-        # Criar prefeitura
         prefeitura = Prefeitura.objects.create(
             usuario=user,
             nome=cadastro.nome,
@@ -441,7 +526,6 @@ def verificar_email(request, token):
             endereco_cep=cadastro.endereco_cep,
         )
 
-        # Salvar imagens se houver
         def salvar_imagem(base64_str):
             format, imgstr = base64_str.split(';base64,')
             ext = format.split('/')[-1]
@@ -454,22 +538,20 @@ def verificar_email(request, token):
             prefeitura.brasao = salvar_imagem(cadastro.brasao_base64)
         prefeitura.save()
 
-        # 🔴 ESSENCIAL: vincular prefeitura ao usuário
+        # vincula prefeitura ao usuário
         user.prefeitura = prefeitura
         user.save()
 
-        # Criar licença com debug
         plano = Plano.objects.get(pk=cadastro.plano_id)
-        print(f"Plano selecionado: {plano.nome}, usuários_max = {plano.usuarios_max}")
 
-        licenca = Licenca.objects.create(
+        Licenca.objects.create(
             prefeitura=prefeitura,
             plano=plano,
             valor_mensal_atual=plano.preco_mensal,
             percentual_reajuste_anual=5.0,
             anos_contratados=cadastro.duracao_anos,
             usuarios_min=plano.usuarios_min,
-            usuarios_max=plano.usuarios_max,  # vamos validar se vem certo aqui
+            usuarios_max=plano.usuarios_max,
             sepultados_max=plano.sepultados_max,
             inclui_api=plano.inclui_api,
             inclui_erp=plano.inclui_erp,
@@ -477,10 +559,6 @@ def verificar_email(request, token):
             data_inicio=timezone.now(),
         )
 
-        print(f"Licença salva com usuarios_max = {licenca.usuarios_max}")
-
-
-        # Apagar cadastro temporário
         cadastro.delete()
 
         return Response({"detail": "E-mail confirmado com sucesso. Prefeitura e licença criadas automaticamente."}, status=200)
@@ -489,17 +567,10 @@ def verificar_email(request, token):
         return Response({"detail": "Token inválido ou inexistente."}, status=400)
 
 
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.response import Response
-from sepultados_gestao.models import Prefeitura
-
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def usuario_logado(request):
     user = request.user
-
-    # Suporte a master (prefeitura.usuario) e usuário normal (usuario.prefeitura)
     prefeitura = getattr(user, "prefeitura", None)
     if not prefeitura:
         prefeitura = Prefeitura.objects.filter(usuario=user).first()
@@ -512,10 +583,7 @@ def usuario_logado(request):
             brasao_url = None
 
     return Response({
-        "usuario": {
-            "nome": getattr(user, "nome", user.email),
-            "email": user.email,
-        },
+        "usuario": {"nome": getattr(user, "nome", user.email), "email": user.email},
         "prefeitura": {
             "id": prefeitura.id if prefeitura else None,
             "nome": prefeitura.nome if prefeitura else None,
@@ -524,14 +592,6 @@ def usuario_logado(request):
     })
 
 
-
-from rest_framework.views import APIView
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.response import Response
-from rest_framework import status
-from sepultados_gestao.models import Prefeitura
-from .serializers import PrefeituraSerializer
-
 class PrefeituraLogadaAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -539,7 +599,6 @@ class PrefeituraLogadaAPIView(APIView):
         prefeitura = Prefeitura.objects.filter(usuario=request.user).first()
         if not prefeitura:
             return Response({"detail": "Prefeitura não encontrada."}, status=404)
-
         serializer = PrefeituraSerializer(prefeitura)
         return Response(serializer.data)
 
@@ -547,20 +606,12 @@ class PrefeituraLogadaAPIView(APIView):
         prefeitura = Prefeitura.objects.filter(usuario=request.user).first()
         if not prefeitura:
             return Response({"detail": "Prefeitura não encontrada."}, status=404)
-
         serializer = PrefeituraSerializer(prefeitura, data=request.data, partial=True)
-
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data)
-
-        print(serializer.errors)  # 👈 Adicione esta linha
         return Response(serializer.errors, status=400)
 
-
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
 
 class CemiterioLogadoAPIView(APIView):
     permission_classes = [IsAuthenticated]
@@ -576,7 +627,6 @@ class CemiterioLogadoAPIView(APIView):
         if not cem_id:
             return Response({"detail": "Campo 'cemiterio' obrigatório."}, status=400)
 
-        # opcional: garantir que é da prefeitura ativa
         pref = getattr(request, "prefeitura_ativa", None)
         qs = Cemiterio.objects.all()
         if pref:
@@ -588,4 +638,3 @@ class CemiterioLogadoAPIView(APIView):
 
         request.session["cemiterio_ativo"] = cem.id
         return Response({"ok": True})
-

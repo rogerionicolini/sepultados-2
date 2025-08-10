@@ -1,6 +1,12 @@
-// Projeto/frontend/src/components/CemeterySelector.jsx
-import React, { useEffect, useMemo, useState, useRef } from "react";
+// src/components/CemeterySelector.jsx
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import axios from "axios";
+import {
+  getCemiterioAtivo,
+  setCemiterioAtivo,
+  ensureValidCemiterio,
+  clearCemiterioAtivo,
+} from "../utils/cemiterioStorage";
 
 const API_BASE = "http://127.0.0.1:8000/api/";
 const ENDPOINT = "cemiterios/";
@@ -11,12 +17,7 @@ export default function CemeterySelector({ onSelected }) {
   const [busca, setBusca] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const [ativoId, setAtivoId] = useState(
-    () => localStorage.getItem("cemiterioAtivoId") || null
-  );
-  const [ativoNome, setAtivoNome] = useState(
-    () => localStorage.getItem("cemiterioAtivoNome") || "Cemitério"
-  );
+  const [ativo, setAtivo] = useState(getCemiterioAtivo());
 
   const token = localStorage.getItem("accessToken");
   const api = useMemo(
@@ -28,63 +29,56 @@ export default function CemeterySelector({ onSelected }) {
     [token]
   );
 
-  // ---- helper: sincroniza sessão do backend com o cemitério escolhido ----
   async function syncSessaoBackend(cemiterioId) {
     if (!cemiterioId) return;
     try {
       await api.post("selecionar-cemiterio/", { cemiterio_id: Number(cemiterioId) });
     } catch (e) {
-      console.error(
-        "Falha ao sincronizar cemitério na sessão do backend:",
-        e?.response?.data || e
-      );
+      console.error("Falha ao sincronizar cemitério na sessão do backend:", e?.response?.data || e);
     }
   }
 
-  // Carrega a lista de cemitérios (com fallbacks de filtro)
+  async function obterPrefeituraId() {
+    try {
+      const a = await api.get("prefeitura-logada/");
+      return a.data?.id || a.data?.prefeitura?.id || null;
+    } catch {}
+    try {
+      const b = await api.get("usuario-logado/");
+      return b.data?.prefeitura?.id || null;
+    } catch {}
+    return null;
+  }
+
   useEffect(() => {
     const fetch = async () => {
+      setLoading(true);
       try {
-        setLoading(true);
+        const prefId = await obterPrefeituraId();
 
-        // tenta descobrir a prefeitura do usuário (opcional, só para fallback)
-        let prefId = null;
-        try {
-          const a = await api.get("prefeitura-logada/");
-          prefId = a.data?.id || a.data?.prefeitura?.id || null;
-        } catch {}
-        if (!prefId) {
-          try {
-            const b = await api.get("usuario-logado/");
-            prefId = b.data?.prefeitura?.id || null;
-          } catch {}
-        }
+        // invalida ativo se não pertencer à prefeitura
+        const valido = ensureValidCemiterio(prefId);
+        if (!valido) setAtivo(null);
 
-        // 1) Tenta SEM filtro (se o backend já usa prefeitura/cemitério da sessão)
-        let res = await api.get(ENDPOINT);
-        let data = Array.isArray(res.data) ? res.data : res.data?.results || [];
-
-        // 2) Se vier vazio, tenta com ?prefeitura=
-        if ((!data || data.length === 0) && prefId) {
-          res = await api.get(`${ENDPOINT}?prefeitura=${prefId}`);
-          data = Array.isArray(res.data) ? res.data : res.data?.results || [];
-        }
-
-        // 3) Se ainda vazio, tenta com ?prefeitura_id=
-        if ((!data || data.length === 0) && prefId) {
-          res = await api.get(`${ENDPOINT}?prefeitura_id=${prefId}`);
-          data = Array.isArray(res.data) ? res.data : res.data?.results || [];
-        }
-
+        const url = prefId ? `${ENDPOINT}?prefeitura=${prefId}` : ENDPOINT;
+        const res = await api.get(url);
+        const data = Array.isArray(res.data) ? res.data : res.data?.results || [];
         setLista(data);
 
-        // se tem ativo salvo, tente achar o nome certo e reconfirmar sessão
-        if (ativoId) {
-          const achado = data.find((c) => String(c.id) === String(ativoId));
+        if (valido) {
+          const achado = data.find((c) => String(c.id) === String(valido.id));
           if (achado) {
-            if (!ativoNome || ativoNome === "Cemitério") setAtivoNome(achado.nome);
-            // Garante que a sessão do backend está alinhada após refresh
-            syncSessaoBackend(achado.id);
+            const payload = {
+              id: achado.id,
+              nome: achado.nome || achado.codigo || "Cemitério",
+              prefeitura_id: achado.prefeitura_id || achado.prefeitura?.id || prefId,
+            };
+            setCemiterioAtivo(payload);
+            setAtivo(payload);
+            await syncSessaoBackend(payload.id);
+          } else {
+            clearCemiterioAtivo();
+            setAtivo(null);
           }
         }
       } catch (e) {
@@ -109,28 +103,19 @@ export default function CemeterySelector({ onSelected }) {
     });
   }, [lista, busca]);
 
-  async function escolher(cem) {
-    // 1) Persistência local (duplo formato para compatibilidade)
-    localStorage.setItem("cemiterioAtivoId", String(cem.id));
-    localStorage.setItem("cemiterioAtivoNome", cem.nome);
-    localStorage.setItem(
-      "cemiterioAtivo",
-      JSON.stringify({ id: Number(cem.id), nome: cem.nome })
-    );
+  async function escolher(c) {
+    const payload = {
+      id: Number(c.id),
+      nome: c.nome || c.codigo || "Cemitério",
+      prefeitura_id: Number(c.prefeitura_id || c.prefeitura?.id),
+    };
 
-    // 2) Estado do componente
-    setAtivoId(String(cem.id));
-    setAtivoNome(cem.nome);
+    setCemiterioAtivo(payload); // salva + dispara evento
+    setAtivo(payload);
     setOpen(false);
 
-    // 3) Sessão no backend (DRF vai herdar automaticamente)
-    await syncSessaoBackend(cem.id);
-
-    // 4) Callback e broadcast (outras telas podem ouvir e recarregar)
-    onSelected?.(cem);
-    window.dispatchEvent(new CustomEvent("cemiterio:changed", { detail: cem }));
-    // Se preferir forçar reload da página atual:
-    // window.location.reload();
+    await syncSessaoBackend(payload.id);
+    onSelected?.(payload);
   }
 
   // fecha dropdown ao clicar fora
@@ -144,16 +129,17 @@ export default function CemeterySelector({ onSelected }) {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [open]);
 
+  const titulo = ativo?.nome || "Cemitério";
+
   return (
     <div ref={wrapRef} className="relative inline-block">
-      {/* Botão principal no header */}
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
         className="min-w-[260px] sm:min-w-[300px] px-3 py-2 rounded-lg bg-white border border-[#bcd2a7] text-green-900 font-medium shadow hover:bg-[#f7fbf2] flex items-center justify-between"
         style={{ height: 40 }}
       >
-        <span className="truncate">{ativoNome || "Cemitério"}</span>
+        <span className="truncate">{titulo}</span>
         <svg
           className={`w-4 h-4 ml-2 transition-transform ${open ? "rotate-180" : ""}`}
           fill="none"
@@ -164,10 +150,8 @@ export default function CemeterySelector({ onSelected }) {
         </svg>
       </button>
 
-      {/* Dropdown (exatamente abaixo do botão) */}
       {open && (
         <div className="absolute top-full left-0 mt-2 w-full bg-white rounded-xl shadow-2xl border border-[#e0efcf] z-[9999]">
-          {/* Campo de busca */}
           <div className="p-2 border-b border-[#e6f2d9]">
             <input
               autoFocus
@@ -182,34 +166,35 @@ export default function CemeterySelector({ onSelected }) {
             {loading && <div className="px-3 py-3 text-sm text-gray-600">Carregando…</div>}
 
             {!loading &&
-              filtrados.map((c) => (
-                <div
-                  key={c.id}
-                  className="flex items-center justify-between px-3 py-2 hover:bg-[#f8fcf2] cursor-pointer"
-                >
-                  <div className="min-w-0">
-                    <div className="text-green-900 font-medium truncate">{c.nome}</div>
-                    <div className="text-xs text-gray-600 truncate">
-                      {c.cidade || "-"} — {c.estado || "-"}
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => escolher(c)}
-                    className={`px-3 py-1 rounded border text-sm ${
-                      String(ativoId) === String(c.id)
-                        ? "border-[#224c15] text-white bg-[#224c15]"
-                        : "border-[#bcd2a7] text-green-900 bg-white hover:bg-[#f7fbf2]"
-                    }`}
+              filtrados.map((c) => {
+                const selecionado = ativo && String(ativo.id) === String(c.id);
+                return (
+                  <div
+                    key={c.id}
+                    className="flex items-center justify-between px-3 py-2 hover:bg-[#f8fcf2] cursor-pointer"
                   >
-                    {String(ativoId) === String(c.id) ? "Selecionado" : "Selecionar"}
-                  </button>
-                </div>
-              ))}
+                    <div className="min-w-0">
+                      <div className="text-green-900 font-medium truncate">{c.nome}</div>
+                      <div className="text-xs text-gray-600 truncate">
+                        {c.cidade || "-"} — {c.estado || "-"}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => escolher(c)}
+                      className={`px-3 py-1 rounded border text-sm ${
+                        selecionado
+                          ? "border-[#224c15] text-white bg-[#224c15]"
+                          : "border-[#bcd2a7] text-green-900 bg-white hover:bg-[#f7fbf2]"
+                      }`}
+                    >
+                      {selecionado ? "Selecionado" : "Selecionar"}
+                    </button>
+                  </div>
+                );
+              })}
 
             {!loading && filtrados.length === 0 && (
-              <div className="px-3 py-4 text-sm text-gray-600">
-                Nenhum cemitério encontrado.
-              </div>
+              <div className="px-3 py-4 text-sm text-gray-600">Nenhum cemitério encontrado.</div>
             )}
           </div>
         </div>

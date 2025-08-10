@@ -20,6 +20,7 @@ import Usuarios from "./pages/Usuarios";
 import Licenca from "./pages/Licenca";
 import Cemiterios from "./pages/Cemiterios"; 
 import Quadras from "./pages/Quadras";
+import Tumulos from "./pages/Tumulos"; // ✅ nova página
 
 const AppRoutes = () => (
   <Routes>
@@ -48,11 +49,8 @@ const AppRoutes = () => (
       <Route path="usuarios" element={<Usuarios />} />
       <Route path="licenca" element={<Licenca />} />
       <Route path="cemiterios" element={<Cemiterios />} />
-      <Route path="/quadras" element={<Quadras />} />
-      {/* Quando tiver as páginas, adicione:
-          <Route path="quadras" element={<Quadras />} />
-          <Route path="tumulos" element={<Tumulos />} />
-      */}
+      <Route path="quadras" element={<Quadras />} />
+      <Route path="tumulos" element={<Tumulos />} /> {/* ✅ nova rota */}
     </Route>
   </Routes>
 );
