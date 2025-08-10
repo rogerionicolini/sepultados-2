@@ -45,7 +45,7 @@ function Dashboard() {
             <div
               onClick={() => {
                 setCemiterioOpen((v) => !v);
-                navigate("/cemiterios"); // abre a página central
+                navigate("/cemiterios");
               }}
               className="flex items-center gap-3 px-4 py-3 hover:bg-[#d8e9c0] rounded-xl cursor-pointer transition"
             >
@@ -71,7 +71,10 @@ function Dashboard() {
 
           <div>
             <div
-              onClick={() => setSepultadosOpen(!sepultadosOpen)}
+              onClick={() => {
+                navigate("/sepultados");
+                setSepultadosOpen((v) => !v);
+              }}
               className="flex items-center gap-3 px-4 py-3 hover:bg-[#d8e9c0] rounded-xl cursor-pointer transition"
             >
               <Users className="w-5 h-5 text-green-900" />
@@ -84,9 +87,15 @@ function Dashboard() {
             </div>
             {sepultadosOpen && (
               <div className="ml-8 mt-1 flex flex-col gap-1">
-                <SidebarItem icon={ScrollText} label="Contratos de Concessão" />
-                <SidebarItem icon={ClipboardList} label="Exumações" />
-                <SidebarItem icon={ClipboardList} label="Translados" />
+                <div onClick={() => navigate("/contratos")}>
+                  <SidebarItem icon={ScrollText} label="Contratos de Concessão" />
+                </div>
+                <div onClick={() => navigate("/exumacoes")}>
+                  <SidebarItem icon={ClipboardList} label="Exumações" />
+                </div>
+                <div onClick={() => navigate("/traslados")}>
+                  <SidebarItem icon={ClipboardList} label="Translados" />
+                </div>
               </div>
             )}
           </div>
@@ -106,39 +115,48 @@ function Dashboard() {
             </div>
             {relatoriosOpen && (
               <div className="ml-8 mt-1 flex flex-col gap-1">
-                <SidebarItem icon={FileBarChart} label="Sepultados" />
-                <SidebarItem icon={FileBarChart} label="Exumações" />
-                <SidebarItem icon={FileBarChart} label="Translados" />
-                <SidebarItem icon={FileBarChart} label="Contratos" />
-                <SidebarItem icon={FileBarChart} label="Receitas" />
-                <SidebarItem icon={FileBarChart} label="Túmulos" />
-                <SidebarItem icon={FileBarChart} label="Histórico de Ações" />
+                <div onClick={() => navigate("/relatorio/sepultados")}>
+                  <SidebarItem icon={FileBarChart} label="Sepultados" />
+                </div>
+                <div onClick={() => navigate("/relatorio/exumacoes")}>
+                  <SidebarItem icon={FileBarChart} label="Exumações" />
+                </div>
+                <div onClick={() => navigate("/relatorio/traslados")}>
+                  <SidebarItem icon={FileBarChart} label="Translados" />
+                </div>
+                <div onClick={() => navigate("/relatorio/contratos")}>
+                  <SidebarItem icon={FileBarChart} label="Contratos" />
+                </div>
+                <div onClick={() => navigate("/relatorio/receitas")}>
+                  <SidebarItem icon={FileBarChart} label="Receitas" />
+                </div>
+                <div onClick={() => navigate("/relatorio/tumulos")}>
+                  <SidebarItem icon={FileBarChart} label="Túmulos" />
+                </div>
+                <div onClick={() => navigate("/relatorio/auditorias")}>
+                  <SidebarItem icon={FileBarChart} label="Histórico de Ações" />
+                </div>
               </div>
             )}
           </div>
 
-          <SidebarItem icon={FileText} label="Receitas" />
+          <div onClick={() => navigate("/receitas")}>
+            <SidebarItem icon={FileText} label="Receitas" />
+          </div>
         </nav>
       </aside>
 
       {/* Conteúdo */}
       <div className="flex-1 flex flex-col bg-[#cde1b1]">
-        {/* Cabeçalho */}
         <header className="bg-[#cde1b1] px-6 py-4 relative header-elevate flex items-center justify-end">
-          {/* seletor à esquerda, centralizado verticalmente */}
           <div className="absolute left-6 top-1/2 -translate-y-1/2">
-            <CemeterySelector onSelected={() => { /* opcional: window.location.reload(); */ }} />
+            <CemeterySelector onSelected={() => {}} />
           </div>
-
-          {/* título central */}
           <div className="absolute left-1/2 -translate-x-1/2">
             <h1 className="text-2xl font-bold text-green-900">Gestão de Cemitérios</h1>
           </div>
-
-          {/* usuário à direita */}
           <UserHeader />
         </header>
-        {/* Conteúdo principal com rotas dinâmicas */}
         <main className="flex-1 bg-white p-8 rounded-tl-3xl">
           <Outlet />
         </main>

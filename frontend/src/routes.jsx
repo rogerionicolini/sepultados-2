@@ -18,9 +18,23 @@ import DashboardResumo from "./pages/DashboardResumo";
 import Dados from "./pages/Dados";
 import Usuarios from "./pages/Usuarios";
 import Licenca from "./pages/Licenca";
-import Cemiterios from "./pages/Cemiterios"; 
+import Cemiterios from "./pages/Cemiterios";
 import Quadras from "./pages/Quadras";
-import Tumulos from "./pages/Tumulos"; // ✅ nova página
+import Tumulos from "./pages/Tumulos";
+import Sepultados from "./pages/Sepultados";
+import Contratos from "./pages/Contratos";
+import Exumacoes from "./pages/Exumacoes";
+import Translados from "./pages/Translados";
+import Receitas from "./pages/Receitas";
+
+// Relatórios (tudo direto em pages/)
+import RelatorioSepultados from "./pages/RelatorioSepultados";
+import RelatorioExumacoes from "./pages/RelatorioExumacoes";
+import RelatorioTranslados from "./pages/RelatorioTranslados";
+import RelatorioContratos from "./pages/RelatorioContratos";
+import RelatorioReceitas from "./pages/RelatorioReceitas";
+import RelatorioTumulos from "./pages/RelatorioTumulos";
+import RelatorioAuditorias from "./pages/RelatorioAuditorias";
 
 const AppRoutes = () => (
   <Routes>
@@ -50,7 +64,21 @@ const AppRoutes = () => (
       <Route path="licenca" element={<Licenca />} />
       <Route path="cemiterios" element={<Cemiterios />} />
       <Route path="quadras" element={<Quadras />} />
-      <Route path="tumulos" element={<Tumulos />} /> {/* ✅ nova rota */}
+      <Route path="tumulos" element={<Tumulos />} />
+      <Route path="sepultados" element={<Sepultados />} />
+      <Route path="contratos" element={<Contratos />} />
+      <Route path="exumacoes" element={<Exumacoes />} />
+      <Route path="traslados" element={<Translados />} />
+      <Route path="receitas" element={<Receitas />} />
+
+      {/* Relatórios */}
+      <Route path="relatorio/sepultados" element={<RelatorioSepultados />} />
+      <Route path="relatorio/exumacoes" element={<RelatorioExumacoes />} />
+      <Route path="relatorio/traslados" element={<RelatorioTranslados />} />
+      <Route path="relatorio/contratos" element={<RelatorioContratos />} />
+      <Route path="relatorio/receitas" element={<RelatorioReceitas />} />
+      <Route path="relatorio/tumulos" element={<RelatorioTumulos />} />
+      <Route path="relatorio/auditorias" element={<RelatorioAuditorias />} />
     </Route>
   </Routes>
 );

@@ -1,2 +1,6 @@
+// src/pages/Sepultados.jsx
 import React from "react";
-export default function Sepultados() { return <div className="p-4">Página: Sepultados</div>; } 
+
+export default function Sepultados() {
+  return <h1>Gestão de Sepultados</h1>;
+}
