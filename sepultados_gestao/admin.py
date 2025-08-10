@@ -983,86 +983,59 @@ class LicencaAdmin(admin.ModelAdmin):
         js = ('custom_admin/js/licenca_auto_valor.js',)
 
 
-
-
-
 admin.site.register(Quadra, QuadraAdmin)
 admin.site.register(Sepultado, SepultadoAdmin)
 
 
-# === Ajuste final para controle de exibição no menu lateral ===
 
+# === Ajuste final para controle de exibição no menu lateral ===
+from django.contrib import admin
+from django.apps import apps
+
+# Modelos SEMPRE visíveis (antes de selecionar prefeitura/cemitério)
 MODELOS_SEM_DEPENDENCIA = [
     'prefeitura', 'plano', 'licenca',
-    'tipousuario', 'user',  # "user" é do próprio auth.User
+    'tipousuario',
+    'user',                 # Usuários
+    'quadra', 'sepultado',  # manter visíveis p/ autocomplete
 ]
 
-from django.contrib.auth import get_user_model
-from django.contrib.auth.models import Group
-
-
-class AlwaysVisibleAdmin(admin.ModelAdmin):
-    def get_model_perms(self, request):
-        return super().get_model_perms(request)
-
-# Garante que usuários e grupos estejam sempre visíveis
-admin.site.unregister(User)
-admin.site.register(User, AlwaysVisibleAdmin)
-
-admin.site.unregister(Group)
-admin.site.register(Group, AlwaysVisibleAdmin)
-
-# Altera dinamicamente os outros ModelAdmins registrados
-for model, model_admin in admin.site._registry.items():
+# NÃO toque em User/Group aqui (sem unregister/register)
+# Apenas controlamos visibilidade dos demais ModelAdmins
+for model, model_admin in list(admin.site._registry.items()):
     model_name = model.__name__.lower()
 
+    # ⬇️ Esconde SEMPRE o Group (Tipos de Usuário)
+    if model_name == 'group':
+        def _hide(self, request):
+            return {}
+        model_admin.get_model_perms = _hide
+        continue
+
     if model_name in MODELOS_SEM_DEPENDENCIA:
-        continue  # Sempre visível
+        continue  # sempre visível
 
     original_get_model_perms = model_admin.get_model_perms
 
-    def make_wrapped_get_model_perms(original_func):
-        def wrapped(self, request):
-            prefeitura_ok = bool(request.session.get("prefeitura_ativa_id"))
-            cemiterio_ok = bool(request.session.get("cemiterio_ativo_id"))
-            if not (prefeitura_ok and cemiterio_ok):
-                return {}
-            return original_func(request)
-        return wrapped.__get__(model_admin, model_admin.__class__)
+    # usa default-arg pra não sofrer com late-binding no loop
+    def wrapped(self, request, _original=original_get_model_perms):
+        prefeitura_ok = bool(request.session.get("prefeitura_ativa_id"))
+        cemiterio_ok = bool(request.session.get("cemiterio_ativo_id"))
+        if not (prefeitura_ok and cemiterio_ok):
+            return {}
+        return _original(request)
 
-    model_admin.get_model_perms = make_wrapped_get_model_perms(original_get_model_perms)
+    model_admin.get_model_perms = wrapped
+
+# Renomeia apps no menu (seguro e sem duplicação)
+apps.get_app_config('auth').verbose_name = "Administração Geral"
+apps.get_app_config('sepultados_gestao').verbose_name = "Sepultados Gestão"
 
 
-from django.contrib.auth import get_user_model
-from django.contrib.auth.models import Group
 
-
-class AlwaysVisibleAdmin(admin.ModelAdmin):
-    def get_model_perms(self, request):
-        return super().get_model_perms(request)
-
-# Garante que usuários e grupos estejam sempre visíveis
-admin.site.unregister(User)
-admin.site.register(User, AlwaysVisibleAdmin)
-
-admin.site.unregister(Group)
-admin.site.register(Group, AlwaysVisibleAdmin)
-
-from django.apps import apps
-
-# Renomeia o app "auth" para exibir "Administração Geral" no menu
-auth_app_config = apps.get_app_config('auth')
-auth_app_config.verbose_name = "Administração Geral"
-
-# Renomeia o seu app para exibir "Sepultados Gestão"
-sepultados_app_config = apps.get_app_config('sepultados_gestao')
-sepultados_app_config.verbose_name = "Sepultados Gestão"
-
-# === AGRUPAMENTO VISUAL NO MENU LATERAL ===
 
 from django.contrib import admin
 from django.contrib.admin import AdminSite
-from django.contrib.auth.models import User, Group
 from django.apps import apps
 
 class CustomAdminSite(AdminSite):
@@ -1073,8 +1046,9 @@ class CustomAdminSite(AdminSite):
     def get_app_list(self, request):
         original_app_list = super().get_app_list(request)
 
+        # 🔸 NÃO listar “Tipos de Usuário” aqui
         modelos_administracao_geral = {
-            "Tipos de Usuário",
+            # "Tipos de Usuário",  # removido
             "Usuários",
             "Prefeituras",
             "Planos",
@@ -1131,7 +1105,7 @@ class CustomAdminSite(AdminSite):
                     elif cemiterio_ativo_id:
                         grupo_gestao["models"].append(model)
 
-        # Adiciona o botão de Backup do Sistema (visível apenas para superusuários)
+        # Botão de Backup (só para superusuários)
         if request.user.is_superuser:
             grupo_geral["models"].append({
                 "name": "Backup do Sistema",
@@ -1453,46 +1427,3 @@ class RegistroAuditoriaAdmin(admin.ModelAdmin):
         prefeitura = getattr(request, 'prefeitura_ativa', None)
         return obj.prefeitura == prefeitura
     
-from django.contrib.auth import get_user_model
-from django.contrib.auth.models import Group
-
-User = get_user_model()
-
-MODELOS_SEM_DEPENDENCIA = [
-    'prefeitura', 'plano', 'licenca',
-    'tipousuario', 'user',
-]
-
-class AlwaysVisibleAdmin(admin.ModelAdmin):
-    def get_model_perms(self, request):
-        return super().get_model_perms(request)
-
-admin.site.unregister(User)
-admin.site.register(User, AlwaysVisibleAdmin)
-
-admin.site.unregister(Group)
-admin.site.register(Group, AlwaysVisibleAdmin)
-
-# Altera dinamicamente os outros ModelAdmins registrados
-for model, model_admin in admin.site._registry.items():
-    model_name = model.__name__.lower()
-    if model_name in MODELOS_SEM_DEPENDENCIA:
-        continue
-
-    original_get_model_perms = model_admin.get_model_perms
-
-    def make_wrapped_get_model_perms(original_func):
-        def wrapped(self, request):
-            prefeitura_ok = bool(request.session.get("prefeitura_ativa_id"))
-            cemiterio_ok = bool(request.session.get("cemiterio_ativo_id"))
-            if not (prefeitura_ok and cemiterio_ok):
-                return {}
-            return original_func(request)
-        return wrapped.__get__(model_admin, model_admin.__class__)
-
-    model_admin.get_model_perms = make_wrapped_get_model_perms(original_get_model_perms)
-
-# Renomeia os apps para agrupamento visual no menu lateral
-from django.apps import apps
-apps.get_app_config('auth').verbose_name = "Administração Geral"
-apps.get_app_config('sepultados_gestao').verbose_name = "Sepultados Gestão"

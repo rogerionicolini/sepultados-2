@@ -51,6 +51,11 @@ class Usuario(AbstractBaseUser, PermissionsMixin):
         verbose_name="prefeitura vinculada"
     )
 
+    # ⬇️ NOVO: permite mais de um “master” por prefeitura
+    is_master = models.BooleanField(
+        default=False,
+        help_text=_("Administrador da prefeitura (pode gerenciar usuários e dados).")
+    )
 
     objects = UsuarioManager()
 
@@ -63,3 +68,14 @@ class Usuario(AbstractBaseUser, PermissionsMixin):
 
     def __str__(self):
         return self.email
+
+    @property
+    def is_master_user(self):
+        """Permite reconhecer dinamicamente o master da prefeitura."""
+        if self.is_superuser:
+            return True
+        if self.is_master:
+            return True
+        if self.prefeitura and self.prefeitura.usuario_id == self.id:
+            return True
+        return False

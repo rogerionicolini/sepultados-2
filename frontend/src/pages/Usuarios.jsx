@@ -1,126 +1,130 @@
 import React, { useEffect, useState } from "react";
 import axios from "axios";
 
-function Usuarios() {
+const API = "http://localhost:8000/api";
+
+export default function Usuarios() {
   const [usuarios, setUsuarios] = useState([]);
+  const [editandoId, setEditandoId] = useState(null);
+  const [mensagem, setMensagem] = useState("");
+  const [erro, setErro] = useState("");
+
   const [form, setForm] = useState({
     first_name: "",
     last_name: "",
     email: "",
     senha: "",
+    // UI decide o papel; backend recebe is_master (bool)
+    role: "normal", // "normal" | "master"
   });
-  const [editandoId, setEditandoId] = useState(null);
-  const [mensagem, setMensagem] = useState("");
-  const [erro, setErro] = useState("");
 
   const token = localStorage.getItem("accessToken");
+  const api = axios.create({
+    baseURL: API,
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
 
   useEffect(() => {
-    if (token) {
-      fetchUsuarios();
-    } else {
+    if (!token) {
       setErro("Token de acesso não encontrado. Faça login novamente.");
+      return;
     }
+    fetchUsuarios();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
-  const fetchUsuarios = async () => {
+  async function fetchUsuarios() {
     try {
-      const response = await axios.get("http://localhost:8000/api/usuarios/lista/", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setUsuarios(response.data);
-    } catch (error) {
-      console.error(error);
+      const res = await api.get("/usuarios/lista/");
+      setUsuarios(res.data || []);
+    } catch (e) {
       setErro("Erro ao carregar usuários.");
     }
-  };
+  }
 
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setForm(prev => ({ ...prev, [name]: value }));
-  };
+  function handleChange(e) {
+    const { name, value, type, checked } = e.target;
+    setForm((prev) => ({
+      ...prev,
+      [name]: type === "checkbox" ? checked : value,
+    }));
+  }
 
-  const handleSubmit = async (e) => {
+  async function handleSubmit(e) {
     e.preventDefault();
     setMensagem("");
     setErro("");
 
     try {
       if (editandoId) {
-        await axios.put(
-          `http://localhost:8000/api/usuarios/${editandoId}/`,
-          {
-            first_name: form.first_name,
-            last_name: form.last_name,
-            // email não enviado
-            // senha não enviada
-          },
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          }
-        );
+        // edição básica: nome/sobrenome
+        await api.put(`/usuarios/${editandoId}/`, {
+          first_name: form.first_name,
+          last_name: form.last_name,
+        });
         setMensagem("Usuário atualizado com sucesso.");
       } else {
-        await axios.post(
-          "http://localhost:8000/api/usuarios/",
-          {
-            email: form.email,
-            senha: form.senha,
-            first_name: form.first_name,
-            last_name: form.last_name,
-          },
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          }
+        // criação: envia is_master conforme escolha do select
+        await api.post("/usuarios/", {
+          email: form.email,
+          senha: form.senha,
+          first_name: form.first_name,
+          last_name: form.last_name,
+          is_master: form.role === "master",
+        });
+        setMensagem(
+          "Usuário adicionado com sucesso. Um e-mail de confirmação foi enviado."
         );
-        setMensagem("Usuário adicionado com sucesso. Um e-mail de confirmação foi enviado.");
       }
-      setForm({ first_name: "", last_name: "", email: "", senha: "" });
+
+      setForm({
+        first_name: "",
+        last_name: "",
+        email: "",
+        senha: "",
+        role: "normal",
+      });
       setEditandoId(null);
       fetchUsuarios();
     } catch (error) {
-      if (error.response?.data) {
-        const erroData = error.response.data;
-        if (typeof erroData === "string") {
-          setErro(erroData);
-        } else if (erroData.detail) {
-          setErro(erroData.detail);
-        } else if (erroData.email) {
-          setErro("E-mail já cadastrado.");
-        } else {
-          const mensagens = Object.values(erroData).flat().join(" ");
-          setErro(mensagens || "Erro ao adicionar/editar usuário.");
-        }
-      } else {
-        setErro("Erro ao adicionar/editar usuário.");
-      }
+      const d = error.response?.data;
+      const msg =
+        typeof d === "string"
+          ? d
+          : d?.detail ||
+            d?.erro ||
+            d?.non_field_errors?.join?.(" ") ||
+            d?.email?.join?.(" ") ||
+            (d ? Object.values(d).flat().join(" ") : null) ||
+            "Erro ao adicionar/editar usuário.";
+      setErro(msg);
     }
-  };
+  }
 
-  const handleEditar = (usuario) => {
+  function handleEditar(usuario) {
     setForm({
-      first_name: usuario.first_name,
-      last_name: usuario.last_name,
-      email: usuario.email,
+      first_name: usuario.first_name || "",
+      last_name: usuario.last_name || "",
+      email: usuario.email || "",
       senha: "",
+      role: "normal", // papel não muda na edição
     });
     setEditandoId(usuario.id);
     setMensagem("");
     setErro("");
-  };
+  }
 
-  const handleExcluir = async (id) => {
+  async function handleExcluir(id) {
     if (!window.confirm("Tem certeza que deseja excluir este usuário?")) return;
     try {
-      await axios.delete(`http://localhost:8000/api/usuarios/${id}/`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      await api.delete(`/usuarios/${id}/`);
       setMensagem("Usuário excluído com sucesso.");
       fetchUsuarios();
     } catch (error) {
-      setErro("Erro ao excluir usuário.");
+      const d = error.response?.data;
+      setErro(d?.detail || d?.erro || "Erro ao excluir usuário.");
     }
-  };
+  }
 
   return (
     <div className="p-6">
@@ -129,8 +133,11 @@ function Usuarios() {
       {mensagem && <p className="text-green-700 mb-4">{mensagem}</p>}
       {erro && <p className="text-red-600 mb-4">{erro}</p>}
 
-      <form onSubmit={handleSubmit} className="bg-white p-6 rounded-lg shadow mb-8">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <form
+        onSubmit={handleSubmit}
+        className="bg-white p-6 rounded-lg shadow mb-8"
+      >
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
           <input
             type="text"
             name="first_name"
@@ -169,25 +176,47 @@ function Usuarios() {
             disabled={!!editandoId}
             className="border border-gray-300 rounded px-3 py-2 w-full"
           />
-        </div>
-        <button
-          type="submit"
-          className="mt-4 bg-green-700 text-white px-6 py-2 rounded hover:bg-green-800"
-        >
-          {editandoId ? "Salvar Alterações" : "Adicionar Usuário"}
-        </button>
-        {editandoId && (
-          <button
-            type="button"
-            onClick={() => {
-              setForm({ first_name: "", last_name: "", email: "", senha: "" });
-              setEditandoId(null);
-            }}
-            className="ml-4 mt-4 bg-gray-500 text-white px-6 py-2 rounded hover:bg-gray-600"
+
+          {/* Tipo do usuário (somente na criação) */}
+          <select
+            name="role"
+            value={form.role}
+            onChange={handleChange}
+            disabled={!!editandoId}
+            className="border border-gray-300 rounded px-3 py-2 w-full"
+            title="Escolha Master para criar um administrador (se permitido pela sua permissão)"
           >
-            Cancelar Edição
+            <option value="normal">Normal</option>
+            <option value="master">Master</option>
+          </select>
+        </div>
+
+        <div>
+          <button
+            type="submit"
+            className="mt-4 bg-green-700 text-white px-6 py-2 rounded hover:bg-green-800"
+          >
+            {editandoId ? "Salvar Alterações" : "Adicionar Usuário"}
           </button>
-        )}
+          {editandoId && (
+            <button
+              type="button"
+              onClick={() => {
+                setForm({
+                  first_name: "",
+                  last_name: "",
+                  email: "",
+                  senha: "",
+                  role: "normal",
+                });
+                setEditandoId(null);
+              }}
+              className="ml-4 mt-4 bg-gray-500 text-white px-6 py-2 rounded hover:bg-gray-600"
+            >
+              Cancelar Edição
+            </button>
+          )}
+        </div>
       </form>
 
       <h2 className="text-xl font-semibold mb-2">Lista de Usuários</h2>
@@ -202,21 +231,23 @@ function Usuarios() {
           </tr>
         </thead>
         <tbody>
-          {usuarios.map((usuario) => (
-            <tr key={usuario.id} className="border-t">
-              <td className="px-4 py-2">{usuario.first_name} {usuario.last_name}</td>
-              <td className="px-4 py-2">{usuario.email}</td>
-              <td className="px-4 py-2">{usuario.is_active ? "Ativo" : "Inativo"}</td>
-              <td className="px-4 py-2">{usuario.tipo}</td>
+          {usuarios.map((u) => (
+            <tr key={u.id} className="border-t">
+              <td className="px-4 py-2">
+                {u.first_name} {u.last_name}
+              </td>
+              <td className="px-4 py-2">{u.email}</td>
+              <td className="px-4 py-2">{u.is_active ? "Ativo" : "Inativo"}</td>
+              <td className="px-4 py-2">{u.tipo}</td>
               <td className="px-4 py-2 space-x-2">
                 <button
-                  onClick={() => handleEditar(usuario)}
+                  onClick={() => handleEditar(u)}
                   className="bg-yellow-500 text-white px-3 py-1 rounded hover:bg-yellow-600"
                 >
                   Editar
                 </button>
                 <button
-                  onClick={() => handleExcluir(usuario.id)}
+                  onClick={() => handleExcluir(u.id)}
                   className="bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700"
                 >
                   Excluir
@@ -224,10 +255,15 @@ function Usuarios() {
               </td>
             </tr>
           ))}
+          {usuarios.length === 0 && (
+            <tr>
+              <td className="px-4 py-4 text-gray-500" colSpan={5}>
+                Nenhum usuário encontrado.
+              </td>
+            </tr>
+          )}
         </tbody>
       </table>
     </div>
   );
 }
-
-export default Usuarios;

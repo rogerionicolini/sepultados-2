@@ -9,14 +9,23 @@ class UsuarioCreationForm(forms.ModelForm):
 
     class Meta:
         model = Usuario
-        fields = ('email', 'first_name', 'last_name')
+        fields = (
+            'email',
+            'first_name',
+            'last_name',
+            'prefeitura',
+            'is_master',
+            'is_staff',
+            'is_active',
+            'is_superuser',  # visível no form; no admin só aparece para superusuário
+        )
 
     def clean_password2(self):
-        password1 = self.cleaned_data.get("password1")
-        password2 = self.cleaned_data.get("password2")
-        if password1 and password2 and password1 != password2:
+        p1 = self.cleaned_data.get("password1")
+        p2 = self.cleaned_data.get("password2")
+        if p1 and p2 and p1 != p2:
             raise forms.ValidationError("As senhas não coincidem.")
-        return password2
+        return p2
 
     def save(self, commit=True):
         user = super().save(commit=False)
@@ -27,7 +36,10 @@ class UsuarioCreationForm(forms.ModelForm):
 
 
 class UsuarioChangeForm(forms.ModelForm):
-    password = ReadOnlyPasswordHashField(label="Senha", help_text="Você pode alterar a senha usando o botão acima.")
+    password = ReadOnlyPasswordHashField(
+        label="Senha",
+        help_text="Use o botão acima para alterar a senha."
+    )
 
     class Meta:
         model = Usuario
@@ -36,9 +48,9 @@ class UsuarioChangeForm(forms.ModelForm):
             'first_name',
             'last_name',
             'password',
-            'is_active',
+            'prefeitura',
+            'is_master',
             'is_staff',
-            'is_superuser',
-            'groups',
-            'user_permissions',
+            'is_active',
+            'is_superuser',  # será exibido no admin só para superusuário
         )

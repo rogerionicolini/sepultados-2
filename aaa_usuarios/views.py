@@ -112,18 +112,17 @@ class UsuarioListCreateAPIView(generics.ListCreateAPIView):
     def get_serializer_context(self):
         context = super().get_serializer_context()
         context["prefeitura"] = getattr(self.request.user, "prefeitura", None)
+        context["request"] = self.request   # ✅ necessário para a validação do is_master
         return context
 
 
     def perform_create(self, serializer):
         user = self.request.user
         prefeitura = Prefeitura.objects.filter(usuario=user).first()
-
         if not prefeitura:
             raise ValidationError("Prefeitura não encontrada para o usuário.")
 
         hoje = timezone.now().date()
-
         licencas = Licenca.objects.filter(
             prefeitura=prefeitura,
             data_inicio__lte=timezone.now()
@@ -139,16 +138,26 @@ class UsuarioListCreateAPIView(generics.ListCreateAPIView):
         if not licenca:
             raise ValidationError("Nenhuma licença ativa encontrada para esta prefeitura.")
 
-        # 🔒 Conta TODOS os usuários, inclusive inativos
+        # Limite (conta todos, inclusive inativos)
         total_usuarios = Usuario.objects.filter(prefeitura=prefeitura).count()
         if total_usuarios >= licenca.usuarios_max:
             raise ValidationError(f"Limite de usuários atingido ({licenca.usuarios_max}).")
 
-        # ✅ Cria novo usuário inativo e vincula à prefeitura
-        serializer.save(prefeitura=prefeitura, is_active=False)
+        # ⬇️ pega is_master do payload; default False
+        is_master = bool(self.request.data.get("is_master")) in (True, "true", "True", "1")
 
-        # 📧 Envia e-mail de confirmação
-        self.enviar_email_confirmacao(self.request, serializer.instance)
+        # Cria o usuário já com prefeitura; deixa inativo até confirmar por e-mail
+        novo_usuario = serializer.save(
+            prefeitura=prefeitura,
+            is_active=False,
+            is_master=is_master,
+            # se for master, já dá acesso ao admin; não vira superuser global
+            **({"is_staff": True} if is_master else {})
+        )
+
+        # E-mail de confirmação
+        self.enviar_email_confirmacao(self.request, novo_usuario)
+
 
 
     def enviar_email_confirmacao(self, request, usuario):
@@ -191,55 +200,82 @@ class UsuarioListAPIView(generics.ListAPIView):
 
 
 
+# aaa_usuarios/views.py  (trecho)
+
 from rest_framework import generics, permissions
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import ValidationError, PermissionDenied
+from django.contrib.auth import get_user_model
+
 from aaa_usuarios.models import Usuario
-from aaa_usuarios.serializers import UsuarioSerializer
+from aaa_usuarios.serializers import (
+    UsuarioSerializer,
+    EditarUsuarioSerializer,   # usado na edição
+)
+
+from sepultados_gestao.models import Prefeitura
+
 
 class UsuarioRetrieveUpdateDestroyAPIView(generics.RetrieveUpdateDestroyAPIView):
-    serializer_class = UsuarioSerializer
+    """
+    GET /usuarios/<id>/      -> detalhe
+    PUT/PATCH /usuarios/<id>/-> editar (parcial)
+    DELETE /usuarios/<id>/   -> excluir (regras abaixo)
+    """
     permission_classes = [permissions.IsAuthenticated]
+    queryset = Usuario.objects.all()   # necessário pro DRF
+    lookup_field = "pk"
+
+    # usa serializer de listagem por padrão
+    serializer_class = UsuarioSerializer
 
     def get_queryset(self):
+        # Limita sempre à prefeitura do usuário logado
         usuario = self.request.user
-        # Retorna todos usuários da mesma prefeitura do usuário logado
         return Usuario.objects.filter(prefeitura=usuario.prefeitura)
 
     def get_object(self):
         obj = super().get_object()
         user = self.request.user
 
-        print(f"[DEBUG] Usuário logado: ID={user.id}, Email={user.email}")
-        print(f"[DEBUG] Tentando acessar usuário: ID={obj.id}, Email={obj.email}")
-        print(f"[DEBUG] Prefeitura do logado: {user.prefeitura_id}, Prefeitura do alvo: {obj.prefeitura_id}")
-
+        # Permite acessar a si mesmo
         if obj.pk == user.pk:
-            print("[DEBUG] Permitido: acesso ao próprio usuário")
             return obj
 
+        # Permite acessar usuários da mesma prefeitura
         if obj.prefeitura_id == user.prefeitura_id:
-            print("[DEBUG] Permitido: usuários da mesma prefeitura")
             return obj
 
-        print("[DEBUG] Negado: permissão insuficiente")
         raise PermissionDenied("Você não tem permissão para acessar este usuário.")
+
+    def get_serializer_class(self):
+        # Na edição usamos um serializer simples (sem senha/email obrigatório)
+        if self.request.method in ("PUT", "PATCH"):
+            return EditarUsuarioSerializer
+        return UsuarioSerializer
+
+    def update(self, request, *args, **kwargs):
+        """
+        Torna a edição sempre PARCIAL para não exigir todos os campos.
+        O frontend manda só first_name e last_name.
+        """
+        kwargs["partial"] = True
+        return super().update(request, *args, **kwargs)
 
     def perform_destroy(self, instance):
         user = self.request.user
 
-        # 🔒 Não pode excluir o próprio usuário
         if instance.pk == user.pk:
             raise ValidationError("Você não pode excluir seu próprio usuário.")
 
-        # 🔒 Não pode excluir o master (prefeitura.usuario)
-        if Prefeitura.objects.filter(usuario=instance).exists():
-            raise ValidationError("Não é permitido excluir o usuário master da prefeitura.")
+        # Não permitir excluir o “dono” da prefeitura ou qualquer master extra (is_staff)
+        if Prefeitura.objects.filter(usuario=instance).exists() or getattr(instance, "is_staff", False):
+            raise ValidationError("Não é permitido excluir usuários master da prefeitura.")
 
-        # 🔒 Só o master da prefeitura pode excluir outros usuários da MESMA prefeitura
         pref = getattr(user, "prefeitura", None)
         if not pref or pref.id != instance.prefeitura_id:
             raise PermissionDenied("Você não tem permissão para excluir este usuário.")
 
+        # Apenas o master “dono” pode excluir
         if pref.usuario_id != user.id:
             raise PermissionDenied("Apenas o usuário master pode excluir usuários.")
 
