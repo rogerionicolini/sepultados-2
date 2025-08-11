@@ -380,7 +380,7 @@ class Sepultado(models.Model):
         verbose_name="Túmulo"
     )
 
-    ordem_no_tumulo = models.PositiveIntegerField(null=True, blank=True)
+    
     data_sepultamento = models.DateField(null=True, blank=True)
     observacoes = models.TextField(blank=True, null=True)
 
