@@ -283,18 +283,22 @@ class Tumulo(models.Model):
 
     def __str__(self):
         partes = []
+
+        # identificador pode ser texto; só zero-pad se for puramente numérico
         if self.identificador is not None:
-            partes.append(f"{self.identificador:02}")
+            ident = str(self.identificador)
+            if ident.isdigit():
+                partes.append(f"{int(ident):02d}")   # 2 dígitos com zero à esquerda
+            else:
+                partes.append(ident)                 # mantém como veio
+
         if self.usar_linha and self.linha is not None:
-            partes.append(f"L {self.linha:02}")
+            partes.append(f"L {self.linha:02d}")     # aqui é número, pode usar :02d
+
         if self.quadra:
-            partes.append(str(self.quadra))  # já está formatado como "Quadra 01"
-        return " ".join(partes)
+            partes.append(str(self.quadra))          # ex.: "Quadra 01"
 
-
-
-
-
+        return " ".join(partes) or f"Túmulo {self.pk}"
 
     def atualizar_status(self):
         self.status = self.calcular_status_dinamico()
