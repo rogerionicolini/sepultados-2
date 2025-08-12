@@ -34,7 +34,8 @@ import RelatorioTranslados from "./pages/RelatorioTranslados";
 import RelatorioContratos from "./pages/RelatorioContratos";
 import RelatorioReceitas from "./pages/RelatorioReceitas";
 import RelatorioTumulos from "./pages/RelatorioTumulos";
-import RelatorioAuditorias from "./pages/RelatorioAuditorias";
+import RelatorioAuditorias from "./pages/RelatorioAuditorias.jsx";
+
 
 const AppRoutes = () => (
   <Routes>
