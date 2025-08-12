@@ -73,6 +73,22 @@ class Prefeitura(models.Model):
         verbose_name="Juros mensal por atraso (%)",
         help_text="Percentual mensal de juros em caso de atraso (ex: 1%)"
     )
+    # --- dentro de Prefeitura ---
+    SITUACAO_CHOICES = [
+        ('ativo', 'Ativa'),
+        ('arquivado', 'Arquivada'),
+        ('suspenso', 'Suspensa'),
+    ]
+
+    situacao = models.CharField(
+        max_length=12,
+        choices=SITUACAO_CHOICES,
+        default='ativo',
+        db_index=True,
+        verbose_name="Situação"
+    )
+    arquivada_em = models.DateTimeField(null=True, blank=True, verbose_name="Arquivada em")
+    motivo_arquivamento = models.TextField(null=True, blank=True, verbose_name="Motivo do arquivamento")
 
     def __str__(self):
         return self.nome
@@ -133,6 +149,21 @@ class Cemiterio(models.Model):
         verbose_name="Tempo mínimo para exumação (em meses)",
         help_text="Tempo mínimo exigido entre sepultamentos no mesmo túmulo (em meses)"
     )
+    # dentro de Cemiterio
+    SITUACAO_CHOICES = [
+        ('ativo', 'Ativo'),
+        ('arquivado', 'Arquivado'),
+    ]
+
+    situacao = models.CharField(
+        max_length=12,
+        choices=SITUACAO_CHOICES,
+        default='ativo',
+        db_index=True,
+        verbose_name="Situação"
+    )
+    arquivado_em = models.DateTimeField(null=True, blank=True, verbose_name="Arquivado em")
+    motivo_arquivamento = models.TextField(null=True, blank=True, verbose_name="Motivo do arquivamento")
 
     def clean(self):
         # Mantém a validação obrigatória da prefeitura

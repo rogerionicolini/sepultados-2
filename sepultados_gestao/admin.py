@@ -32,7 +32,8 @@ from .utils import registrar_auditoria
 from sepultados_gestao.session_context.thread_local import get_prefeitura_ativa
 from django.contrib.auth import get_user_model
 User = get_user_model()
-    
+
+
 
 
 
@@ -45,10 +46,18 @@ class AnexoInline(GenericTabularInline):
 
 
 
+from django.db import transaction
+from django.contrib import messages
+from .models import Prefeitura
+from sepultados_gestao.services.arquivamento import (
+    arquivar_prefeitura, restaurar_prefeitura
+)
+
+
 @admin.register(Prefeitura)
 class PrefeituraAdmin(admin.ModelAdmin):
-    list_display = ('nome', 'endereco_cidade', 'cnpj', 'usuario')
-    list_filter = ('endereco_estado',)
+    list_display = ("nome", "endereco_cidade", "cnpj", "usuario", "situacao_badge")
+    list_filter = ("situacao", "endereco_estado")
     search_fields = ('nome', 'responsavel', 'cnpj', 'endereco_cidade')
 
     formfield_overrides = {
@@ -79,10 +88,57 @@ class PrefeituraAdmin(admin.ModelAdmin):
             'fields': ('clausulas_contrato',),
             'description': 'Esse texto será inserido automaticamente no meio dos contratos PDF.'
         }),
+        ('Licença / Situação', {'fields': ('situacao', 'arquivada_em', 'motivo_arquivamento')}),
     )
 
+    actions = ['acao_arquivar', 'acao_restaurar']
 
+    def get_actions(self, request):
+        actions = super().get_actions(request)
+        if not request.user.is_superuser:
+            actions.pop('acao_arquivar', None)
+            actions.pop('acao_restaurar', None)
+            actions.pop('delete_selected', None)  # opcional: esconde excluir em massa
+        return actions
 
+    @admin.action(description="Arquivar prefeitura (desativa usuários e cemitérios)")
+    def acao_arquivar(self, request, queryset):
+        if not request.user.is_superuser:
+            self.message_user(request, "Ação restrita a superusuários.", level=messages.ERROR)
+            return
+        with transaction.atomic():
+            for pref in queryset:
+                arquivar_prefeitura(pref, responsavel=request.user, motivo="Arquivada via admin")
+        self.message_user(request, "Prefeitura(s) arquivada(s) com sucesso.", level=messages.SUCCESS)
+
+    @admin.action(description="Restaurar prefeitura (reativa usuários e cemitérios)")
+    def acao_restaurar(self, request, queryset):
+        if not request.user.is_superuser:
+            self.message_user(request, "Ação restrita a superusuários.", level=messages.ERROR)
+            return
+        with transaction.atomic():
+            for pref in queryset:
+                restaurar_prefeitura(pref, responsavel=request.user, motivo="Restaurada via admin")
+        self.message_user(request, "Prefeitura(s) restaurada(s) com sucesso.", level=messages.SUCCESS)
+
+    @admin.display(description="Situação", ordering="situacao")
+    def situacao_badge(self, obj):
+        rotulos = dict(Prefeitura.SITUACAO_CHOICES) if hasattr(Prefeitura, "SITUACAO_CHOICES") else {
+            "ativo": "Ativa", "arquivado": "Arquivada", "suspenso": "Suspensa",
+        }
+        label = rotulos.get(obj.situacao, obj.situacao or "-")
+        cores = {"ativo": "#2e7d32", "arquivado": "#8d6e63", "suspenso": "#f57c00"}
+        cor = cores.get(obj.situacao, "#444")
+        # badge simples
+        return format_html(
+            '<span style="padding:2px 8px;border-radius:999px;background:{}20;color:{};font-weight:600;">{}</span>',
+            cor, cor, label,
+        )
+
+    class Media:
+        css = {
+            "all": ("custom_admin/css/inputs.css",)  # caminho dentro de STATICFILES
+        }
 
 from django.contrib import admin, messages
 from .models import Cemiterio, Quadra

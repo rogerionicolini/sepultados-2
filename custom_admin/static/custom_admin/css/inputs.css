@@ -1,0 +1,17 @@
+/* Aumenta a altura dos selects no form de Prefeitura */
+.related-widget-wrapper select#id_usuario,
+select#id_situacao {
+  height: 40px !important;       /* altura do controle */
+  min-height: 40px !important;
+  line-height: 40px !important;   /* ajuda em alguns temas */
+  padding-top: 6px !important;    /* dá “respiro” */
+  padding-bottom: 6px !important;
+  font-size: 14px !important;     /* opcional: fonte um pouco maior */
+}
+
+/* Alinha os ícones (+, lupa, x) verticalmente ao select */
+.related-widget-wrapper {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}

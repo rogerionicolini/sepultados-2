@@ -50,6 +50,10 @@ class Usuario(AbstractBaseUser, PermissionsMixin):
         related_name="usuarios",
         verbose_name="prefeitura vinculada"
     )
+    desativado_por_arquivamento = models.BooleanField(
+        default=False,
+        help_text="Marcado automaticamente quando a prefeitura é arquivada."
+    )
 
     # ⬇️ NOVO: permite mais de um “master” por prefeitura
     is_master = models.BooleanField(

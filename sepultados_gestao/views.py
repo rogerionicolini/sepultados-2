@@ -42,8 +42,21 @@ def gerar_contrato_pdf(request, contrato_id):
     return response
 
 
+from django.contrib import messages
+from django.contrib.auth import authenticate
+from django.contrib.admin.views.decorators import staff_member_required
+from django.shortcuts import render, redirect
+from sepultados_gestao.models import Prefeitura
+
 @staff_member_required
 def selecionar_prefeitura_ativa(request):
+    # por padrão, só prefeituras ativas
+    qs = Prefeitura.objects.filter(situacao="ativo").order_by("nome")
+
+    # opcional: superusuário pode ver todas com ?todas=1
+    if request.user.is_superuser and request.GET.get("todas") == "1":
+        qs = Prefeitura.objects.all().order_by("nome")
+
     if request.method == "POST":
         prefeitura_id = request.POST.get("prefeitura_id")
         senha = request.POST.get("senha")
@@ -62,21 +75,26 @@ def selecionar_prefeitura_ativa(request):
             return redirect("selecionar_prefeitura_ativa")
 
         try:
-            prefeitura = Prefeitura.objects.get(id=int(prefeitura_id))  # <-- converte para inteiro
+            # importante: buscar a partir do queryset filtrado
+            prefeitura = qs.get(id=int(prefeitura_id))
+
             request.session["prefeitura_ativa_id"] = prefeitura.id
             request.session["prefeitura_ativa_nome"] = prefeitura.nome
-
-            # Limpa o cemitério da sessão
+            # limpa cemitério ativo
             request.session.pop("cemiterio_ativo_id", None)
             request.session.pop("cemiterio_ativo_nome", None)
 
             messages.success(request, f"Prefeitura ativa: {prefeitura.nome}")
             return redirect("admin:index")
         except Prefeitura.DoesNotExist:
-            messages.error(request, "Prefeitura não encontrada.")
+            messages.error(request, "Prefeitura inválida ou não permitida.")
 
-    prefeituras = Prefeitura.objects.all()
-    return render(request, "admin/selecionar_prefeitura_ativa.html", {"prefeituras": prefeituras})
+    return render(
+        request,
+        "admin/selecionar_prefeitura_ativa.html",
+        {"prefeituras": qs},
+    )
+
 
 
 from django.contrib.admin.views.decorators import staff_member_required
