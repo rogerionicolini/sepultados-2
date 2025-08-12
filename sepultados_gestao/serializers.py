@@ -10,6 +10,7 @@ from .models import (
     Translado,
     Tumulo,
     Licenca,
+    Anexo,
 )
 
 class CemiterioSerializer(serializers.ModelSerializer):
@@ -231,3 +232,17 @@ class PrefeituraSerializer(serializers.ModelSerializer):
         instance.save()
         return instance
 
+class AnexoSerializer(serializers.ModelSerializer):
+    arquivo_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Anexo
+        fields = ["id", "nome", "arquivo", "arquivo_url", "data_upload", "content_type", "object_id"]
+        read_only_fields = ["id", "arquivo_url", "data_upload"]
+
+    def get_arquivo_url(self, obj):
+        request = self.context.get("request")
+        if obj.arquivo and hasattr(obj.arquivo, "url"):
+            url = obj.arquivo.url
+            return request.build_absolute_uri(url) if request else url
+        return None

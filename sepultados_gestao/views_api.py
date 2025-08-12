@@ -1,4 +1,4 @@
-# sepultados_gestao/views_api.py
+    # sepultados_gestao/views_api.py
 from datetime import date
 import uuid
 import base64
@@ -16,6 +16,14 @@ from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from .models import Anexo
+from .serializers import AnexoSerializer
+from django.contrib.contenttypes.models import ContentType
+
+from rest_framework import mixins
+from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework.exceptions import ValidationError, PermissionDenied
+
 
 from .models import (
     Prefeitura,
@@ -638,3 +646,82 @@ class CemiterioLogadoAPIView(APIView):
 
         request.session["cemiterio_ativo"] = cem.id
         return Response({"ok": True})
+
+
+def _prefeitura_id_from_obj(obj):
+    try:
+        # 1) objeto com FK direta
+        if hasattr(obj, "prefeitura_id") and obj.prefeitura_id:
+            return obj.prefeitura_id
+        # 2) via túmulo -> quadra -> cemitério
+        t = getattr(obj, "tumulo", None)
+        if t and getattr(t, "quadra", None) and getattr(t.quadra, "cemiterio", None):
+            return t.quadra.cemiterio.prefeitura_id
+        # 3) objetos que tenham cemiterio direto
+        if getattr(obj, "cemiterio", None):
+            return obj.cemiterio.prefeitura_id
+    except Exception:
+        pass
+    return None
+
+
+class AnexoViewSet(mixins.ListModelMixin,
+                   mixins.CreateModelMixin,
+                   mixins.DestroyModelMixin,
+                   viewsets.GenericViewSet):
+    queryset = Anexo.objects.all().order_by("-data_upload")
+    serializer_class = AnexoSerializer
+    permission_classes = [IsAuthenticated]
+    parser_classes = (MultiPartParser, FormParser)
+
+    def _parse_ct(self, s: str) -> ContentType:
+        try:
+            app_label, model = s.split(".", 1)
+            return ContentType.objects.get(app_label=app_label, model=model)
+        except Exception:
+            raise ValidationError({"content_type": "Use app_label.model (ex.: sepultados_gestao.sepultado)."})
+
+    def _check_scope(self, ct: ContentType, obj_id: str):
+        try:
+            obj = ct.get_object_for_this_type(id=int(obj_id))
+        except Exception:
+            raise ValidationError({"object_id": "Objeto não encontrado."})
+
+        pref_ativa = getattr(self.request, "prefeitura_ativa", None)
+        pref_ativa_id = getattr(pref_ativa, "id", None)
+        obj_pref_id = _prefeitura_id_from_obj(obj)
+
+        if pref_ativa_id and obj_pref_id and str(pref_ativa_id) != str(obj_pref_id):
+            raise PermissionDenied("Sem permissão para anexos deste registro.")
+        return obj
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        ct_param = self.request.query_params.get("ct") or self.request.query_params.get("content_type")
+        obj_id = self.request.query_params.get("object_id")
+        if not (ct_param and obj_id):
+            return qs.none()
+        ct = self._parse_ct(ct_param)
+        self._check_scope(ct, obj_id)  # valida escopo
+        return qs.filter(content_type=ct, object_id=int(obj_id))
+
+    def perform_create(self, serializer):
+        ct_param = self.request.data.get("content_type") or self.request.data.get("ct")
+        obj_id = self.request.data.get("object_id")
+        if not (ct_param and obj_id):
+            raise ValidationError("content_type e object_id são obrigatórios.")
+        ct = self._parse_ct(ct_param)
+        self._check_scope(ct, obj_id)  # valida escopo
+        serializer.save(content_type=ct, object_id=int(obj_id))
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        self._check_scope(instance.content_type, instance.object_id)
+        return super().destroy(request, *args, **kwargs)
+
+    def get_object(self):
+        # Busca direto por PK para não depender do get_queryset() com ct/object_id
+        obj = get_object_or_404(Anexo, pk=self.kwargs["pk"])
+        # valida escopo (prefeitura) antes de devolver
+        self._check_scope(obj.content_type, obj.object_id)
+        return obj

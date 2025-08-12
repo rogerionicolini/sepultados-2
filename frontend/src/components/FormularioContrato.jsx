@@ -1,15 +1,12 @@
-// src/components/FormularioSepultado.jsx
+// src/components/FormularioContrato.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import axios from "axios";
-import { useNavigate, useParams } from "react-router-dom";
 import InputMask from "react-input-mask";
 
-/* ===================== CONFIG ===================== */
 const API_BASE = "http://127.0.0.1:8000/api/";
-// content type do modelo no Django ContentTypes (ajuste se seu app_label diferir)
-const CT_SEPULTADO = "sepultados_gestao.sepultado";
+const CT_CONTRATO = "sepultados_gestao.concessaocontrato"; // ajuste se necessário
 
-/* ========== Helpers (cemitério ativo) ========== */
+/* ========= Helpers: cemitério ativo ========= */
 function getCemiterioAtivo() {
   try {
     const raw = localStorage.getItem("cemiterioAtivo");
@@ -24,7 +21,7 @@ function getCemiterioAtivo() {
   return null;
 }
 
-/* ========== Normalização de erros da API ========== */
+/* ========= Normalização de erros da API ========= */
 function normalizeApiErrors(data) {
   const out = { summary: "", fields: {} };
   if (!data) return out;
@@ -41,7 +38,6 @@ function normalizeApiErrors(data) {
     out.summary = data.join(" ");
     return out;
   }
-
   const getMsgs = (val) => {
     if (Array.isArray(val)) {
       return val
@@ -54,19 +50,13 @@ function normalizeApiErrors(data) {
     }
     return String(val);
   };
-
   Object.entries(data).forEach(([k, v]) => {
-    if (k === "detail" || k === "non_field_errors") {
-      out.summary = getMsgs(v);
-    } else {
-      out.fields[k] = getMsgs(v);
-    }
+    if (k === "detail" || k === "non_field_errors") out.summary = getMsgs(v);
+    else out.fields[k] = getMsgs(v);
   });
-
   if (!out.summary) out.summary = "Revise os campos destacados em vermelho.";
   return out;
 }
-
 function focusFirstError(errorsObj, refs) {
   const firstKey = Object.keys(errorsObj)[0];
   const el = firstKey && refs?.current?.[firstKey];
@@ -117,7 +107,7 @@ function TumuloDropdown({ value, onChange, api, cemiterioId, error, inputRef }) 
     return () => document.removeEventListener("mousedown", outside);
   }, [open]);
 
-  const filtered = useMemo(() => {
+  const filtered = React.useMemo(() => {
     const s = q.trim().toLowerCase();
     if (!s) return itens;
     return itens.filter((o) => o.label.toLowerCase().includes(s));
@@ -207,7 +197,6 @@ function AnexosWidget({ context, objectId, api, disabled }) {
       setLoading(false);
     }
   }
-
   useEffect(() => {
     listar();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -223,7 +212,6 @@ function AnexosWidget({ context, objectId, api, disabled }) {
       if (nome) fd.append("nome", nome);
       fd.append("content_type", context);
       fd.append("object_id", String(objectId));
-      // sem headers manuais: axios/browser define o boundary
       await api.post("anexos/", fd);
       setArquivo(null);
       setNome("");
@@ -235,7 +223,6 @@ function AnexosWidget({ context, objectId, api, disabled }) {
       setUpLoading(false);
     }
   }
-
   async function excluir(id) {
     if (!window.confirm("Excluir este anexo?")) return;
     try {
@@ -264,7 +251,7 @@ function AnexosWidget({ context, objectId, api, disabled }) {
           />
           {disabled && (
             <p className="text-xs text-gray-600 mt-1">
-              Salve o sepultado para habilitar os anexos.
+              Salve o contrato para habilitar os anexos.
             </p>
           )}
         </div>
@@ -339,12 +326,9 @@ function AnexosWidget({ context, objectId, api, disabled }) {
   );
 }
 
-/* ============================== Página =============================== */
-export default function FormularioSepultado() {
-  const navigate = useNavigate();
-  const { id } = useParams(); // edição?
-  const isEdit = !!id;
-
+/* ============================== Formulário =============================== */
+export default function FormularioContrato({ contratoId, onCancel, onSuccess }) {
+  const isEdit = !!contratoId;
   const token = localStorage.getItem("accessToken");
   const cemAtivo = getCemiterioAtivo();
 
@@ -364,157 +348,74 @@ export default function FormularioSepultado() {
   const fieldRefs = useRef({});
 
   const [form, setForm] = useState({
-    // Somente leitura
-    numero_sepultamento: "",
-    idade_ao_falecer: "",
-    exumado: false,
-    data_exumacao: "",
-    trasladado: false,
-    data_translado: "",
+    numero_contrato: "",
+    data_contrato: "",
 
-    // Pessoais
     nome: "",
-    cpf_sepultado: "",
-    sexo: "NI",
-    sexo_outro_descricao: "",
-    data_nascimento: "",
-    local_nascimento: "",
-    nacionalidade: "",
-    cor_pele: "",
-    estado_civil: "NAO_INFORMADO",
-    nome_conjuge: "",
-    nome_pai: "",
-    nome_mae: "",
-    profissao: "",
-    grau_instrucao: "",
-    // Endereço
+    documento: "",
+    telefone: "",
+
     logradouro: "",
     numero: "",
     bairro: "",
     cidade: "",
     estado: "",
-    // Falecimento
-    data_falecimento: "",
-    hora_falecimento: "",
-    local_falecimento: "",
-    causa_morte: "",
-    medico_responsavel: "",
-    crm_medico: "",
-    // Cartório
-    cartorio_nome: "",
-    cartorio_numero_registro: "",
-    cartorio_livro: "",
-    cartorio_folha: "",
-    cartorio_data_registro: "",
-    // Sepultamento
+    cep: "",
+
     tumulo: "",
-    data_sepultamento: "",
     observacoes: "",
-    // Pagamento
-    forma_pagamento: "gratuito",
+
+    forma_pagamento: "gratuito", // gratuito | avista | parcelado
     quantidade_parcelas: "",
     valor: "",
-    // Responsável
-    nome_responsavel: "",
-    cpf: "",
-    endereco: "",
-    telefone: "",
   });
 
-  // carregar na edição
+  // carregar edição
   useEffect(() => {
-    async function fetchSepultado() {
+    async function fetchContrato() {
       if (!isEdit) return;
       try {
         setCarregando(true);
-        // >>> inclui o parâmetro de contexto do cemitério para não dar 404
-        const { data } = await api.get(`sepultados/${id}/`, {
+        const { data } = await api.get(`contratos/${contratoId}/`, {
           params: { cemiterio: cemAtivo?.id },
         });
         const v = (x) => (x === null || x === undefined ? "" : x);
-
         setForm((s) => ({
           ...s,
-          numero_sepultamento: v(data.numero_sepultamento),
-          idade_ao_falecer: v(data.idade_ao_falecer),
-          exumado: !!data.exumado,
-          data_exumacao: v(data.data_exumacao),
-          trasladado: !!data.trasladado,
-          data_translado: v(data.data_translado),
+          numero_contrato: v(data.numero_contrato),
+          data_contrato: v(data.data_contrato),
 
           nome: v(data.nome),
-          cpf_sepultado: v(data.cpf_sepultado),
-          sexo: v(data.sexo) || "NI",
-          sexo_outro_descricao: v(data.sexo_outro_descricao),
-          data_nascimento: v(data.data_nascimento),
-          local_nascimento: v(data.local_nascimento),
-          nacionalidade: v(data.nacionalidade),
-          cor_pele: v(data.cor_pele),
-          estado_civil: v(data.estado_civil) || "NAO_INFORMADO",
-          nome_conjuge: v(data.nome_conjuge),
-          nome_pai: v(data.nome_pai),
-          nome_mae: v(data.nome_mae),
-          profissao: v(data.profissao),
-          grau_instrucao: v(data.grau_instrucao),
+          documento: v(data.documento),
+          telefone: v(data.telefone),
 
           logradouro: v(data.logradouro),
           numero: v(data.numero),
           bairro: v(data.bairro),
           cidade: v(data.cidade),
           estado: v(data.estado),
-
-          data_falecimento: v(data.data_falecimento),
-          hora_falecimento: v(data.hora_falecimento),
-          local_falecimento: v(data.local_falecimento),
-          causa_morte: v(data.causa_morte),
-          medico_responsavel: v(data.medico_responsavel),
-          crm_medico: v(data.crm_medico),
-
-          cartorio_nome: v(data.cartorio_nome),
-          cartorio_numero_registro: v(data.cartorio_numero_registro),
-          cartorio_livro: v(data.cartorio_livro),
-          cartorio_folha: v(data.cartorio_folha),
-          cartorio_data_registro: v(data.cartorio_data_registro),
+          cep: v(data.cep),
 
           tumulo: data.tumulo ?? "",
-          data_sepultamento: v(data.data_sepultamento),
           observacoes: v(data.observacoes),
 
           forma_pagamento: v(data.forma_pagamento) || "gratuito",
           quantidade_parcelas: v(data.quantidade_parcelas),
           valor: data.valor ? String(data.valor).replace(".", ",") : "",
-
-          nome_responsavel: v(data.nome_responsavel),
-          cpf: v(data.cpf),
-          endereco: v(data.endereco),
-          telefone: v(data.telefone),
         }));
       } catch (e) {
-        console.error("erro ao carregar sepultado:", e?.response?.data || e);
-        alert("Não foi possível carregar este sepultado.");
-        navigate("/sepultados");
+        console.error("erro ao carregar contrato:", e?.response?.data || e);
+        alert("Não foi possível carregar este contrato.");
+        onCancel?.();
       } finally {
         setCarregando(false);
       }
     }
-    fetchSepultado();
+    fetchContrato();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
+  }, [contratoId]);
 
-  // condicionais
-  useEffect(() => {
-    if (form.sexo !== "O" && form.sexo_outro_descricao) {
-      setForm((s) => ({ ...s, sexo_outro_descricao: "" }));
-    }
-  }, [form.sexo]);
-
-  useEffect(() => {
-    const casadoOuViuvo = form.estado_civil === "CASADO" || form.estado_civil === "VIUVO";
-    if (!casadoOuViuvo && form.nome_conjuge) {
-      setForm((s) => ({ ...s, nome_conjuge: "" }));
-    }
-  }, [form.estado_civil]);
-
+  // dependências de UI
   useEffect(() => {
     if (form.forma_pagamento !== "parcelado" && form.quantidade_parcelas) {
       setForm((s) => ({ ...s, quantidade_parcelas: "" }));
@@ -556,22 +457,12 @@ export default function FormularioSepultado() {
   const errMsg = (name) =>
     Array.isArray(errors?.[name]) ? errors[name].join(" ") : errors?.[name];
 
-  // ======= Validação de obrigatórios (alinhado ao backend) =======
+  // validação mínima do cliente (alinhada ao provável backend)
   function clientValidate(f) {
     const errs = {};
-    if (!f.nome?.trim()) errs.nome = "Informe o nome.";
+    if (!f.nome?.trim()) errs.nome = "Informe o nome do titular.";
+    if (!f.documento?.trim()) errs.documento = "Informe o CPF/CNPJ.";
     if (!f.tumulo) errs.tumulo = "Selecione o túmulo.";
-    if (!f.data_sepultamento) errs.data_sepultamento = "Informe a data do sepultamento.";
-    if (!f.data_falecimento) errs.data_falecimento = "Informe a data do falecimento.";
-
-    // condicionais
-    if (f.sexo === "O" && !f.sexo_outro_descricao?.trim()) {
-      errs.sexo_outro_descricao = "Descreva o sexo.";
-    }
-    const casadoOuViuvo = f.estado_civil === "CASADO" || f.estado_civil === "VIUVO";
-    if (casadoOuViuvo && !f.nome_conjuge?.trim()) {
-      errs.nome_conjuge = "Informe o nome do cônjuge.";
-    }
     if (f.forma_pagamento === "parcelado") {
       const qp = Number(f.quantidade_parcelas);
       if (!qp || qp < 1) errs.quantidade_parcelas = "Informe a quantidade de parcelas.";
@@ -581,7 +472,6 @@ export default function FormularioSepultado() {
       const valorNum = Number(valorNumStr);
       if (!valorNum || valorNum <= 0) errs.valor = "Informe o valor.";
     }
-
     return errs;
   }
 
@@ -598,30 +488,17 @@ export default function FormularioSepultado() {
       return;
     }
 
-    let valorNum = "0";
-    if (form.forma_pagamento !== "gratuito") {
-      valorNum = (form.valor || "0").replace(/\./g, "").replace(",", ".");
-    }
-
     const payload = {
       ...form,
-      valor: valorNum,
+      valor:
+        form.forma_pagamento === "gratuito"
+          ? "0"
+          : (form.valor || "0").replace(/\./g, "").replace(",", "."),
       ...(form.forma_pagamento !== "parcelado" ? { quantidade_parcelas: "" } : {}),
-      ...(form.sexo !== "O" ? { sexo_outro_descricao: "" } : {}),
-      ...(!(form.estado_civil === "CASADO" || form.estado_civil === "VIUVO")
-        ? { nome_conjuge: "" }
-        : {}),
     };
 
     const fd = new FormData();
-    const ignorar = new Set([
-      "numero_sepultamento",
-      "idade_ao_falecer",
-      "exumado",
-      "data_exumacao",
-      "trasladado",
-      "data_translado",
-    ]);
+    const ignorar = new Set(["numero_contrato", "data_contrato"]);
     Object.entries(payload).forEach(([k, v]) => {
       if (ignorar.has(k)) return;
       if (v !== undefined && v !== null && v !== "") fd.append(k, v);
@@ -630,15 +507,13 @@ export default function FormularioSepultado() {
     try {
       setSalvando(true);
       if (isEdit) {
-        // >>> inclui cemiterio e NÃO define Content-Type manualmente
-        await api.put(`sepultados/${id}/`, fd, {
+        await api.put(`contratos/${contratoId}/`, fd, {
           params: { cemiterio: cemAtivo?.id },
         });
       } else {
-        // >>> deixe o axios montar o boundary do multipart
-        await api.post("sepultados/", fd);
+        await api.post("contratos/", fd);
       }
-      navigate("/sepultados");
+      onSuccess?.();
     } catch (err) {
       const ct = err?.response?.headers?.["content-type"] || "";
       if (!ct.includes("application/json")) {
@@ -659,17 +534,16 @@ export default function FormularioSepultado() {
     return <div className="text-sm text-red-600">Selecione um cemitério.</div>;
   }
   if (carregando) {
-    return <div className="px-4 py-8 text-gray-700">Carregando dados do sepultado…</div>;
+    return <div className="px-4 py-8 text-gray-700">Carregando dados do contrato…</div>;
   }
 
-  const input = (label, name, props = {}) => {
+  const input = (label, name, props = {}, required = false) => {
     const error = errMsg(name);
-    const obrigatorio = ["nome"].includes(name);
     return (
       <div key={name}>
         <label className="block text-sm text-green-900 mb-1">
           {label}
-          {obrigatorio ? " *" : ""}
+          {required ? " *" : ""}
         </label>
         <input
           ref={(el) => (fieldRefs.current[name] = el)}
@@ -685,7 +559,6 @@ export default function FormularioSepultado() {
       </div>
     );
   };
-
   const displayReadOnly = (label, valueText) => (
     <div>
       <label className="block text-sm text-green-900 mb-1">{label}</label>
@@ -697,7 +570,6 @@ export default function FormularioSepultado() {
       />
     </div>
   );
-
   const errBox = (msg) =>
     msg ? (
       <div className="bg-red-50 border border-red-300 text-red-800 rounded-lg px-4 py-2">
@@ -706,10 +578,10 @@ export default function FormularioSepultado() {
     ) : null;
 
   return (
-    <div className="space-y-6 px-4 pb-10 pt-4">
+    <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-bold text-green-900">
-          {isEdit ? "Editar Sepultado" : "Cadastro de Sepultado"}
+          {isEdit ? "Editar Contrato de Concessão" : "Cadastro de Contrato de Concessão"}
         </h2>
       </div>
 
@@ -719,92 +591,56 @@ export default function FormularioSepultado() {
         <div className="bg-[#f0f8ea] rounded-xl p-6 shadow space-y-8">
           {/* IDENTIFICAÇÃO */}
           <div>
-            <div className="text-green-900 font-semibold mb-2">Identificação do Sepultamento</div>
+            <div className="text-green-900 font-semibold mb-2">Identificação</div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {displayReadOnly("Número do sepultamento", form.numero_sepultamento || "-")}
+              {displayReadOnly("Número do Contrato", form.numero_contrato || "-")}
+              {displayReadOnly("Data do Contrato", form.data_contrato || "-")}
             </div>
           </div>
 
-          {/* DADOS DO SEPULTADO */}
+          {/* TITULAR */}
           <div>
-            <div className="text-green-900 font-semibold mb-2">Dados do Sepultado</div>
+            <div className="text-green-900 font-semibold mb-2">Dados do Titular</div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {input("Nome", "nome")}
+              {input("Nome *", "nome", {}, true)}
               <div>
-                <label className="block text-sm text-green-900 mb-1">CPF do Sepultado</label>
+                <label className="block text-sm text-green-900 mb-1">Documento (CPF/CNPJ) *</label>
                 <InputMask
-                  mask="999.999.999-99"
-                  name="cpf_sepultado"
-                  value={form.cpf_sepultado}
+                  mask={form.documento?.replace(/\D/g, "").length > 11 ? "99.999.999/9999-99" : "999.999.999-99"}
+                  name="documento"
+                  value={form.documento}
                   onChange={onChange}
-                  inputRef={(el) => (fieldRefs.current["cpf_sepultado"] = el)}
+                  inputRef={(el) => (fieldRefs.current["documento"] = el)}
                   className={`w-full border rounded-lg px-3 py-2 outline-none bg-white ${
-                    errMsg("cpf_sepultado") ? "border-red-400 ring-1 ring-red-500" : "border-[#bcd2a7]"
+                    errMsg("documento") ? "border-red-400 ring-1 ring-red-500" : "border-[#bcd2a7]"
                   }`}
                 />
-                {errMsg("cpf_sepultado") && (
-                  <p className="mt-1 text-xs text-red-600">{errMsg("cpf_sepultado")}</p>
+                {errMsg("documento") && (
+                  <p className="mt-1 text-xs text-red-600">{errMsg("documento")}</p>
                 )}
               </div>
               <div>
-                <label className="block text-sm text-green-900 mb-1">Sexo</label>
-                <select
-                  ref={(el) => (fieldRefs.current["sexo"] = el)}
-                  name="sexo"
-                  value={form.sexo}
+                <label className="block text-sm text-green-900 mb-1">Telefone</label>
+                <InputMask
+                  mask="(99) 99999-9999"
+                  name="telefone"
+                  value={form.telefone}
                   onChange={onChange}
-                  className={`w-full border rounded-lg px-3 py-2 bg-white ${
-                    errMsg("sexo") ? "border-red-400 ring-1 ring-red-500" : "border-[#bcd2a7]"
+                  inputRef={(el) => (fieldRefs.current["telefone"] = el)}
+                  className={`w-full border rounded-lg px-3 py-2 outline-none bg-white ${
+                    errMsg("telefone") ? "border-red-400 ring-1 ring-red-500" : "border-[#bcd2a7]"
                   }`}
-                >
-                  <option value="M">Masculino</option>
-                  <option value="F">Feminino</option>
-                  <option value="O">Outro</option>
-                  <option value="NI">Não Informado</option>
-                </select>
-                {errMsg("sexo") && <p className="mt-1 text-xs text-red-600">{errMsg("sexo")}</p>}
-              </div>
-
-              {form.sexo === "O" && input("Descrição do Sexo (se Outro)", "sexo_outro_descricao")}
-              {input("Data de Nascimento", "data_nascimento", { type: "date" })}
-              {input("Local nascimento", "local_nascimento")}
-              {input("Nacionalidade", "nacionalidade")}
-              {input("Cor pele", "cor_pele")}
-              <div>
-                <label className="block text-sm text-green-900 mb-1">Estado civil</label>
-                <select
-                  ref={(el) => (fieldRefs.current["estado_civil"] = el)}
-                  name="estado_civil"
-                  value={form.estado_civil}
-                  onChange={onChange}
-                  className={`w-full border rounded-lg px-3 py-2 bg-white ${
-                    errMsg("estado_civil") ? "border-red-400 ring-1 ring-red-500" : "border-[#bcd2a7]"
-                  }`}
-                >
-                  <option value="SOLTEIRO">Solteiro(a)</option>
-                  <option value="CASADO">Casado(a)</option>
-                  <option value="VIUVO">Viúvo(a)</option>
-                  <option value="DIVORCIADO">Divorciado(a)</option>
-                  <option value="NAO_INFORMADO">Não Informado</option>
-                </select>
-                {errMsg("estado_civil") && (
-                  <p className="mt-1 text-xs text-red-600">{errMsg("estado_civil")}</p>
+                />
+                {errMsg("telefone") && (
+                  <p className="mt-1 text-xs text-red-600">{errMsg("telefone")}</p>
                 )}
               </div>
-
-              {(form.estado_civil === "CASADO" || form.estado_civil === "VIUVO") &&
-                input("Nome do Cônjuge", "nome_conjuge")}
-
-              {input("Nome do Pai", "nome_pai")}
-              {input("Nome da Mãe", "nome_mae")}
-              {input("Profissão", "profissao")}
-              {input("Escolaridade", "grau_instrucao")}
             </div>
           </div>
 
-          {/* ENDEREÇO */}
+          {/* ENDEREÇO DO TITULAR */}
           <div>
-            <div className="text-green-900 font-semibold mb-2">Endereço</div>
+            <div className="text-green-900 font-semibold mb-2">Endereço do Titular</div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {input("Logradouro", "logradouro")}
               {input("Número", "numero")}
@@ -830,53 +666,13 @@ export default function FormularioSepultado() {
                 </select>
                 {errMsg("estado") && <p className="mt-1 text-xs text-red-600">{errMsg("estado")}</p>}
               </div>
+              {input("CEP", "cep")}
             </div>
           </div>
 
-          {/* FALECIMENTO */}
+          {/* TÚMULO */}
           <div>
-            <div className="text-green-900 font-semibold mb-2">Falecimento</div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {input("Data do Falecimento *", "data_falecimento", { type: "date" })}
-              <div>
-                <label className="block text-sm text-green-900 mb-1">Hora falecimento</label>
-                <InputMask
-                  mask="99:99"
-                  name="hora_falecimento"
-                  value={form.hora_falecimento}
-                  onChange={onChange}
-                  inputRef={(el) => (fieldRefs.current["hora_falecimento"] = el)}
-                  className={`w-full border rounded-lg px-3 py-2 outline-none bg-white ${
-                    errMsg("hora_falecimento") ? "border-red-400 ring-1 ring-red-500" : "border-[#bcd2a7]"
-                  }`}
-                />
-                {errMsg("hora_falecimento") && (
-                  <p className="mt-1 text-xs text-red-600">{errMsg("hora_falecimento")}</p>
-                )}
-              </div>
-              {input("Local falecimento", "local_falecimento")}
-              {input("Causa morte", "causa_morte")}
-              {input("Médico responsável", "medico_responsavel")}
-              {input("CRM médico", "crm_medico")}
-              {displayReadOnly("Idade ao falecer", form.idade_ao_falecer || "-")}
-            </div>
-          </div>
-
-          {/* CARTÓRIO */}
-          <div>
-            <div className="text-green-900 font-semibold mb-2">Registro em Cartório</div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {input("Cartório nome", "cartorio_nome")}
-              {input("Cartório número registro", "cartorio_numero_registro")}
-              {input("Cartório livro", "cartorio_livro")}
-              {input("Cartório folha", "cartorio_folha")}
-              {input("Data do Registro", "cartorio_data_registro", { type: "date" })}
-            </div>
-          </div>
-
-          {/* SEPULTAMENTO */}
-          <div>
-            <div className="text-green-900 font-semibold mb-2">Local de Sepultamento</div>
+            <div className="text-green-900 font-semibold mb-2">Túmulo</div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
                 <label className="block text-sm text-green-900 mb-1">Túmulo *</label>
@@ -889,8 +685,7 @@ export default function FormularioSepultado() {
                   inputRef={(el) => (fieldRefs.current["tumulo"] = el)}
                 />
               </div>
-              {input("Data do Sepultamento *", "data_sepultamento", { type: "date" })}
-              <div className="md:col-span-3">
+              <div className="md:col-span-2">
                 <label className="block text-sm text-green-900 mb-1">Observações</label>
                 <textarea
                   ref={(el) => (fieldRefs.current["observacoes"] = el)}
@@ -934,10 +729,7 @@ export default function FormularioSepultado() {
               </div>
 
               {form.forma_pagamento === "parcelado" &&
-                input("Quantidade de Parcelas", "quantidade_parcelas", {
-                  type: "number",
-                  min: 1,
-                })}
+                input("Quantidade de Parcelas", "quantidade_parcelas", { type: "number", min: 1 })}
 
               {form.forma_pagamento !== "gratuito" && (
                 <div>
@@ -953,70 +745,9 @@ export default function FormularioSepultado() {
                     }`}
                     placeholder="0,00"
                   />
-                  {errMsg("valor") && (
-                    <p className="mt-1 text-xs text-red-600">{errMsg("valor")}</p>
-                  )}
+                  {errMsg("valor") && <p className="mt-1 text-xs text-red-600">{errMsg("valor")}</p>}
                 </div>
               )}
-            </div>
-          </div>
-
-          {/* RESPONSÁVEL */}
-          <div>
-            <div className="text-green-900 font-semibold mb-2">Responsável pelo Sepultamento</div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {input("Nome", "nome_responsavel")}
-              <div>
-                <label className="block text-sm text-green-900 mb-1">CPF</label>
-                <InputMask
-                  mask="999.999.999-99"
-                  name="cpf"
-                  value={form.cpf}
-                  onChange={onChange}
-                  inputRef={(el) => (fieldRefs.current["cpf"] = el)}
-                  className={`w-full border rounded-lg px-3 py-2 outline-none bg-white ${
-                    errMsg("cpf") ? "border-red-400 ring-1 ring-red-500" : "border-[#bcd2a7]"
-                  }`}
-                />
-                {errMsg("cpf") && <p className="mt-1 text-xs text-red-600">{errMsg("cpf")}</p>}
-              </div>
-              {input("Endereço", "endereco")}
-              <div>
-                <label className="block text-sm text-green-900 mb-1">Telefone</label>
-                <InputMask
-                  mask="(99) 99999-9999"
-                  name="telefone"
-                  value={form.telefone}
-                  onChange={onChange}
-                  inputRef={(el) => (fieldRefs.current["telefone"] = el)}
-                  className={`w-full border rounded-lg px-3 py-2 outline-none bg-white ${
-                    errMsg("telefone") ? "border-red-400 ring-1 ring-red-500" : "border-[#bcd2a7]"
-                  }`}
-                />
-                {errMsg("telefone") && (
-                  <p className="mt-1 text-xs text-red-600">{errMsg("telefone")}</p>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* MOVIMENTAÇÕES (Exumado/Data; Trasladado/Data) */}
-          <div>
-            <div className="text-green-900 font-semibold mb-2">Informações de movimentações</div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="md:col-span-1">
-                {displayReadOnly("Exumado", form.exumado ? "Sim" : "Não")}
-              </div>
-              <div className="md:col-span-2">
-                {displayReadOnly("Data da exumação", form.data_exumacao || "-")}
-              </div>
-
-              <div className="md:col-span-1">
-                {displayReadOnly("Trasladado", form.trasladado ? "Sim" : "Não")}
-              </div>
-              <div className="md:col-span-2">
-                {displayReadOnly("Data do translado", form.data_translado || "-")}
-              </div>
             </div>
           </div>
 
@@ -1024,7 +755,7 @@ export default function FormularioSepultado() {
           <div className="flex justify-end gap-2 pt-2">
             <button
               type="button"
-              onClick={() => navigate("/sepultados")}
+              onClick={() => onCancel?.()}
               className="px-4 py-2 rounded-lg border border-[#bcd2a7] text-green-900 hover:bg-[#f0f8ea]"
             >
               Cancelar
@@ -1042,8 +773,8 @@ export default function FormularioSepultado() {
 
       {/* ANEXOS */}
       <AnexosWidget
-        context={CT_SEPULTADO}
-        objectId={isEdit ? id : null}
+        context={CT_CONTRATO}
+        objectId={isEdit ? contratoId : null}
         api={api}
         disabled={!isEdit}
       />

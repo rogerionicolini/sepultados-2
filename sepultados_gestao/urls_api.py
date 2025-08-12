@@ -16,7 +16,8 @@ from .views_api import (
     verificar_email,
     usuario_logado,
     PrefeituraLogadaAPIView,
-    CemiterioLogadoAPIView,   
+    CemiterioLogadoAPIView,
+    AnexoViewSet,   
 )
 
 router = routers.DefaultRouter()
@@ -29,6 +30,7 @@ router.register(r'auditorias', RegistroAuditoriaViewSet)
 router.register(r'sepultados', SepultadoViewSet)
 router.register(r'traslados', TransladoViewSet)
 router.register(r'tumulos', TumuloViewSet)
+router.register(r'anexos', AnexoViewSet, basename='anexo')
 
 urlpatterns = [
     path('', include(router.urls)),
