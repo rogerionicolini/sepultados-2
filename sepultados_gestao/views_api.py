@@ -725,3 +725,296 @@ class AnexoViewSet(mixins.ListModelMixin,
         # valida escopo (prefeitura) antes de devolver
         self._check_scope(obj.content_type, obj.object_id)
         return obj
+
+
+# sepultados_gestao/views_api.py
+from rest_framework.views import APIView
+from rest_framework.permissions import IsAuthenticated, AllowAny  # <- AllowAny opcional em dev
+from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework.response import Response
+from rest_framework import status
+import pandas as pd
+
+from .models import Quadra, Tumulo, Sepultado
+
+from rest_framework_simplejwt.authentication import JWTAuthentication
+from rest_framework.authentication import SessionAuthentication
+from django.db import transaction
+from .utils import gerar_numero_sequencial_global
+
+
+class BaseImportAPIView(APIView):
+    authentication_classes = (JWTAuthentication, SessionAuthentication)
+    permission_classes = [IsAuthenticated]
+    parser_classes = (MultiPartParser, FormParser)
+
+    def _get_cemiterio_id(self, request):
+        # 1) querystring: ?cemiterio=<id> ou ?cemiterio_id=<id>
+        cid = request.query_params.get("cemiterio") or request.query_params.get("cemiterio_id")
+        if cid:
+            try:
+                return int(cid)
+            except Exception:
+                pass
+        # 2) form-data: cemiterio_id
+        cid = request.data.get("cemiterio") or request.data.get("cemiterio_id")
+        if cid:
+            try:
+                return int(cid)
+            except Exception:
+                pass
+        # 3) sessão
+        return request.session.get("cemiterio_ativo_id")  # <- chave correta
+
+    def _read_dataframe(self, arquivo):
+        nome = arquivo.name.lower()
+        if nome.endswith(".csv"):
+            return pd.read_csv(arquivo)
+        if nome.endswith(".xls") or nome.endswith(".xlsx"):
+            return pd.read_excel(arquivo)
+        raise ValueError("Formato de arquivo não suportado. Use .csv, .xls ou .xlsx.")
+
+
+class ImportQuadrasAPIView(BaseImportAPIView):
+    """ Espera coluna: codigo """
+    def post(self, request):
+        if "arquivo" not in request.FILES:
+            return Response({"detail": "Envie o arquivo em 'arquivo'."}, status=400)
+
+        cemiterio_id = self._get_cemiterio_id(request)
+        if not cemiterio_id:
+            return Response({"detail": "Defina o cemitério (?cemiterio=) ou selecione no sistema."}, status=400)
+
+        try:
+            df = self._read_dataframe(request.FILES["arquivo"])
+        except Exception as e:
+            return Response({"detail": f"Erro ao ler planilha: {e}"}, status=400)
+
+        total, erros = 0, []
+        for idx, linha in df.iterrows():
+            try:
+                codigo = str(linha.get("codigo") or linha.get(0) or "").strip()
+                if not codigo:
+                    continue
+                Quadra.objects.create(codigo=codigo, cemiterio_id=cemiterio_id)
+                total += 1
+            except Exception as e:
+                erros.append(f"Linha {idx+2}: {e}")
+
+        return Response({"importados": total, "erros": erros}, status=200)
+
+
+class ImportTumulosAPIView(BaseImportAPIView):
+    MAPA_TIPO = {
+        "túmulo": "tumulo", "tumulo": "tumulo",
+        "perpétua": "perpetua", "perpetua": "perpetua",
+        "sepultura": "sepultura", "jazigo": "jazigo", "outro": "outro"
+    }
+
+    def post(self, request):
+        if "arquivo" not in request.FILES:
+            return Response({"detail": "Envie o arquivo em 'arquivo'."}, status=400)
+
+        cemiterio_id = self._get_cemiterio_id(request)
+        if not cemiterio_id:
+            return Response({"detail": "Defina o cemitério (?cemiterio=) ou selecione no sistema."}, status=400)
+
+        try:
+            df = self._read_dataframe(request.FILES["arquivo"])
+        except Exception as e:
+            return Response({"detail": f"Erro ao ler planilha: {e}"}, status=400)
+
+        total, erros = 0, []
+        for i, r in df.iterrows():
+            try:
+                quadra_codigo = str(r.get("quadra_codigo")).strip()
+                ident        = str(r.get("identificador")).strip()
+                tipo_raw     = str(r.get("tipo_estrutura") or "").strip().lower()
+                tipo         = self.MAPA_TIPO.get(tipo_raw, "tumulo")
+                capacidade   = int(float(r.get("capacidade"))) if pd.notna(r.get("capacidade")) else 1
+                usar_linha   = str(r.get("usar_linha") or "").strip().lower() in ("sim","s","true","1")
+                linha        = int(r.get("linha")) if usar_linha and pd.notna(r.get("linha")) else None
+
+                quadra_id = Quadra.objects.filter(
+                    codigo__iexact=quadra_codigo,
+                    cemiterio_id=cemiterio_id
+                ).values_list("id", flat=True).first()
+
+                if not quadra_id:
+                    erros.append(f"Linha {i+2}: Quadra '{quadra_codigo}' não encontrada para este cemitério.")
+                    continue
+
+                # ✅ AQUI vai o cemiterio_id
+                obj, created = Tumulo.objects.get_or_create(
+                    cemiterio_id=cemiterio_id,
+                    quadra_id=quadra_id,
+                    identificador=ident,
+                    defaults={
+                        "tipo_estrutura": tipo,
+                        "capacidade": capacidade,
+                        "usar_linha": usar_linha,
+                        "linha": linha,
+                        "reservado": False,
+                        "status": "disponivel",  # ajuste ao seu choices
+                    }
+                )
+                if not created:
+                    # opcional: atualizar campos se já existir
+                    obj.tipo_estrutura = tipo
+                    obj.capacidade     = capacidade
+                    obj.usar_linha     = usar_linha
+                    obj.linha          = linha
+                    obj.save(update_fields=["tipo_estrutura", "capacidade", "usar_linha", "linha"])
+                total += 1
+
+            except Exception as e:
+                erros.append(f"Linha {i+2}: {e}")
+
+        return Response({"importados": total, "erros": erros}, status=200)
+
+
+
+class ImportSepultadosAPIView(BaseImportAPIView):
+    """
+    Importa sepultados SEM exigir contrato (somente via importação).
+    Gera o número global de sepultamento como no admin (save + fallback).
+    Colunas principais esperadas:
+      identificador_tumulo, quadra, usar_linha, linha, nome,
+      data_falecimento, data_sepultamento, cpf_sepultado, data_nascimento, sexo,
+      local_nascimento, local_falecimento, nome_pai, nome_mae
+    """
+    def post(self, request):
+        if "arquivo" not in request.FILES:
+            return Response({"detail": "Envie o arquivo em 'arquivo'."}, status=400)
+
+        cemiterio_id = self._get_cemiterio_id(request)
+        if not cemiterio_id:
+            return Response({"detail": "Defina o cemitério (?cemiterio=) ou selecione no sistema."}, status=400)
+
+        try:
+            df = self._read_dataframe(request.FILES["arquivo"])
+        except Exception as e:
+            return Response({"detail": f"Erro ao ler planilha: {e}"}, status=400)
+
+        # util de data seguro
+        def _date(v):
+            try:
+                if pd.isna(v) or v is None or str(v).strip() == "":
+                    return None
+                d = pd.to_datetime(v, dayfirst=True, errors="coerce")
+                return None if pd.isna(d) else d.date()
+            except Exception:
+                return None
+
+        importados = 0
+        erros = []
+        tumulos_usados = set()
+
+        for i, row in df.iterrows():
+            try:
+                quadra_codigo = str(row.get("quadra") or "").strip()
+                ident_tumulo  = str(row.get("identificador_tumulo") or "").strip()
+                if not quadra_codigo or not ident_tumulo:
+                    continue
+
+                quadra_id = Quadra.objects.filter(
+                    codigo__iexact=quadra_codigo,
+                    cemiterio_id=cemiterio_id,
+                ).values_list("id", flat=True).first()
+                if not quadra_id:
+                    erros.append(f"Linha {i+2}: Quadra '{quadra_codigo}' não encontrada.")
+                    continue
+
+                tumulo = Tumulo.objects.filter(
+                    quadra_id=quadra_id, identificador__iexact=ident_tumulo
+                ).first()
+                if not tumulo:
+                    erros.append(
+                        f"Linha {i+2}: Túmulo '{ident_tumulo}' não encontrado na quadra '{quadra_codigo}'."
+                    )
+                    continue
+
+                # opcional: atualizar usar_linha/linha a partir da planilha (não vamos salvar ainda)
+                usar_linha_raw = str(row.get("usar_linha") or "").strip().lower()
+                if usar_linha_raw in ("sim", "s", "true", "1"):
+                    tumulo.usar_linha = True
+                elif usar_linha_raw in ("nao", "não", "n", "false", "0"):
+                    tumulo.usar_linha = False
+                if pd.notna(row.get("linha")):
+                    try:
+                        tumulo.linha = int(float(row.get("linha")))
+                    except Exception:
+                        pass  # ignora erro de conversão
+
+                # cria e salva (gera número no save do model)
+                with transaction.atomic():
+                    sep = Sepultado(
+                        nome=row.get("nome") or "",
+                        cpf_sepultado=row.get("cpf_sepultado"),
+                        data_nascimento=_date(row.get("data_nascimento")),
+                        sexo=(row.get("sexo") or "NI")[:2].upper(),
+                        local_nascimento=row.get("local_nascimento"),
+                        local_falecimento=row.get("local_falecimento"),
+                        data_falecimento=_date(row.get("data_falecimento")),
+                        data_sepultamento=_date(row.get("data_sepultamento")),
+                        nome_pai=row.get("nome_pai"),
+                        nome_mae=row.get("nome_mae"),
+                        tumulo=tumulo,
+                        importado=True,  # marca como importado
+                    )
+                    # chama a lógica do model (gera número) e ignora contrato
+                    sep.save(ignorar_validacao_contrato=True)
+
+                    # fallback: se por algum motivo não veio número, força aqui
+                    if not getattr(sep, "numero_sepultamento", None):
+                        sep.numero_sepultamento = gerar_numero_sequencial_global(
+                            tumulo.quadra.cemiterio.prefeitura
+                        )
+                        sep.save(update_fields=["numero_sepultamento"])
+
+                tumulos_usados.add(tumulo.id)
+                importados += 1
+
+            except Exception as e:
+                erros.append(f"Linha {i+2}: {e}")
+
+        # marca túmulos como ocupados (se esse for o status padrão após sepultamento)
+        if tumulos_usados:
+            try:
+                Tumulo.objects.filter(id__in=list(tumulos_usados)).update(status="ocupado")
+            except Exception:
+                pass  # não falha a importação por isso
+
+        return Response({"importados": importados, "erros": erros}, status=200)
+
+# --- CSRF helper (GET) permanece igual ---
+from django.http import JsonResponse, HttpResponseNotAllowed
+from django.middleware.csrf import get_token
+from django.views.decorators.csrf import ensure_csrf_cookie
+
+@ensure_csrf_cookie
+def csrf_get(request):
+    if request.method != "GET":
+        return HttpResponseNotAllowed(["GET"])
+    return JsonResponse({"csrfToken": get_token(request)})
+
+
+# --- NOVO: selecionar cemitério pela sessão ---
+from rest_framework.decorators import api_view, permission_classes
+
+@api_view(["POST"])
+@permission_classes([AllowAny])  # em produção troque por IsAuthenticated
+def selecionar_cemiterio_api(request):
+    cid = (
+        request.data.get("cemiterio") or request.data.get("cemiterio_id")
+        or request.query_params.get("cemiterio") or request.query_params.get("cemiterio_id")
+    )
+    if not cid:
+        return Response({"detail": "Informe cemiterio (id)."}, status=400)
+    try:
+        cid = int(cid)
+    except Exception:
+        return Response({"detail": "cemiterio deve ser inteiro."}, status=400)
+
+    request.session["cemiterio_ativo_id"] = cid
+    return Response({"ok": True, "cemiterio": cid})

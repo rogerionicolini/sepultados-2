@@ -5,6 +5,7 @@ from sepultados_gestao.views import selecionar_prefeitura_ativa, selecionar_cemi
 from sepultados_gestao.admin import CustomAdminSite
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from aaa_usuarios.api import CustomTokenObtainPairView
+from sepultados_gestao.views_api import ImportQuadrasAPIView, ImportTumulosAPIView, ImportSepultadosAPIView
 
 custom_admin_site = CustomAdminSite(name='custom_admin')
 custom_admin_site.register_models()
@@ -21,6 +22,9 @@ urlpatterns = [
     path("api/token/", TokenObtainPairView.as_view(), name="token_obtain_pair"),
     path("api/token/refresh/", TokenRefreshView.as_view(), name="token_refresh"),
     path("api/token/", CustomTokenObtainPairView.as_view(), name="token_obtain_pair"),
+    path("importar/quadras/", ImportQuadrasAPIView.as_view(), name="importar-quadras-legacy"),
+    path("importar/tumulos/", ImportTumulosAPIView.as_view(), name="importar-tumulos-legacy"),
+    path("importar/sepultados/", ImportSepultadosAPIView.as_view(), name="importar-sepultados-legacy"),
 ]
 
 urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

@@ -1,12 +1,27 @@
 // src/pages/Importacoes.jsx
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 
-const BASE = "http://127.0.0.1:8000";
+const ADMIN_BASE = "http://127.0.0.1:8000";       // arquivos modelo (.xlsx)
+const API_BASE   = "http://127.0.0.1:8000/api";  // endpoints REST
 
 function getCSRFCookie() {
   const m = document.cookie.match(/(?:^|; )csrftoken=([^;]+)/);
   return m ? decodeURIComponent(m[1]) : "";
+}
+
+// Lê o cemitério ativo do localStorage (suporta dois formatos já usados)
+function readCemiterioAtivo() {
+  try {
+    const raw = localStorage.getItem("cemiterioAtivo");
+    if (raw) {
+      const o = JSON.parse(raw);
+      if (o?.id) return { id: Number(o.id), nome: o.nome || `Cemitério ${o.id}` };
+    }
+  } catch {}
+  const id = localStorage.getItem("cemiterioAtivoId");
+  const nome = localStorage.getItem("cemiterioAtivoNome");
+  return id ? { id: Number(id), nome: nome || `Cemitério ${id}` } : null;
 }
 
 const Card = ({ title, children }) => (
@@ -16,70 +31,95 @@ const Card = ({ title, children }) => (
   </div>
 );
 
-// Tenta extrair as mensagens do Django do HTML retornado
-function parseDjangoMessages(htmlText) {
-  try {
-    const div = document.createElement("div");
-    div.innerHTML = htmlText;
-    // pega textos visíveis
-    const text = div.textContent || "";
-    // heurística: tenta achar “X ... importad”
-    const m = text.match(/(\d+).{0,40}importad/gi);
-    if (m && m.length) return m.join(" • ");
-    // caso contrário, devolve um trecho curto do texto
-    return text.trim().slice(0, 300);
-  } catch {
-    return "";
-  }
-}
-
 export default function Importacoes() {
   const [busy, setBusy] = useState({});
   const [files, setFiles] = useState({});
   const [logs, setLogs] = useState([]);
+  const [cem, setCem] = useState(() => readCemiterioAtivo());
 
-  const http = useMemo(
-    () =>
-      axios.create({
-        baseURL: BASE,
-        withCredentials: true, // manda cookies da sessão admin
-        headers: {
-          "X-CSRFToken": getCSRFCookie(),
-        },
-        // para POST multipart, axios define o Content-Type automaticamente
-      }),
-    []
-  );
+  // mantém badge do cemitério em sincronia com outras abas
+  useEffect(() => {
+    const onStorage = () => setCem(readCemiterioAtivo());
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
+
+  // Garante cookie de CSRF quando NÃO usamos JWT
+  useEffect(() => {
+    const token = localStorage.getItem("accessToken") || "";
+    if (token) return; // com JWT não precisamos do cookie
+    // teu projeto expõe /api/csrf/ (em alguns commits também /api/api/csrf/)
+    const tryFetch = async () => {
+      try { await fetch(`${API_BASE}/csrf/`, { credentials: "include" }); }
+      catch {
+        // fallback caso a rota tenha sido registrada como "api/csrf/" dentro de /api/
+        try { await fetch(`${API_BASE}/api/csrf/`, { credentials: "include" }); } catch {}
+      }
+    };
+    tryFetch();
+  }, []);
+
+  // axios: usa JWT se existir; senão, sessão+CSRF
+  const api = useMemo(() => {
+    const token = localStorage.getItem("accessToken") || "";
+    const headers = {};
+    let withCredentials = false;
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    } else {
+      withCredentials = true;
+      headers["X-CSRFToken"] = getCSRFCookie();
+    }
+    return axios.create({ baseURL: API_BASE, withCredentials, headers });
+  }, []);
 
   function log(msg, kind = "info") {
     setLogs((l) => [{ ts: new Date(), kind, msg }, ...l]);
   }
 
   async function importar(tipo) {
+    if (!cem?.id) {
+      alert("Selecione um cemitério ativo no topo da tela antes de importar.");
+      return;
+    }
     const file = files[tipo];
     if (!file) {
       alert("Selecione um arquivo primeiro.");
       return;
     }
+
     setBusy((b) => ({ ...b, [tipo]: true }));
     try {
       const form = new FormData();
-      form.append("arquivo", file); // as suas views esperam 'arquivo'
-      const url = `/importar/${tipo}/`;
+      form.append("arquivo", file);
 
-      const res = await http.post(url, form, {
-        responseType: "text", // suas views devolvem HTML
-      });
+      // Sempre força o cemitério na query (as views também aceitam sessão)
+      const params = { cemiterio: cem.id };
 
-      const text = typeof res.data === "string" ? res.data : "";
-      const resumo = parseDjangoMessages(text);
-      log(`✅ Importação de ${tipo} concluída. ${resumo || ""}`, "ok");
+      // Você tem as duas rotas no backend: /api/importacoes/<tipo>/ e os ALIASES /api/importar/<tipo>/
+      // Vamos usar os aliases que você habilitou para o front:
+      //   importar/quadras | importar/tumulos | importar/sepultados
+      const url = `/importar/${tipo}/`; // OK conforme urls_api.py (aliases). :contentReference[oaicite:2]{index=2}
+
+      const res = await api.post(url, form, { params });
+      const okMsg =
+        typeof res.data === "object" ? JSON.stringify(res.data) : (res.data || "OK");
+      log(`✅ Importação de ${tipo} concluída. ${okMsg}`, "ok");
       alert("Importação enviada. Veja as mensagens no quadro abaixo.");
     } catch (e) {
-      const detail =
+      const status = e?.response?.status;
+      let detail =
         e?.response?.data?.detail ||
         e?.message ||
-        "Erro ao importar. Verifique se está logado no Admin e se o CSRF está válido.";
+        "Erro ao importar. Verifique login, permissões e CSRF/CORS.";
+
+      if (status === 401) {
+        detail = "Não autenticado (401). Faça login e gere um novo token.";
+      } else if (status === 403) {
+        detail = "Acesso negado (403). Se estiver sem JWT, confira o cookie de CSRF e o domínio.";
+      } else if (status === 404) {
+        detail = "Endpoint não encontrado (404). Confira a rota no backend.";
+      }
       log(`❌ Erro ao importar ${tipo}: ${detail}`, "err");
       alert(detail);
     } finally {
@@ -96,12 +136,28 @@ export default function Importacoes() {
     />
   );
 
+  const disabledWithoutCem = !cem?.id;
+
   return (
     <div className="p-6 space-y-5">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-green-900">Importações</h1>
-        <div className="text-sm text-green-900/80">
-          Formatos aceitos: <strong>.csv, .xls, .xlsx</strong>
+
+        <div className="flex items-center gap-3">
+          <div className="text-sm text-green-900/80">
+            Formatos aceitos: <strong>.csv, .xls, .xlsx</strong>
+          </div>
+          <span
+            className={
+              "text-xs px-3 py-1 rounded-full border " +
+              (cem?.id
+                ? "bg-[#e6f3d7] border-[#bcd2a7] text-green-900"
+                : "bg-red-50 border-red-200 text-red-700")
+            }
+            title={cem?.id ? `ID: ${cem.id}` : "Nenhum cemitério selecionado"}
+          >
+            {cem?.id ? `Cemitério ativo: ${cem.nome}` : "Sem cemitério ativo"}
+          </span>
         </div>
       </div>
 
@@ -113,7 +169,7 @@ export default function Importacoes() {
           </p>
           <div className="flex gap-2">
             <a
-              href={`${BASE}/media/planilhas/Planilha de Quadras.xlsx`}
+              href={`${ADMIN_BASE}/media/planilhas/Planilha de Quadras.xlsx`}
               target="_blank"
               rel="noreferrer"
               className="px-3 py-2 rounded-lg border border-blue-300 text-blue-800 bg-blue-50 hover:bg-blue-100"
@@ -125,7 +181,7 @@ export default function Importacoes() {
             {inputFile("quadras")}
             <button
               onClick={() => importar("quadras")}
-              disabled={busy.quadras}
+              disabled={busy.quadras || disabledWithoutCem}
               className="px-4 py-2 rounded-lg bg-[#224c15] text-white hover:opacity-90 disabled:opacity-60"
             >
               {busy.quadras ? "Importando…" : "Importar Quadras"}
@@ -136,12 +192,13 @@ export default function Importacoes() {
         {/* Túmulos */}
         <Card title="Túmulos">
           <p className="text-sm text-green-900/80">
-            Colunas: <code>quadra_codigo</code>, <code>identificador</code>, <code>tipo_estrutura</code>,{" "}
-            <code>capacidade</code>, <code>usar_linha</code>, <code>linha</code>
+            Colunas: <code>quadra_codigo</code>, <code>identificador</code>,{" "}
+            <code>tipo_estrutura</code>, <code>capacidade</code>,{" "}
+            <code>usar_linha</code>, <code>linha</code>
           </p>
           <div className="flex gap-2">
             <a
-              href={`${BASE}/media/planilhas/Planilha de Tumulos.xlsx`}
+              href={`${ADMIN_BASE}/media/planilhas/Planilha de Tumulos.xlsx`}
               target="_blank"
               rel="noreferrer"
               className="px-3 py-2 rounded-lg border border-blue-300 text-blue-800 bg-blue-50 hover:bg-blue-100"
@@ -153,7 +210,7 @@ export default function Importacoes() {
             {inputFile("tumulos")}
             <button
               onClick={() => importar("tumulos")}
-              disabled={busy.tumulos}
+              disabled={busy.tumulos || disabledWithoutCem}
               className="px-4 py-2 rounded-lg bg-[#224c15] text-white hover:opacity-90 disabled:opacity-60"
             >
               {busy.tumulos ? "Importando…" : "Importar Túmulos"}
@@ -164,12 +221,12 @@ export default function Importacoes() {
         {/* Sepultados */}
         <Card title="Sepultados">
           <p className="text-sm text-green-900/80">
-            Colunas (principais): <code>identificador_tumulo</code>, <code>quadra</code>, <code>usar_linha</code>,{" "}
-            <code>linha</code>, e dados do falecido.
+            Colunas (principais): <code>identificador_tumulo</code>,{" "}
+            <code>quadra</code>, <code>usar_linha</code>, <code>linha</code>, e dados do falecido.
           </p>
           <div className="flex gap-2">
             <a
-              href={`${BASE}/media/planilhas/Planilha de Sepultados.xlsx`}
+              href={`${ADMIN_BASE}/media/planilhas/Planilha de Sepultados.xlsx`}
               target="_blank"
               rel="noreferrer"
               className="px-3 py-2 rounded-lg border border-blue-300 text-blue-800 bg-blue-50 hover:bg-blue-100"
@@ -181,7 +238,7 @@ export default function Importacoes() {
             {inputFile("sepultados")}
             <button
               onClick={() => importar("sepultados")}
-              disabled={busy.sepultados}
+              disabled={busy.sepultados || disabledWithoutCem}
               className="px-4 py-2 rounded-lg bg-[#224c15] text-white hover:opacity-90 disabled:opacity-60"
             >
               {busy.sepultados ? "Importando…" : "Importar Sepultados"}
