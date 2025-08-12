@@ -35,6 +35,9 @@ import RelatorioContratos from "./pages/RelatorioContratos";
 import RelatorioReceitas from "./pages/RelatorioReceitas";
 import RelatorioTumulos from "./pages/RelatorioTumulos";
 import RelatorioAuditorias from "./pages/RelatorioAuditorias.jsx";
+import Importacoes from "./pages/Importacoes";
+import BackupSistema from "./pages/BackupSistema";
+
 
 
 const AppRoutes = () => (
@@ -71,6 +74,9 @@ const AppRoutes = () => (
       <Route path="exumacoes" element={<Exumacoes />} />
       <Route path="traslados" element={<Translados />} />
       <Route path="receitas" element={<Receitas />} />
+      <Route path="importacoes" element={<Importacoes />} />
+      <Route path="backup" element={<BackupSistema />} />
+
 
       {/* Relatórios */}
       <Route path="relatorio/sepultados" element={<RelatorioSepultados />} />

@@ -135,13 +135,33 @@ function UserHeader() {
             </div>
 
             {/* Importações */}
-            <div className="flex items-center gap-3 p-3 rounded-lg hover:bg-[#cde1b1] cursor-pointer text-green-900">
+            <div
+              className="flex items-center gap-3 p-3 rounded-lg hover:bg-[#cde1b1] cursor-pointer text-green-900"
+              onClick={() => {
+                setDrawerOpen(false);
+                navigate("/importacoes");
+              }}
+            >
               <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
               </svg>
               <span>Importações</span>
             </div>
-
+            
+            <div
+              className="flex items-center gap-3 p-3 rounded-lg hover:bg-[#cde1b1] cursor-pointer text-green-900"
+              onClick={() => {
+                setDrawerOpen(false);
+                navigate("/backup");
+              }}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 3a1 1 0 011 1v9.586l1.293-1.293a1 1 0 111.414 1.414l-3.004 3.004a1 1 0 01-1.414 0l-3.004-3.004a1 1 0 111.414-1.414L11 13.586V4a1 1 0 011-1z" />
+                <path d="M5 19a2 2 0 002 2h10a2 2 0 002-2v-3a1 1 0 112 0v3a4 4 0 01-4 4H7a4 4 0 01-4-4v-3a1 1 0 112 0v3z" />
+              </svg>
+              <span>Backup do Sistema</span>
+            </div>
+    
             {/* Sair */}
             <div
               className="flex items-center gap-3 p-3 rounded-lg hover:bg-[#cde1b1] cursor-pointer text-green-900"
