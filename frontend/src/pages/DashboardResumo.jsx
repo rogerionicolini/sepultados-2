@@ -1,6 +1,7 @@
 // src/pages/DashboardResumo.jsx
 import React from "react";
 import MapaCemiterio from "../components/MapaCemiterio";
+import QuickActions from "../components/QuickActions"; // <— importe aqui
 
 function DashboardResumo() {
   const totalSepultados = 1523;
@@ -9,6 +10,9 @@ function DashboardResumo() {
 
   return (
     <>
+      {/* Atalhos rápidos */}
+      <QuickActions />
+
       {/* Caixas de Resumo */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         <div className="bg-[#f0f8ea] p-6 rounded-xl shadow text-green-900 flex flex-col items-center justify-center text-center">

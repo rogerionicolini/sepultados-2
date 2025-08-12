@@ -1,6 +1,7 @@
 // src/pages/Contratos.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import axios from "axios";
+import { useSearchParams, useNavigate } from "react-router-dom";
 import FormularioContrato from "../components/FormularioContrato";
 
 const API_BASE = "http://localhost:8000/api/";
@@ -28,16 +29,12 @@ const maskDoc = (v) => {
     if (s.length <= 9) return `${s.slice(0, 3)}.${s.slice(3, 6)}.${s.slice(6)}`;
     return `${s.slice(0, 3)}.${s.slice(3, 6)}.${s.slice(6, 9)}-${s.slice(9, 11)}`;
   }
-  // CNPJ
   if (s.length <= 2) return s;
   if (s.length <= 5) return `${s.slice(0, 2)}.${s.slice(2)}`;
   if (s.length <= 8) return `${s.slice(0, 2)}.${s.slice(2, 5)}.${s.slice(5)}`;
   if (s.length <= 12)
     return `${s.slice(0, 2)}.${s.slice(2, 5)}.${s.slice(5, 8)}/${s.slice(8)}`;
-  return `${s.slice(0, 2)}.${s.slice(2, 5)}.${s.slice(5, 8)}/${s.slice(
-    8,
-    12
-  )}-${s.slice(12, 14)}`;
+  return `${s.slice(0, 2)}.${s.slice(2, 5)}.${s.slice(5, 8)}/${s.slice(8, 12)}-${s.slice(12, 14)}`;
 };
 
 const fmtDate = (d) => {
@@ -59,6 +56,9 @@ export default function Contratos() {
 
   const token = getToken();
   const cemiterioId = getCemiterioAtivoId();
+
+  const [search] = useSearchParams();
+  const navigate = useNavigate();
 
   const api = useMemo(
     () =>
@@ -118,6 +118,14 @@ export default function Contratos() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [modoFormulario, cemiterioId]);
 
+  // abrir automaticamente quando vier ?novo=1
+  useEffect(() => {
+    if (search.get("novo") === "1") {
+      setEditandoId(null);
+      setModoFormulario(true);
+    }
+  }, [search]);
+
   function tumuloLabel(s) {
     if (s?.tumulo && typeof s.tumulo === "object") {
       const t = s.tumulo;
@@ -136,7 +144,7 @@ export default function Contratos() {
     return contratos.filter((c) => {
       const num = (c.numero_contrato || "").toString().toLowerCase();
       const nome = (c.nome || "").toString().toLowerCase();
-      const doc = (c.documento || "").toString().toLowerCase();
+      const doc = (c.cpf || c.documento || "").toString().toLowerCase();
       const tum = tumuloLabel(c).toString().toLowerCase();
       return num.includes(q) || nome.includes(q) || doc.includes(q) || tum.includes(q);
     });
@@ -194,11 +202,13 @@ export default function Contratos() {
             onCancel={() => {
               setModoFormulario(false);
               setEditandoId(null);
+              navigate("/contratos", { replace: true }); // limpa ?novo=1
             }}
             onSuccess={() => {
               setModoFormulario(false);
               setEditandoId(null);
               buscarContratos();
+              navigate("/contratos", { replace: true }); // limpa ?novo=1
             }}
           />
         </div>
@@ -209,10 +219,7 @@ export default function Contratos() {
             <h1 className="text-2xl font-bold text-green-900">Contratos de Concessão</h1>
             <div className="flex gap-2">
               <button
-                onClick={() => {
-                  setEditandoId(null);
-                  setModoFormulario(true);
-                }}
+                onClick={() => navigate("/contratos?novo=1")}
                 className="bg-green-800 text-white px-4 py-2 rounded-xl shadow hover:bg-green-700"
               >
                 Adicionar
@@ -257,11 +264,12 @@ export default function Contratos() {
                   <tbody className="bg-white/50">
                     {filtrados.map((c, idx) => {
                       const id = c.id ?? c.pk ?? idx;
+                      const docStr = maskDoc(c.cpf || c.documento || "");
                       return (
                         <tr key={id} className="border-t border-[#d8e9c0] hover:bg-white">
                           <td className="py-2 px-3">{c.numero_contrato || "-"}</td>
                           <td className="py-2 px-3">{c.nome || "-"}</td>
-                          <td className="py-2 px-3">{maskDoc(c.documento || "")}</td>
+                          <td className="py-2 px-3">{docStr}</td>
                           <td className="py-2 px-3">{fmtDate(c.data_contrato)}</td>
                           <td className="py-2 px-3">{tumuloLabel(c)}</td>
                           <td className="py-2 px-3">

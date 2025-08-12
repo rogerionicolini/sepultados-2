@@ -1,6 +1,7 @@
 // src/pages/Exumacoes.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import axios from "axios";
+import { useSearchParams, useNavigate } from "react-router-dom";
 import FormularioExumacao from "../components/FormularioExumacao";
 
 const API_BASE = "http://127.0.0.1:8000/api/";
@@ -41,6 +42,9 @@ export default function Exumacoes() {
   const token = getToken();
   const cemiterioId = getCemiterioAtivoId();
 
+  const [search] = useSearchParams();
+  const navigate = useNavigate();
+
   const api = useMemo(
     () =>
       axios.create({
@@ -74,7 +78,9 @@ export default function Exumacoes() {
       const sArr = Array.isArray(sRes.data) ? sRes.data : sRes.data?.results ?? [];
       const tArr = Array.isArray(tRes.data) ? tRes.data : tRes.data?.results ?? [];
       const sm = new Map();
-      sArr.forEach((s) => sm.set(String(s.id ?? s.pk), s.nome || s.identificador || `#${s.id}`));
+      sArr.forEach((s) =>
+        sm.set(String(s.id ?? s.pk), s.nome || s.identificador || `#${s.id}`)
+      );
       const tm = new Map();
       tArr.forEach((t) =>
         tm.set(
@@ -95,6 +101,14 @@ export default function Exumacoes() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [modoFormulario, cemiterioId]);
 
+  // abrir automaticamente quando vier ?novo=1
+  useEffect(() => {
+    if (search.get("novo") === "1") {
+      setEditId(null);
+      setModoFormulario(true);
+    }
+  }, [search]);
+
   const filtrados = React.useMemo(() => {
     const q = busca.trim().toLowerCase();
     if (!q) return rows;
@@ -103,7 +117,12 @@ export default function Exumacoes() {
       const dt = fmtDate(r.data).toLowerCase();
       const sep = r.sepultado?.nome || sepMap.get(String(r.sepultado)) || "";
       const tum = r.tumulo?.identificador || tumMap.get(String(r.tumulo)) || "";
-      return nd.includes(q) || dt.includes(q) || sep.toLowerCase().includes(q) || tum.toLowerCase().includes(q);
+      return (
+        nd.includes(q) ||
+        dt.includes(q) ||
+        sep.toLowerCase().includes(q) ||
+        tum.toLowerCase().includes(q)
+      );
     });
   }, [rows, busca, sepMap, tumMap]);
 
@@ -152,11 +171,13 @@ export default function Exumacoes() {
             onCancel={() => {
               setModoFormulario(false);
               setEditId(null);
+              navigate("/exumacoes", { replace: true }); // limpa ?novo=1
             }}
             onSuccess={() => {
               setModoFormulario(false);
               setEditId(null);
               carregar();
+              navigate("/exumacoes", { replace: true }); // limpa ?novo=1
             }}
           />
         </div>
@@ -166,10 +187,7 @@ export default function Exumacoes() {
             <h1 className="text-2xl font-bold text-green-900">Exumações</h1>
             <div className="flex gap-2">
               <button
-                onClick={() => {
-                  setEditId(null);
-                  setModoFormulario(true);
-                }}
+                onClick={() => navigate("/exumacoes?novo=1")}
                 className="bg-green-800 text-white px-4 py-2 rounded-xl shadow hover:bg-green-700"
               >
                 Adicionar

@@ -1,6 +1,7 @@
 // src/pages/Sepultados.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import axios from "axios";
+import { useSearchParams, useNavigate } from "react-router-dom";
 import FormularioSepultado from "../components/FormularioSepultado";
 
 const API_BASE = "http://localhost:8000/api/";
@@ -52,6 +53,9 @@ export default function Sepultados() {
 
   const token = getToken();
   const cemiterioId = getCemiterioAtivoId();
+
+  const [search] = useSearchParams();
+  const navigate = useNavigate();
 
   const api = useMemo(
     () =>
@@ -114,6 +118,14 @@ export default function Sepultados() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [modoFormulario, cemiterioId]);
+
+  /** abrir automático quando vier ?novo=1 */
+  useEffect(() => {
+    if (search.get("novo") === "1") {
+      setEditandoId(null);
+      setModoFormulario(true);
+    }
+  }, [search]);
 
   /** ------- helpers de render ------- */
   function tumuloLabelFromRow(s) {
@@ -201,11 +213,13 @@ export default function Sepultados() {
             onCancel={() => {
               setModoFormulario(false);
               setEditandoId(null);
+              navigate("/sepultados", { replace: true }); // limpa ?novo=1
             }}
             onSuccess={() => {
               setModoFormulario(false);
               setEditandoId(null);
               buscarSepultados();
+              navigate("/sepultados", { replace: true }); // limpa ?novo=1
             }}
           />
         </div>
@@ -216,10 +230,7 @@ export default function Sepultados() {
             <h1 className="text-2xl font-bold text-green-900">Sepultados</h1>
             <div className="flex gap-2">
               <button
-                onClick={() => {
-                  setEditandoId(null);
-                  setModoFormulario(true);
-                }}
+                onClick={() => navigate("/sepultados?novo=1")}
                 className="bg-green-800 text-white px-4 py-2 rounded-xl shadow hover:bg-green-700"
               >
                 Adicionar

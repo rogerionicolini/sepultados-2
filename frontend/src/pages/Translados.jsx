@@ -1,6 +1,7 @@
 // src/pages/Translados.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import axios from "axios";
+import { useSearchParams, useNavigate } from "react-router-dom";
 import FormularioTranslado from "../components/FormularioTranslado";
 
 const API_BASE = "http://127.0.0.1:8000/api/";
@@ -48,6 +49,9 @@ export default function Translados() {
 
   const token = getToken();
   const cemiterioId = getCemiterioAtivoId();
+
+  const [search] = useSearchParams();
+  const navigate = useNavigate();
 
   const api = useMemo(
     () =>
@@ -102,6 +106,14 @@ export default function Translados() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [modoFormulario, cemiterioId]);
+
+  // abrir automaticamente quando vier ?novo=1
+  useEffect(() => {
+    if (search.get("novo") === "1") {
+      setEditId(null);
+      setModoFormulario(true);
+    }
+  }, [search]);
 
   const filtrados = React.useMemo(() => {
     const q = busca.trim().toLowerCase();
@@ -160,11 +172,13 @@ export default function Translados() {
             onCancel={() => {
               setModoFormulario(false);
               setEditId(null);
+              navigate("/traslados", { replace: true }); // limpa ?novo=1
             }}
             onSuccess={() => {
               setModoFormulario(false);
               setEditId(null);
               carregar();
+              navigate("/traslados", { replace: true }); // limpa ?novo=1
             }}
           />
         </div>
@@ -174,10 +188,7 @@ export default function Translados() {
             <h1 className="text-2xl font-bold text-green-900">Translados</h1>
             <div className="flex gap-2">
               <button
-                onClick={() => {
-                  setEditId(null);
-                  setModoFormulario(true);
-                }}
+                onClick={() => navigate("/traslados?novo=1")}
                 className="bg-green-800 text-white px-4 py-2 rounded-xl shadow hover:bg-green-700"
               >
                 Adicionar
