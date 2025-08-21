@@ -18,10 +18,56 @@ class CemiterioSerializer(serializers.ModelSerializer):
         model = Cemiterio
         fields = '__all__'
 
+# serializers.py
+from decimal import Decimal
+from rest_framework import serializers
+from .models import ConcessaoContrato
+
 class ConcessaoContratoSerializer(serializers.ModelSerializer):
     class Meta:
         model = ConcessaoContrato
-        fields = '__all__'
+        fields = "__all__"
+        read_only_fields = ("id", "prefeitura", "numero_contrato", "data_contrato", "usuario_registro")
+
+    def validate(self, attrs):
+        forma = attrs.get("forma_pagamento")
+        valor = attrs.get("valor_total")
+        parcelas = attrs.get("quantidade_parcelas")
+
+        # normalizar parcelas vazias
+        if parcelas in ("", None):
+            parcelas = None
+
+        if forma == "gratuito":
+            attrs["valor_total"] = Decimal("0.00")
+            attrs["quantidade_parcelas"] = None
+            return attrs
+
+        # À vista / Parcelado → exigir valor > 0
+        if valor is None:
+            raise serializers.ValidationError({"valor_total": "Informe o valor."})
+
+        if isinstance(valor, str):
+            val = valor.replace(".", "").replace(",", ".")
+            try:
+                valor = Decimal(val)
+            except Exception:
+                raise serializers.ValidationError({"valor_total": "Valor inválido."})
+
+        if valor <= 0:
+            raise serializers.ValidationError({"valor_total": "O valor deve ser maior que zero."})
+
+        attrs["valor_total"] = valor
+
+        if forma == "parcelado":
+            if not parcelas or int(parcelas) < 1:
+                raise serializers.ValidationError({"quantidade_parcelas": "Informe a quantidade de parcelas."})
+            attrs["quantidade_parcelas"] = int(parcelas)
+        else:
+            attrs["quantidade_parcelas"] = None
+
+        return attrs
+
 
 class ExumacaoSerializer(serializers.ModelSerializer):
     class Meta:
@@ -53,10 +99,17 @@ class TransladoSerializer(serializers.ModelSerializer):
         model = Translado
         fields = '__all__'
 
+from rest_framework import serializers
+
 class TumuloSerializer(serializers.ModelSerializer):
+    tem_contrato_ativo = serializers.BooleanField(read_only=True)
+    contrato_id = serializers.IntegerField(read_only=True, allow_null=True)
+    contrato_numero = serializers.CharField(read_only=True, allow_null=True)
+
     class Meta:
         model = Tumulo
         fields = '__all__'
+
 
 
 from rest_framework import serializers

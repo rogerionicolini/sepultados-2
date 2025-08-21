@@ -66,6 +66,24 @@ function focusFirstError(errorsObj, refs) {
   }
 }
 
+/* ======= Mapeamento backend <-> UI (para carregar/enviar/erros) ======= */
+const BACKEND_TO_UI_FIELD = {
+  cpf: "documento",
+  endereco_numero: "numero",
+  endereco_bairro: "bairro",
+  endereco_cidade: "cidade",
+  endereco_estado: "estado",
+  endereco_cep: "cep",
+  valor_total: "valor",
+};
+function mapBackendErrorsToUI(fields) {
+  const out = {};
+  Object.entries(fields || {}).forEach(([k, v]) => {
+    out[BACKEND_TO_UI_FIELD[k] || k] = v;
+  });
+  return out;
+}
+
 /* =============== Dropdown com busca (Túmulo) =============== */
 function TumuloDropdown({ value, onChange, api, cemiterioId, error, inputRef }) {
   const [open, setOpen] = useState(false);
@@ -385,23 +403,24 @@ export default function FormularioContrato({ contratoId, onCancel, onSuccess }) 
           numero_contrato: v(data.numero_contrato),
           data_contrato: v(data.data_contrato),
 
+          // backend -> UI
           nome: v(data.nome),
-          documento: v(data.documento),
+          documento: v(data.cpf),
           telefone: v(data.telefone),
 
           logradouro: v(data.logradouro),
-          numero: v(data.numero),
-          bairro: v(data.bairro),
-          cidade: v(data.cidade),
-          estado: v(data.estado),
-          cep: v(data.cep),
+          numero: v(data.endereco_numero),
+          bairro: v(data.endereco_bairro),
+          cidade: v(data.endereco_cidade),
+          estado: v(data.endereco_estado),
+          cep: v(data.endereco_cep),
 
           tumulo: data.tumulo ?? "",
           observacoes: v(data.observacoes),
 
           forma_pagamento: v(data.forma_pagamento) || "gratuito",
           quantidade_parcelas: v(data.quantidade_parcelas),
-          valor: data.valor ? String(data.valor).replace(".", ",") : "",
+          valor: data.valor_total ? String(data.valor_total).replace(".", ",") : "",
         }));
       } catch (e) {
         console.error("erro ao carregar contrato:", e?.response?.data || e);
@@ -457,7 +476,7 @@ export default function FormularioContrato({ contratoId, onCancel, onSuccess }) 
   const errMsg = (name) =>
     Array.isArray(errors?.[name]) ? errors[name].join(" ") : errors?.[name];
 
-  // validação mínima do cliente (alinhada ao provável backend)
+  // validação mínima do cliente (alinhada ao backend)
   function clientValidate(f) {
     const errs = {};
     if (!f.nome?.trim()) errs.nome = "Informe o nome do titular.";
@@ -488,19 +507,33 @@ export default function FormularioContrato({ contratoId, onCancel, onSuccess }) 
       return;
     }
 
-    const payload = {
-      ...form,
-      valor:
+    // UI -> backend (mapeando nomes)
+    const payloadBackend = {
+      nome: form.nome,
+      cpf: form.documento,
+      telefone: form.telefone,
+
+      logradouro: form.logradouro,
+      endereco_numero: form.numero,
+      endereco_bairro: form.bairro,
+      endereco_cidade: form.cidade,
+      endereco_estado: form.estado,
+      endereco_cep: form.cep,
+
+      tumulo: form.tumulo,
+      observacoes: form.observacoes,
+
+      forma_pagamento: form.forma_pagamento,
+      valor_total:
         form.forma_pagamento === "gratuito"
           ? "0"
           : (form.valor || "0").replace(/\./g, "").replace(",", "."),
-      ...(form.forma_pagamento !== "parcelado" ? { quantidade_parcelas: "" } : {}),
+      quantidade_parcelas:
+        form.forma_pagamento === "parcelado" ? form.quantidade_parcelas : "",
     };
 
     const fd = new FormData();
-    const ignorar = new Set(["numero_contrato", "data_contrato"]);
-    Object.entries(payload).forEach(([k, v]) => {
-      if (ignorar.has(k)) return;
+    Object.entries(payloadBackend).forEach(([k, v]) => {
       if (v !== undefined && v !== null && v !== "") fd.append(k, v);
     });
 
@@ -522,9 +555,10 @@ export default function FormularioContrato({ contratoId, onCancel, onSuccess }) 
       }
       const data = err?.response?.data;
       const norm = normalizeApiErrors(data);
-      setErrors(norm.fields);
+      const mapped = mapBackendErrorsToUI(norm.fields);
+      setErrors(mapped);
       setErrorSummary(norm.summary);
-      focusFirstError(norm.fields, fieldRefs);
+      focusFirstError(mapped, fieldRefs);
     } finally {
       setSalvando(false);
     }

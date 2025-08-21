@@ -642,7 +642,7 @@ export default function FormularioSepultado() {
     } catch (err) {
       const ct = err?.response?.headers?.["content-type"] || "";
       if (!ct.includes("application/json")) {
-        setErrorSummary("Erro interno do servidor (500). Verifique os logs do backend.");
+        setErrorSummary("Este Tumulo não possui contrato de concessão");
         return;
       }
       const data = err?.response?.data;

@@ -679,23 +679,48 @@ class ConcessaoContrato(models.Model):
         related_name="contratos_registrados"
     )
     def clean(self):
+        # precisa ter túmulo
         if not self.tumulo_id:
             raise ValidationError({"tumulo": "Selecione um túmulo para o contrato."})
 
+        # não permitir dois contratos para o mesmo túmulo
         if self.pk is None and ConcessaoContrato.objects.filter(tumulo_id=self.tumulo_id).exists():
             raise ValidationError({"tumulo": "Este túmulo já está vinculado a outro contrato."})
 
         if self.tumulo:
-            sepultados = Sepultado.objects.filter(tumulo=self.tumulo)
-            tem_nao_importado = sepultados.filter(importado=False).exists()
+            status = self.tumulo.status
 
-            if self.tumulo.status in ['reservado', 'ocupado'] and tem_nao_importado:
+            # 1) BLOQUEIO ABSOLUTO PARA RESERVADO
+            if status == "reservado":
                 raise ValidationError({
-                    "tumulo": f"Túmulo {self.tumulo} está marcado como '{self.tumulo.get_status_display()}'. "
-                              f"Só é possível gerar contrato se o túmulo estiver disponível ou ocupado apenas com registros históricos."
+                    "tumulo": (
+                        f"Túmulo {self.tumulo} está marcado como 'Reservado'. "
+                        f"Não é possível gerar contrato para túmulos reservados."
+                    )
                 })
 
-        if self.forma_pagamento == 'gratuito' and self.valor_total != Decimal("0.00"):
+            # 2) BLOQUEIO PARA OCUPADO COM SEPULTADOS ATIVOS
+            if status == "ocupado":
+                # considerar 'ativos' quem não foi exumado nem trasladado
+                sepultados_ativos = Sepultado.objects.filter(
+                    tumulo=self.tumulo, exumado=False, trasladado=False
+                ).exists()
+
+                # se preferir preservar o 'histórico importado' também:
+                # tem_nao_importado = Sepultado.objects.filter(tumulo=self.tumulo, importado=False).exists()
+                # sepultados_ativos = sepultados_ativos or tem_nao_importado
+
+                if sepultados_ativos:
+                    raise ValidationError({
+                        "tumulo": (
+                            "Túmulo ocupado com sepultados ativos. "
+                            "Só é possível gerar contrato se o túmulo estiver disponível "
+                            "ou ocupado apenas com registros históricos."
+                        )
+                    })
+
+        # 3) pagamento: gratuito ⇒ valor 0,00
+        if self.forma_pagamento == "gratuito" and self.valor_total != Decimal("0.00"):
             raise ValidationError({'valor_total': "Contratos gratuitos devem ter valor R$ 0,00."})
 
     def save(self, *args, **kwargs):

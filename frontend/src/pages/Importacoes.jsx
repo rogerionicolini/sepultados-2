@@ -165,7 +165,7 @@ export default function Importacoes() {
         {/* Quadras */}
         <Card title="Quadras">
           <p className="text-sm text-green-900/80">
-            Colunas esperadas (exemplo): <code>codigo</code>
+            
           </p>
           <div className="flex gap-2">
             <a
@@ -192,9 +192,7 @@ export default function Importacoes() {
         {/* Túmulos */}
         <Card title="Túmulos">
           <p className="text-sm text-green-900/80">
-            Colunas: <code>quadra_codigo</code>, <code>identificador</code>,{" "}
-            <code>tipo_estrutura</code>, <code>capacidade</code>,{" "}
-            <code>usar_linha</code>, <code>linha</code>
+           
           </p>
           <div className="flex gap-2">
             <a
@@ -221,8 +219,7 @@ export default function Importacoes() {
         {/* Sepultados */}
         <Card title="Sepultados">
           <p className="text-sm text-green-900/80">
-            Colunas (principais): <code>identificador_tumulo</code>,{" "}
-            <code>quadra</code>, <code>usar_linha</code>, <code>linha</code>, e dados do falecido.
+                     
           </p>
           <div className="flex gap-2">
             <a

@@ -69,6 +69,18 @@ export default function Contratos() {
     [token]
   );
 
+  // Interceptor: garante que toda chamada para /contratos/* leve ?cemiterio=<id>
+  useEffect(() => {
+    const interceptorId = api.interceptors.request.use((config) => {
+      const url = String(config.url || "");
+      if (cemiterioId && /(^|\/)contratos(\/|$)/.test(url)) {
+        config.params = { ...(config.params || {}), cemiterio: cemiterioId };
+      }
+      return config;
+    });
+    return () => api.interceptors.request.eject(interceptorId);
+  }, [api, cemiterioId]);
+
   async function buscarContratos() {
     try {
       setLoading(true);
@@ -154,11 +166,16 @@ export default function Contratos() {
   async function excluir(id) {
     if (!window.confirm("Excluir este contrato?")) return;
     try {
-      await api.delete(`${CONTRATOS_EP}${id}/`);
+      await api.delete(`${CONTRATOS_EP}${id}/`, { params: { cemiterio: cemiterioId } });
       await buscarContratos();
     } catch (e) {
-      console.error("excluir contrato ERRO:", e?.response?.data || e);
-      alert("Não foi possível excluir. Verifique se há receitas ou sepultados vinculados.");
+      const data = e?.response?.data;
+      const msg =
+        data?.detail ||
+        (data && typeof data === "object" ? Object.values(data)[0] : null) ||
+        "Não foi possível excluir. Verifique se há receitas ou sepultados vinculados.";
+      console.error("excluir contrato ERRO:", data || e);
+      alert(msg);
     }
   }
 
@@ -171,7 +188,10 @@ export default function Contratos() {
     ];
     for (const url of tentativas) {
       try {
-        const res = await api.get(url, { responseType: "blob" });
+        const res = await api.get(url, {
+          responseType: "blob",
+          params: { cemiterio: cemiterioId },
+        });
         const ct = res?.headers?.["content-type"] || "";
         if (ct.includes("pdf")) {
           const blob = new Blob([res.data], { type: "application/pdf" });

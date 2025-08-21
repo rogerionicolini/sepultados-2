@@ -174,6 +174,7 @@ from .serializers import TumuloSerializer
 
 # Importa a MESMA view de PDF usada no admin (no seu views.py)
 from .views import gerar_pdf_sepultados_tumulo as pdf_view
+from django.db.models import Exists, OuterRef, Subquery
 
 
 class TumuloViewSet(viewsets.ModelViewSet):
@@ -227,7 +228,16 @@ class TumuloViewSet(viewsets.ModelViewSet):
         else:
             return qs.none()
 
+        # 👇 Anota se há contrato e pega o 1º contrato (número/id) para exibir na lista
+        contrato_qs = ConcessaoContrato.objects.filter(tumulo_id=OuterRef("pk")).order_by("-id")
+        qs = qs.annotate(
+            tem_contrato_ativo=Exists(contrato_qs),
+            contrato_id=Subquery(contrato_qs.values("id")[:1]),
+            contrato_numero=Subquery(contrato_qs.values("numero_contrato")[:1]),
+        )
+
         return qs
+
 
     @action(detail=True, methods=["get"], url_path="pdf_sepultados")
     def pdf_sepultados(self, request, pk=None):
@@ -296,12 +306,99 @@ class SepultadoViewSet(ContextoRestritoQuerysetMixin, viewsets.ModelViewSet):
 
 
 
+# views_api.py
+from django.db import transaction
+from django.core.exceptions import ValidationError as DjangoValidationError
+
+from rest_framework import viewsets
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.exceptions import ValidationError
+
+from .models import ConcessaoContrato
+from .serializers import ConcessaoContratoSerializer
+
 class ConcessaoContratoViewSet(ContextoRestritoQuerysetMixin, viewsets.ModelViewSet):
     queryset = ConcessaoContrato.objects.all()
     serializer_class = ConcessaoContratoSerializer
+
+    # campos usados pelo mixin para restringir por cemitério/prefeitura via querystring
     cemiterio_field = "tumulo__quadra__cemiterio"
     prefeitura_field = "tumulo__quadra__cemiterio__prefeitura"
+
     permission_classes = [IsAuthenticated]
+
+    def _prefeitura_from_request_or_tumulo(self, validated_data):
+        """
+        Resolve a prefeitura primeiro pela requisição (prefeitura_ativa ou user.prefeitura),
+        e como fallback pela FK do túmulo enviado.
+        """
+        pref = getattr(self.request, "prefeitura_ativa", None) or getattr(self.request.user, "prefeitura", None)
+        if pref:
+            return pref
+        tumulo = validated_data.get("tumulo")
+        if tumulo and getattr(tumulo, "quadra", None) and getattr(tumulo.quadra, "cemiterio", None):
+            return tumulo.quadra.cemiterio.prefeitura
+        return None
+
+    def perform_create(self, serializer):
+        """
+        Cria a instância SEM persistir, roda full_clean() (clean do model e validadores de campo),
+        e só então salva dentro de transação. Injeta prefeitura e usuario_registro no servidor.
+        """
+        validated = dict(serializer.validated_data)
+        pref = self._prefeitura_from_request_or_tumulo(validated)
+        if not pref:
+            raise ValidationError({"detail": "Não foi possível determinar a prefeitura para este contrato."})
+
+        instance = ConcessaoContrato(**validated)
+        instance.prefeitura = pref
+        instance.usuario_registro = self.request.user
+
+        try:
+            instance.full_clean()
+            with transaction.atomic():
+                instance.save()
+        except DjangoValidationError as e:
+            # Converte ValidationError do Django em erro do DRF (400) com mapeamento por campo
+            raise ValidationError(e.message_dict or {"detail": e.messages})
+
+        serializer.instance = instance
+
+    def perform_update(self, serializer):
+        """
+        Atualiza a instância existente, roda full_clean() e salva em transação.
+        Injeta prefeitura e usuario_registro no servidor.
+        """
+        instance = self.get_object()
+        validated = dict(serializer.validated_data)
+        pref = self._prefeitura_from_request_or_tumulo(validated)
+        if not pref:
+            raise ValidationError({"detail": "Não foi possível determinar a prefeitura para este contrato."})
+
+        for k, v in validated.items():
+            setattr(instance, k, v)
+        instance.prefeitura = pref
+        instance.usuario_registro = self.request.user
+
+        try:
+            instance.full_clean()
+            with transaction.atomic():
+                instance.save()
+        except DjangoValidationError as e:
+            raise ValidationError(e.message_dict or {"detail": e.messages})
+
+    def perform_destroy(self, instance):
+        """
+        Exclui traduzindo erros de negócio do model (ex.: receitas/sepultados vinculados)
+        em ValidationError do DRF (400). Lembre-se: o get_object() já respeita o filtro
+        do mixin (precisa do ?cemiterio=<id> na chamada).
+        """
+        try:
+            with transaction.atomic():
+                instance.delete()
+        except DjangoValidationError as e:
+            raise ValidationError(e.message_dict or {"detail": e.messages})
+
 
 
 class ExumacaoViewSet(ContextoRestritoQuerysetMixin, viewsets.ModelViewSet):

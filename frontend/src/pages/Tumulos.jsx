@@ -38,11 +38,13 @@ function getStatusFromRow(t) {
   return "disponivel";
 }
 
+// ➜ Agora prioriza os campos anotados pelo backend
 function getContratoNumero(t) {
   return (
-    t?.concessao?.numero ||
-    t?.contrato_concessao?.numero ||
-    t?.concessao_numero ||
+    t?.contrato_numero ??        // anotado no queryset
+    t?.concessao?.numero ??
+    t?.contrato_concessao?.numero ??
+    t?.concessao_numero ??
     null
   );
 }
@@ -580,6 +582,10 @@ export default function Tumulos() {
                           {contratoNum ? (
                             <span className="px-2 py-0.5 rounded bg-blue-100 text-blue-800 border border-blue-300">
                               Nº {contratoNum}
+                            </span>
+                          ) : t.tem_contrato_ativo ? ( // ← usa a anotação Exists
+                            <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
+                              Com contrato
                             </span>
                           ) : (
                             <span className="text-gray-600">Sem contrato ativo</span>
