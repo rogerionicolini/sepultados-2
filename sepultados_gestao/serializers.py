@@ -69,10 +69,43 @@ class ConcessaoContratoSerializer(serializers.ModelSerializer):
         return attrs
 
 
+# serializers.py
+from rest_framework import serializers
+from .models import Exumacao
+
 class ExumacaoSerializer(serializers.ModelSerializer):
     class Meta:
         model = Exumacao
-        fields = '__all__'
+        fields = "__all__"   # <- não exponha campos que não existem
+        # Ajuste estes read_only conforme seu model realmente tiver:
+        read_only_fields = (
+            "id",
+            "numero_documento",   # se o nº é gerado no backend
+            "prefeitura",         # se setado via ViewSet
+        )
+        extra_kwargs = {
+            # torne opcionais/aceitem vazio
+            "tumulo": {"required": False, "allow_null": True},
+            "motivo": {"required": False, "allow_blank": True},
+            "observacoes": {"required": False, "allow_blank": True},
+            "cpf": {"required": False, "allow_blank": True},
+            "endereco": {"required": False, "allow_blank": True},
+            "telefone": {"required": False, "allow_blank": True},
+            "quantidade_parcelas": {"required": False, "allow_null": True},
+            "valor": {"required": False},  # não obrigue quando gratuito
+        }
+
+    def validate(self, attrs):
+        fp = attrs.get("forma_pagamento") or "gratuito"
+        if fp == "gratuito":
+            attrs["valor"] = 0
+            attrs["quantidade_parcelas"] = None
+        elif fp != "parcelado":  # à vista
+            attrs["quantidade_parcelas"] = None
+        return attrs
+
+
+
 
 class QuadraSerializer(serializers.ModelSerializer):
     class Meta:

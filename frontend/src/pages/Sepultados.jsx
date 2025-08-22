@@ -86,31 +86,42 @@ export default function Sepultados() {
     }
   }
 
-  /** tumulos para resolver label quando vier só o id */
   async function carregarTumulosMap() {
     try {
       const qs = new URLSearchParams();
       if (cemiterioId) qs.set("cemiterio", cemiterioId);
-      const url = qs.toString() ? `${TUMULOS_EP}?${qs}` : TUMULOS_EP;
+      const urlTum = qs.toString() ? `${TUMULOS_EP}?${qs}` : TUMULOS_EP;
+      const urlQua = qs.toString() ? `quadras/?${qs}` : "quadras/";
 
-      const { data } = await api.get(url);
-      const arr = Array.isArray(data) ? data : data?.results ?? [];
+      const [tumulosRes, quadrasRes] = await Promise.all([
+        api.get(urlTum),
+        api.get(urlQua),
+      ]);
+
+      const quadArr = Array.isArray(quadrasRes.data)
+        ? quadrasRes.data
+        : quadrasRes.data?.results ?? [];
+      const qMap = new Map();
+      quadArr.forEach((q) => {
+        const qid = String(q.id ?? q.pk);
+        qMap.set(qid, { id: q.id ?? q.pk, nome: q.nome, codigo: q.codigo });
+      });
+
+      const tArr = Array.isArray(tumulosRes.data)
+        ? tumulosRes.data
+        : tumulosRes.data?.results ?? [];
       const m = new Map();
-      arr.forEach((t) => {
+      tArr.forEach((t) => {
         const id = t.id ?? t.pk;
-        const base = t.identificador || t.codigo || t.nome || `Túmulo ${id}`;
-        const linha =
-          t.usar_linha && (t.linha || t.linha === 0) ? ` L${t.linha}` : "";
-        const q = t.quadra?.codigo || t.quadra?.nome || t.quadra?.id || null;
-        const label = q ? `Q ${q} - ${base}${linha}` : `${base}${linha}`;
-        m.set(String(id), label);
+        m.set(String(id), rotuloTumulo(t, qMap));
       });
       setTumulosMap(m);
     } catch (e) {
-      // não quebra a página — só fica sem o label bonito
       console.warn("tumulos map ERRO:", e?.response?.status || e);
     }
   }
+
+
 
   useEffect(() => {
     if (!modoFormulario) {
@@ -126,22 +137,60 @@ export default function Sepultados() {
       setModoFormulario(true);
     }
   }, [search]);
+  function rotuloTumulo(t, quadrasMap = new Map()) {
+    if (!t) return "";
+    const id = t.id ?? t.pk ?? "";
+    const base =
+      t.identificador || t.codigo || t.nome || `T ${String(id).padStart(2, "0")}`;
 
-  /** ------- helpers de render ------- */
+    let linhaTxt = "";
+    const lraw =
+      typeof t.linha === "object"
+        ? t.linha?.id ?? t.linha?.numero ?? t.linha?.codigo
+        : t.linha;
+    if (t.usar_linha && (lraw || lraw === 0)) linhaTxt = `L ${lraw}`;
+
+    let quadraTxt = "";
+    const q = t.quadra;
+    const resolveQuadra = (info) => {
+      if (!info) return "";
+      if (info.nome) return info.nome;
+      if (info.codigo != null) {
+        const cod = String(info.codigo);
+        return /^\d+$/.test(cod) ? `Quadra ${cod.padStart(2, "0")}` : cod;
+      }
+      if (info.id != null) return `Quadra ${info.id}`;
+      return "";
+    };
+
+    if (q) {
+      if (typeof q === "object") quadraTxt = resolveQuadra(q);
+      else {
+        const info = quadrasMap.get(String(q)) || quadrasMap.get(Number(q));
+        if (info) quadraTxt = resolveQuadra(info);
+        else {
+          const cod = String(q);
+          quadraTxt = /^\d+$/.test(cod) ? `Quadra ${cod.padStart(2, "0")}` : cod;
+        }
+      }
+    }
+
+    return [base, linhaTxt, quadraTxt].filter(Boolean).join(" ");
+  }
+
+
   function tumuloLabelFromRow(s) {
     if (s?.tumulo && typeof s.tumulo === "object") {
-      const t = s.tumulo;
-      const base = t.identificador || t.codigo || t.nome || t.id || "-";
-      const linha =
-        t.usar_linha && (t.linha || t.linha === 0) ? ` L${t.linha}` : "";
-      const q = t.quadra?.codigo || t.quadra?.nome || t.quadra?.id || null;
-      return q ? `Q ${q} - ${base}${linha}` : `${base}${linha}`;
+      return rotuloTumulo(s.tumulo, new Map()); // já veio resolvido
     }
+    if (s?.tumulo_label) return s.tumulo_label;
     if (s?.tumulo) {
-      return tumulosMap.get(String(s.tumulo)) || "Não encontrado";
+      return tumulosMap.get(String(s.tumulo)) || `T ${s.tumulo}`;
     }
-    return s?.tumulo_label || "Não encontrado";
+    return "-";
   }
+
+
 
   const filtrados = useMemo(() => {
     const q = busca.trim().toLowerCase();
@@ -210,15 +259,10 @@ export default function Sepultados() {
         <div className="max-w-5xl mx-auto bg-white p-6 rounded-xl shadow-md">
           <FormularioSepultado
             sepultadoId={editandoId}
-            onCancel={() => {
+            onClose={() => {
               setModoFormulario(false);
               setEditandoId(null);
-              navigate("/sepultados", { replace: true }); // limpa ?novo=1
-            }}
-            onSuccess={() => {
-              setModoFormulario(false);
-              setEditandoId(null);
-              buscarSepultados();
+              buscarSepultados();                   // recarrega a lista ao fechar (salvo/cancelado)
               navigate("/sepultados", { replace: true }); // limpa ?novo=1
             }}
           />
@@ -302,7 +346,8 @@ export default function Sepultados() {
                               </button>
                               <button
                                 onClick={() => {
-                                  setEditandoId(id);
+                                  const realId = s.id ?? s.pk ?? id;
+                                  setEditandoId(realId);
                                   setModoFormulario(true);
                                 }}
                                 className="px-3 py-1 rounded bg-[#f2b705] text-white hover:opacity-90"
@@ -310,7 +355,7 @@ export default function Sepultados() {
                                 Editar
                               </button>
                               <button
-                                onClick={() => excluir(id)}
+                                onClick={() => excluir(s.id ?? s.pk ?? id)}
                                 className="px-3 py-1 rounded bg-[#e05151] text-white hover:opacity-90"
                               >
                                 Excluir

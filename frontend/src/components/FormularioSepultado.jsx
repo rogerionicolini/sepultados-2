@@ -4,6 +4,14 @@ import axios from "axios";
 import { useNavigate, useParams } from "react-router-dom";
 import InputMask from "react-input-mask";
 
+function buildTumuloLabel(t) {
+  const id = t?.id ?? t?.pk ?? "";
+  const base = t?.identificador || t?.codigo || t?.nome || `Túmulo ${id}`;
+  const linha = t?.usar_linha && (t?.linha || t?.linha === 0) ? ` L${t.linha}` : "";
+  const q = t?.quadra?.codigo || t?.quadra?.nome || t?.quadra?.id || null;
+  return q ? `Q ${q} - ${base}${linha}` : `${base}${linha}`;
+}
+
 /* ===================== CONFIG ===================== */
 const API_BASE = "http://127.0.0.1:8000/api/";
 // content type do modelo no Django ContentTypes (ajuste se seu app_label diferir)
@@ -75,25 +83,89 @@ function focusFirstError(errorsObj, refs) {
     el.scrollIntoView({ behavior: "smooth", block: "center" });
   }
 }
+// Usa nome da quadra se existir; senão, "Quadra 02" (com zero à esquerda)
+function rotuloTumulo(t, quadrasMap = new Map()) {
+  if (!t) return "";
+  const id = t.id ?? t.pk ?? "";
+  const base =
+    t.identificador || t.codigo || t.nome || `T ${String(id).padStart(2, "0")}`;
 
-/* =============== Dropdown com busca (Túmulo) =============== */
+  // linha
+  let linhaTxt = "";
+  const lraw =
+    typeof t.linha === "object"
+      ? t.linha?.id ?? t.linha?.numero ?? t.linha?.codigo
+      : t.linha;
+  if (t.usar_linha && (lraw || lraw === 0)) linhaTxt = `L ${lraw}`;
+
+  // quadra (preferir nome; se vier só id, resolver pelo mapa)
+  let quadraTxt = "";
+  const q = t.quadra;
+  const resolveQuadra = (qInfo) => {
+    if (!qInfo) return "";
+    if (qInfo.nome) return qInfo.nome;
+    if (qInfo.codigo != null) {
+      const cod = String(qInfo.codigo);
+      return /^\d+$/.test(cod) ? `Quadra ${cod.padStart(2, "0")}` : cod;
+    }
+    if (qInfo.id != null) return `Quadra ${qInfo.id}`;
+    return "";
+  };
+
+  if (q) {
+    if (typeof q === "object") {
+      quadraTxt = resolveQuadra(q);
+    } else {
+      // número/id
+      const info = quadrasMap.get(String(q)) || quadrasMap.get(Number(q));
+      if (info) quadraTxt = resolveQuadra(info);
+      else {
+        const cod = String(q);
+        quadraTxt = /^\d+$/.test(cod) ? `Quadra ${cod.padStart(2, "0")}` : cod;
+      }
+    }
+  }
+
+  return [base, linhaTxt, quadraTxt].filter(Boolean).join(" ");
+}
+
 function TumuloDropdown({ value, onChange, api, cemiterioId, error, inputRef }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const [itens, setItens] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [selecionado, setSelecionado] = useState(null);
+  const [quadrasMap, setQuadrasMap] = useState(new Map());
   const wrapRef = useRef(null);
 
   async function carregar() {
     if (!cemiterioId) return;
     setLoading(true);
     try {
-      const res = await api.get("tumulos/", { params: { cemiterio: cemiterioId } });
-      const arr = Array.isArray(res.data) ? res.data : res.data?.results ?? [];
+      // buscamos túmulos e quadras em paralelo
+      const [tumulosRes, quadrasRes] = await Promise.all([
+        api.get("tumulos/", { params: { cemiterio: cemiterioId } }),
+        api.get("quadras/", { params: { cemiterio: cemiterioId } }),
+      ]);
+
+      // monta mapa id -> {id, nome, codigo}
+      const quadArr = Array.isArray(quadrasRes.data)
+        ? quadrasRes.data
+        : quadrasRes.data?.results ?? [];
+      const qMap = new Map();
+      quadArr.forEach((q) => {
+        const qid = String(q.id ?? q.pk);
+        qMap.set(qid, { id: q.id ?? q.pk, nome: q.nome, codigo: q.codigo });
+      });
+      setQuadrasMap(qMap);
+
+      const tArr = Array.isArray(tumulosRes.data)
+        ? tumulosRes.data
+        : tumulosRes.data?.results ?? [];
       setItens(
-        arr.map((t) => ({
+        tArr.map((t) => ({
           id: t.id ?? t.pk,
-          label: t.identificador || t.codigo || t.nome || `Túmulo ${t.id ?? t.pk}`,
+          label: rotuloTumulo(t, qMap),
         }))
       );
     } catch {
@@ -103,9 +175,37 @@ function TumuloDropdown({ value, onChange, api, cemiterioId, error, inputRef }) 
     }
   }
 
+  async function carregarSelecionado() {
+    if (!cemiterioId || !value) return;
+    try {
+      // se ainda não temos quadras, carrega pelo menos uma vez
+      if (quadrasMap.size === 0) {
+        const { data } = await api.get("quadras/", {
+          params: { cemiterio: cemiterioId },
+        });
+        const quadArr = Array.isArray(data) ? data : data?.results ?? [];
+        const qMap = new Map();
+        quadArr.forEach((q) => {
+          const qid = String(q.id ?? q.pk);
+          qMap.set(qid, { id: q.id ?? q.pk, nome: q.nome, codigo: q.codigo });
+        });
+        setQuadrasMap(qMap);
+      }
+
+      const { data: t } = await api.get(`tumulos/${value}/`, {
+        params: { cemiterio: cemiterioId },
+      });
+      setSelecionado({
+        id: t.id ?? t.pk,
+        label: rotuloTumulo(t, quadrasMap.size ? quadrasMap : new Map()),
+      });
+    } catch {
+      setSelecionado(null);
+    }
+  }
+
   useEffect(() => {
     if (open) carregar();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, cemiterioId]);
 
   useEffect(() => {
@@ -117,6 +217,11 @@ function TumuloDropdown({ value, onChange, api, cemiterioId, error, inputRef }) 
     return () => document.removeEventListener("mousedown", outside);
   }, [open]);
 
+  useEffect(() => {
+    if (value && !open) carregarSelecionado();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value, cemiterioId]);
+
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase();
     if (!s) return itens;
@@ -124,7 +229,10 @@ function TumuloDropdown({ value, onChange, api, cemiterioId, error, inputRef }) 
   }, [itens, q]);
 
   const currentLabel =
-    itens.find((o) => String(o.id) === String(value))?.label || "Selecione…";
+    itens.find((o) => String(o.id) === String(value))?.label ||
+    (selecionado && String(selecionado.id) === String(value)
+      ? selecionado.label
+      : "Selecione…");
 
   return (
     <div ref={wrapRef} className="relative">
@@ -156,7 +264,9 @@ function TumuloDropdown({ value, onChange, api, cemiterioId, error, inputRef }) 
             {loading ? (
               <div className="px-3 py-3 text-sm text-gray-600">Carregando…</div>
             ) : filtered.length === 0 ? (
-              <div className="px-3 py-3 text-sm text-gray-600">Nenhum túmulo encontrado.</div>
+              <div className="px-3 py-3 text-sm text-gray-600">
+                Nenhum túmulo encontrado.
+              </div>
             ) : (
               filtered.map((o) => (
                 <div
@@ -164,6 +274,7 @@ function TumuloDropdown({ value, onChange, api, cemiterioId, error, inputRef }) 
                   className="px-3 py-2 hover:bg-[#f8fcf2] cursor-pointer flex items-center justify-between"
                   onClick={() => {
                     onChange?.(o.id);
+                    setSelecionado(o);
                     setOpen(false);
                   }}
                 >
@@ -182,6 +293,8 @@ function TumuloDropdown({ value, onChange, api, cemiterioId, error, inputRef }) 
     </div>
   );
 }
+
+
 
 /* =================== Widget de Anexos (Genérico) =================== */
 function AnexosWidget({ context, objectId, api, disabled }) {
@@ -340,9 +453,10 @@ function AnexosWidget({ context, objectId, api, disabled }) {
 }
 
 /* ============================== Página =============================== */
-export default function FormularioSepultado() {
+export default function FormularioSepultado({ sepultadoId, onClose }) {
   const navigate = useNavigate();
-  const { id } = useParams(); // edição?
+  const { id: routeId } = useParams(); // quando abrir por rota
+  const id = sepultadoId ?? routeId;   // prioridade: prop (interno) > rota
   const isEdit = !!id;
 
   const token = localStorage.getItem("accessToken");
@@ -421,6 +535,19 @@ export default function FormularioSepultado() {
     telefone: "",
   });
 
+  // helper para normalizar datas para <input type="date">
+  function toDateInput(v) {
+    if (!v) return "";
+    const d = new Date(v);
+    if (Number.isNaN(d.getTime())) {
+      return /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : "";
+    }
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}`;
+  }
+
   // carregar na edição
   useEffect(() => {
     async function fetchSepultado() {
@@ -446,7 +573,7 @@ export default function FormularioSepultado() {
           cpf_sepultado: v(data.cpf_sepultado),
           sexo: v(data.sexo) || "NI",
           sexo_outro_descricao: v(data.sexo_outro_descricao),
-          data_nascimento: v(data.data_nascimento),
+          data_nascimento: toDateInput(data.data_nascimento),
           local_nascimento: v(data.local_nascimento),
           nacionalidade: v(data.nacionalidade),
           cor_pele: v(data.cor_pele),
@@ -463,7 +590,7 @@ export default function FormularioSepultado() {
           cidade: v(data.cidade),
           estado: v(data.estado),
 
-          data_falecimento: v(data.data_falecimento),
+          data_falecimento: toDateInput(data.data_falecimento),
           hora_falecimento: v(data.hora_falecimento),
           local_falecimento: v(data.local_falecimento),
           causa_morte: v(data.causa_morte),
@@ -474,10 +601,18 @@ export default function FormularioSepultado() {
           cartorio_numero_registro: v(data.cartorio_numero_registro),
           cartorio_livro: v(data.cartorio_livro),
           cartorio_folha: v(data.cartorio_folha),
-          cartorio_data_registro: v(data.cartorio_data_registro),
+          cartorio_data_registro: toDateInput(data.cartorio_data_registro),
 
-          tumulo: data.tumulo ?? "",
-          data_sepultamento: v(data.data_sepultamento),
+          tumulo:
+            typeof data.tumulo === "object" && data.tumulo !== null
+              ? (data.tumulo.id ?? data.tumulo.pk ?? "")
+              : (data.tumulo ?? ""),
+          tumulo_label:
+            typeof data.tumulo === "object" && data.tumulo !== null
+              ? buildTumuloLabel(data.tumulo)
+              : "",
+
+          data_sepultamento: toDateInput(data.data_sepultamento),
           observacoes: v(data.observacoes),
 
           forma_pagamento: v(data.forma_pagamento) || "gratuito",
@@ -492,7 +627,8 @@ export default function FormularioSepultado() {
       } catch (e) {
         console.error("erro ao carregar sepultado:", e?.response?.data || e);
         alert("Não foi possível carregar este sepultado.");
-        navigate("/sepultados");
+        if (onClose) onClose();
+        else navigate("/sepultados");
       } finally {
         setCarregando(false);
       }
@@ -638,7 +774,9 @@ export default function FormularioSepultado() {
         // >>> deixe o axios montar o boundary do multipart
         await api.post("sepultados/", fd);
       }
-      navigate("/sepultados");
+      // fechar interno se onClose existir; senão, voltar para a lista
+      if (onClose) onClose();
+      else navigate("/sepultados");
     } catch (err) {
       const ct = err?.response?.headers?.["content-type"] || "";
       if (!ct.includes("application/json")) {
@@ -887,6 +1025,7 @@ export default function FormularioSepultado() {
                   cemiterioId={cemAtivo?.id}
                   error={errMsg("tumulo")}
                   inputRef={(el) => (fieldRefs.current["tumulo"] = el)}
+                  initialLabel={form.tumulo_label}
                 />
               </div>
               {input("Data do Sepultamento *", "data_sepultamento", { type: "date" })}
@@ -1024,7 +1163,7 @@ export default function FormularioSepultado() {
           <div className="flex justify-end gap-2 pt-2">
             <button
               type="button"
-              onClick={() => navigate("/sepultados")}
+              onClick={() => (onClose ? onClose() : navigate("/sepultados"))}
               className="px-4 py-2 rounded-lg border border-[#bcd2a7] text-green-900 hover:bg-[#f0f8ea]"
             >
               Cancelar

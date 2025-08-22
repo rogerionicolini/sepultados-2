@@ -38,7 +38,8 @@ import RelatorioAuditorias from "./pages/RelatorioAuditorias.jsx";
 import Importacoes from "./pages/Importacoes";
 import BackupSistema from "./pages/BackupSistema";
 
-
+// Formulário (para rotas diretas de novo/editar)
+import FormularioSepultado from "./components/FormularioSepultado";
 
 const AppRoutes = () => (
   <Routes>
@@ -70,13 +71,17 @@ const AppRoutes = () => (
       <Route path="quadras" element={<Quadras />} />
       <Route path="tumulos" element={<Tumulos />} />
       <Route path="sepultados" element={<Sepultados />} />
+
+      {/* Rotas diretas para formulário de sepultados (opcional, mantém modo interno) */}
+      <Route path="sepultados/novo" element={<FormularioSepultado />} />
+      <Route path="sepultados/:id/editar" element={<FormularioSepultado />} />
+
       <Route path="contratos" element={<Contratos />} />
       <Route path="exumacoes" element={<Exumacoes />} />
       <Route path="traslados" element={<Translados />} />
       <Route path="receitas" element={<Receitas />} />
       <Route path="importacoes" element={<Importacoes />} />
       <Route path="backup" element={<BackupSistema />} />
-
 
       {/* Relatórios */}
       <Route path="relatorio/sepultados" element={<RelatorioSepultados />} />

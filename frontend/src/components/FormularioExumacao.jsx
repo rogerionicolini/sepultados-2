@@ -3,10 +3,14 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import axios from "axios";
 import InputMask from "react-input-mask";
 
+/** Ajuste conforme o seu ambiente */
 const API_BASE = "http://127.0.0.1:8000/api/";
-const CT_EXUMACAO = "sepultados_gestao.exumacao"; // ajuste se o app_label mudar
+const CT_EXUMACAO = "sepultados_gestao.exumacao";
 
-/* ====== helpers: cemitério ativo ====== */
+/** Configuração de regra de negócio (client-side) */
+const MIN_DIAS_EXUMACAO = 1095; // 3 anos. Ajuste se a regra for diferente.
+
+/* ===== Helpers comuns ===== */
 function getCemiterioAtivo() {
   try {
     const raw = localStorage.getItem("cemiterioAtivo");
@@ -20,46 +24,77 @@ function getCemiterioAtivo() {
   return id ? { id: Number(id), nome: nome || "Cemitério" } : null;
 }
 
-/* ====== normalização de erros ====== */
+/** Normaliza erros JSON do backend em { summary: string[]; fields: {campo: string[]} } */
 function normalizeApiErrors(data) {
-  const out = { summary: "", fields: {} };
+  const out = { summary: [], fields: {} };
   if (!data) return out;
+
+  const push = (arrOrStr) => {
+    if (!arrOrStr) return;
+    if (Array.isArray(arrOrStr)) arrOrStr.forEach((s) => push(s));
+    else if (typeof arrOrStr === "object") {
+      Object.entries(arrOrStr).forEach(([k, v]) => {
+        push(v);
+      });
+    } else out.summary.push(String(arrOrStr));
+  };
+
   if (typeof data === "string") {
-    out.summary = data.includes("<html") ? "Erro interno (500)." : data;
+    out.summary.push(data.includes("<html") ? "Erro interno do servidor (500)." : data);
     return out;
   }
+
   if (Array.isArray(data)) {
-    out.summary = data.join(" ");
+    data.forEach((x) => out.summary.push(String(x)));
     return out;
   }
-  const flat = (v) =>
-    Array.isArray(v)
-      ? v.map((x) => (x?.message ? x.message : String(x))).join(" ")
-      : typeof v === "object" && v
-      ? flat(v[Object.keys(v)[0]])
-      : String(v);
+
+  // Campos
   Object.entries(data).forEach(([k, v]) => {
-    if (k === "detail" || k === "non_field_errors") out.summary = flat(v);
-    else out.fields[k] = flat(v);
+    const arr =
+      Array.isArray(v)
+        ? v.map((x) => (typeof x === "object" && x?.message ? String(x.message) : String(x)))
+        : typeof v === "object" && v !== null
+        ? [JSON.stringify(v)]
+        : [String(v)];
+
+    if (["detail", "non_field_errors"].includes(k)) {
+      arr.forEach((s) => out.summary.push(s));
+    } else {
+      out.fields[k] = (out.fields[k] || []).concat(arr);
+    }
   });
-  if (!out.summary) out.summary = "Revise os campos destacados em vermelho.";
+
+  // fallback
+  if (out.summary.length === 0 && Object.keys(out.fields).length === 0) {
+    push(data);
+  }
+
   return out;
 }
+
 function focusFirstError(errorsObj, refs) {
-  const k = Object.keys(errorsObj)[0];
-  const el = k && refs?.current?.[k];
+  const firstKey =
+    Object.keys(errorsObj.fields || {})[0] ||
+    (errorsObj.summary?.length ? null : Object.keys(errorsObj)[0]);
+  const el = firstKey && refs?.current?.[firstKey];
   if (el?.focus) {
     el.focus();
     el.scrollIntoView({ behavior: "smooth", block: "center" });
   }
 }
 
-/* ====== dropdowns com busca ====== */
-function TumuloDropdown({ value, onChange, api, cemiterioId, error, inputRef }) {
+/* ======================= Dropdowns com busca ======================= */
+function TumuloDropdown({ value, onChange, api, cemiterioId, error, inputRef, initialLabel }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const [itens, setItens] = useState([]);
   const wrapRef = useRef(null);
+
+  const currentLabel =
+    itens.find((o) => String(o.id) === String(value))?.label ||
+    (value && initialLabel) ||
+    "Selecione…";
 
   useEffect(() => {
     if (!open || !cemiterioId) return;
@@ -83,16 +118,15 @@ function TumuloDropdown({ value, onChange, api, cemiterioId, error, inputRef }) 
   }, [open, cemiterioId, api]);
 
   useEffect(() => {
-    function out(e) {
+    function outside(e) {
       if (!wrapRef.current) return;
       if (!wrapRef.current.contains(e.target)) setOpen(false);
     }
-    if (open) document.addEventListener("mousedown", out);
-    return () => document.removeEventListener("mousedown", out);
+    if (open) document.addEventListener("mousedown", outside);
+    return () => document.removeEventListener("mousedown", outside);
   }, [open]);
 
   const filtered = itens.filter((i) => i.label.toLowerCase().includes(q.trim().toLowerCase()));
-  const current = itens.find((o) => String(o.id) === String(value))?.label || "Selecione…";
 
   return (
     <div ref={wrapRef} className="relative">
@@ -103,13 +137,18 @@ function TumuloDropdown({ value, onChange, api, cemiterioId, error, inputRef }) 
         className={`w-full px-3 py-2 rounded-lg border ${
           error ? "border-red-400 ring-1 ring-red-500" : "border-[#bcd2a7]"
         } bg-white text-left hover:bg-[#f7fbf2]`}
+        title={currentLabel}
       >
-        <span className="truncate">{current}</span>
+        <span className="truncate">{currentLabel}</span>
         <span className="float-right">▾</span>
       </button>
-      {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
+      {error && (
+        <ul className="mt-1 text-xs text-red-600 list-disc pl-5">
+          {Array.isArray(error) ? error.map((e, i) => <li key={i}>{e}</li>) : <li>{error}</li>}
+        </ul>
+      )}
       {open && (
-        <div className="absolute z-50 top-full left-0 mt-2 w-full bg-white rounded-xl shadow-2xl border border-[#e0efcf]">
+        <div className="absolute top-full left-0 mt-2 w-full bg-white rounded-xl shadow-2xl border border-[#e0efcf] z-50">
           <div className="p-2 border-b border-[#e6f2d9]">
             <input
               autoFocus
@@ -143,11 +182,24 @@ function TumuloDropdown({ value, onChange, api, cemiterioId, error, inputRef }) 
   );
 }
 
-function SepultadoDropdown({ value, onChange, api, cemiterioId, error, inputRef }) {
+function SepultadoDropdown({
+  value,
+  onChange,
+  api,
+  cemiterioId,
+  error,
+  inputRef,
+  initialLabel,
+}) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const [itens, setItens] = useState([]);
   const wrapRef = useRef(null);
+
+  const currentLabel =
+    itens.find((o) => String(o.id) === String(value))?.label ||
+    (value && initialLabel) ||
+    "Selecione…";
 
   useEffect(() => {
     if (!open || !cemiterioId) return;
@@ -160,7 +212,7 @@ function SepultadoDropdown({ value, onChange, api, cemiterioId, error, inputRef 
             id: s.id ?? s.pk,
             label:
               (s.numero_sepultamento ? `${s.numero_sepultamento} - ` : "") +
-              (s.nome || "Sem nome"),
+              (s.nome || s.nome_completo || "Sem nome"),
           }))
         );
       } catch {
@@ -170,16 +222,15 @@ function SepultadoDropdown({ value, onChange, api, cemiterioId, error, inputRef 
   }, [open, cemiterioId, api]);
 
   useEffect(() => {
-    function out(e) {
+    function outside(e) {
       if (!wrapRef.current) return;
       if (!wrapRef.current.contains(e.target)) setOpen(false);
     }
-    if (open) document.addEventListener("mousedown", out);
-    return () => document.removeEventListener("mousedown", out);
+    if (open) document.addEventListener("mousedown", outside);
+    return () => document.removeEventListener("mousedown", outside);
   }, [open]);
 
   const filtered = itens.filter((i) => i.label.toLowerCase().includes(q.trim().toLowerCase()));
-  const current = itens.find((o) => String(o.id) === String(value))?.label || "Selecione…";
 
   return (
     <div ref={wrapRef} className="relative">
@@ -190,13 +241,18 @@ function SepultadoDropdown({ value, onChange, api, cemiterioId, error, inputRef 
         className={`w-full px-3 py-2 rounded-lg border ${
           error ? "border-red-400 ring-1 ring-red-500" : "border-[#bcd2a7]"
         } bg-white text-left hover:bg-[#f7fbf2]`}
+        title={currentLabel}
       >
-        <span className="truncate">{current}</span>
+        <span className="truncate">{currentLabel}</span>
         <span className="float-right">▾</span>
       </button>
-      {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
+      {error && (
+        <ul className="mt-1 text-xs text-red-600 list-disc pl-5">
+          {Array.isArray(error) ? error.map((e, i) => <li key={i}>{e}</li>) : <li>{error}</li>}
+        </ul>
+      )}
       {open && (
-        <div className="absolute z-50 top-full left-0 mt-2 w-full bg-white rounded-xl shadow-2xl border border-[#e0efcf]">
+        <div className="absolute top-full left-0 mt-2 w-full bg-white rounded-xl shadow-2xl border border-[#e0efcf] z-50">
           <div className="p-2 border-b border-[#e6f2d9]">
             <input
               autoFocus
@@ -230,7 +286,7 @@ function SepultadoDropdown({ value, onChange, api, cemiterioId, error, inputRef 
   );
 }
 
-/* ====== anexos ====== */
+/* =================== Widget de Anexos =================== */
 function AnexosWidget({ objectId, api, disabled }) {
   const [itens, setItens] = useState([]);
   const [arquivo, setArquivo] = useState(null);
@@ -359,7 +415,7 @@ function AnexosWidget({ objectId, api, disabled }) {
   );
 }
 
-/* ====== formulário ====== */
+/* ============================== Formulário =============================== */
 export default function FormularioExumacao({ exumacaoId, onCancel, onSuccess }) {
   const isEdit = !!exumacaoId;
   const token = localStorage.getItem("accessToken");
@@ -376,9 +432,17 @@ export default function FormularioExumacao({ exumacaoId, onCancel, onSuccess }) 
 
   const [carregando, setCarregando] = useState(isEdit);
   const [salvando, setSalvando] = useState(false);
-  const [errors, setErrors] = useState({});
-  const [errorSummary, setErrorSummary] = useState("");
+
+  // Errors: { summary: string[], fields: { campo: string[] } }
+  const [errors, setErrors] = useState({ summary: [], fields: {} });
   const refs = useRef({});
+
+  // labels para edição
+  const [sepLabel, setSepLabel] = useState("");
+  const [tumLabel, setTumLabel] = useState("");
+
+  // infos para validações
+  const [sepInfo, setSepInfo] = useState(null); // { id, tumulo_id, data_sepultamento, ... }
 
   const [form, setForm] = useState({
     numero_documento: "",
@@ -395,12 +459,12 @@ export default function FormularioExumacao({ exumacaoId, onCancel, onSuccess }) 
     endereco: "",
     telefone: "",
 
-    forma_pagamento: "gratuito",
+    forma_pagamento: "gratuito", // gratuito | avista | parcelado
     quantidade_parcelas: "",
     valor: "",
   });
 
-  // carregar para edição
+  /* ===== Carregar registro p/ edição ===== */
   useEffect(() => {
     if (!isEdit) return;
     (async () => {
@@ -430,7 +494,37 @@ export default function FormularioExumacao({ exumacaoId, onCancel, onSuccess }) 
           quantidade_parcelas: v(data.quantidade_parcelas),
           valor: data.valor ? String(data.valor).replace(".", ",") : "",
         }));
-      } catch (e) {
+
+        // labels e infos para validação
+        if (data.sepultado) {
+          try {
+            const r = await api.get(`sepultados/${data.sepultado}/`, {
+              params: { cemiterio: cem?.id },
+            });
+            const s = r.data;
+            setSepLabel(
+              (s.numero_sepultamento ? `${s.numero_sepultamento} - ` : "") +
+                (s.nome || s.nome_completo || "Sem nome")
+            );
+            setSepInfo({
+              id: s.id ?? s.pk,
+              tumulo_id: s.tumulo?.id ?? s.tumulo ?? null,
+              data_sepultamento: s.data_sepultamento || s.data || null,
+            });
+          } catch {}
+        }
+        if (data.tumulo) {
+          try {
+            const r = await api.get(`tumulos/${data.tumulo}/`, { params: { cemiterio: cem?.id } });
+            const t = r.data;
+            setTumLabel(
+              (t.quadra?.codigo ? `Q ${t.quadra.codigo} - ` : "") +
+                (t.identificador || t.codigo || t.nome || `Túmulo ${t.id ?? t.pk}`) +
+                (t.usar_linha && (t.linha || t.linha === 0) ? ` L${t.linha}` : "")
+            );
+          } catch {}
+        }
+      } catch {
         alert("Não foi possível carregar esta exumação.");
         onCancel?.();
       } finally {
@@ -440,19 +534,23 @@ export default function FormularioExumacao({ exumacaoId, onCancel, onSuccess }) 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [exumacaoId]);
 
-  // UI dependências
+  /* ===== Reage à troca de forma de pagamento ===== */
   useEffect(() => {
     if (form.forma_pagamento !== "parcelado" && form.quantidade_parcelas) {
       setForm((s) => ({ ...s, quantidade_parcelas: "" }));
     }
   }, [form.forma_pagamento]);
 
+  /* ===== Helpers de estado/inputs ===== */
   const setField = (name, value) => {
     setForm((s) => ({ ...s, [name]: value }));
-    if (errors[name]) setErrors((e) => ({ ...e, [name]: undefined }));
+    setErrors((e) => {
+      const n = { ...e, fields: { ...e.fields } };
+      delete n.fields[name];
+      return n;
+    });
   };
-  const err = (name) =>
-    Array.isArray(errors?.[name]) ? errors[name].join(" ") : errors?.[name];
+  const err = (name) => errors.fields?.[name];
 
   const onChange = (e) => setField(e.target.name, e.target.value);
   const onChangeValor = (e) => {
@@ -464,36 +562,131 @@ export default function FormularioExumacao({ exumacaoId, onCancel, onSuccess }) 
     setField("valor", `${intFmt},${dec}`);
   };
 
+  /* ===== Carregar info do sepultado ao selecionar (para validação) ===== */
+  async function onSelectSepultado(id) {
+    setField("sepultado", id);
+    if (!id) {
+      setSepInfo(null);
+      setSepLabel("");
+      return;
+    }
+    try {
+      const r = await api.get(`sepultados/${id}/`, { params: { cemiterio: cem?.id } });
+      const s = r.data;
+      setSepLabel(
+        (s.numero_sepultamento ? `${s.numero_sepultamento} - ` : "") +
+          (s.nome || s.nome_completo || "Sem nome")
+      );
+      setSepInfo({
+        id: s.id ?? s.pk,
+        tumulo_id: s.tumulo?.id ?? s.tumulo ?? null,
+        data_sepultamento: s.data_sepultamento || s.data || null,
+      });
+    } catch (e) {
+      console.warn("sepultado info erro:", e?.response?.status);
+      setSepInfo(null);
+    }
+  }
+
+  async function onSelectTumulo(id) {
+    setField("tumulo", id);
+    if (!id) {
+      setTumLabel("");
+      return;
+    }
+    try {
+      const r = await api.get(`tumulos/${id}/`, { params: { cemiterio: cem?.id } });
+      const t = r.data;
+      setTumLabel(
+        (t.quadra?.codigo ? `Q ${t.quadra.codigo} - ` : "") +
+          (t.identificador || t.codigo || t.nome || `Túmulo ${t.id ?? t.pk}`) +
+          (t.usar_linha && (t.linha || t.linha === 0) ? ` L${t.linha}` : "")
+      );
+    } catch {
+      setTumLabel("");
+    }
+  }
+
+  /* ===== Validações “de verdade” no cliente ===== */
+  function diasEntre(iniISO, fimISO) {
+    if (!iniISO || !fimISO) return null;
+    try {
+      const d1 = new Date(iniISO);
+      const d2 = new Date(fimISO);
+      const diff = Math.floor((d2.setHours(0, 0, 0, 0) - d1.setHours(0, 0, 0, 0)) / 86400000);
+      return diff;
+    } catch {
+      return null;
+    }
+  }
+
   function clientValidate(f) {
-    const errs = {};
-    if (!f.sepultado) errs.sepultado = "Selecione o sepultado.";
+    const fieldErrs = {};
+    const summary = [];
+
+    // Obrigatórios
+    if (!f.sepultado) fieldErrs.sepultado = ["Selecione o sepultado."];
+    if (!f.data) fieldErrs.data = ["Informe a data da exumação."];
+
+    // Regra: sepultado x túmulo
+    if (f.sepultado && sepInfo?.tumulo_id && f.tumulo) {
+      if (String(sepInfo.tumulo_id) !== String(f.tumulo)) {
+        const msg =
+          "O sepultado selecionado não está no túmulo informado. Ajuste o campo “Túmulo de Origem”.";
+        fieldErrs.tumulo = (fieldErrs.tumulo || []).concat([msg]);
+        summary.push(msg);
+      }
+    }
+
+    // Regra: tempo mínimo desde o sepultamento
+    if (f.data && sepInfo?.data_sepultamento) {
+      const dias = diasEntre(sepInfo.data_sepultamento, f.data);
+      if (dias !== null && dias < MIN_DIAS_EXUMACAO) {
+        const faltam = MIN_DIAS_EXUMACAO - dias;
+        const msg = `Exumação só é permitida após ${MIN_DIAS_EXUMACAO} dias do sepultamento. Faltam ${faltam} dia(s).`;
+        fieldErrs.data = (fieldErrs.data || []).concat([msg]);
+        summary.push(msg);
+      }
+    }
+
+    // Pagamento
     if (f.forma_pagamento === "parcelado") {
       const n = Number(f.quantidade_parcelas);
-      if (!n || n < 1) errs.quantidade_parcelas = "Informe a quantidade de parcelas.";
+      if (!n || n < 1) {
+        fieldErrs.quantidade_parcelas = ["Informe a quantidade de parcelas (>= 1)."];
+      }
     }
     if (f.forma_pagamento !== "gratuito") {
       const v = Number((f.valor || "0").replace(/\./g, "").replace(",", "."));
-      if (!v || v <= 0) errs.valor = "Informe o valor.";
+      if (!v || v <= 0) fieldErrs.valor = ["Informe o valor (> 0)."];
     }
-    return errs;
+
+    // Campos de texto podem ser obrigatórios no seu backend; descomente se quiser exigir no cliente:
+    // if (!f.motivo?.trim()) fieldErrs.motivo = ["Informe o motivo da exumação."];
+
+    return { summary, fields: fieldErrs };
   }
 
+  /* ===== Submit ===== */
   async function onSubmit(e) {
     e.preventDefault();
-    setErrors({});
-    setErrorSummary("");
+    setErrors({ summary: [], fields: {} });
 
-    const errs = clientValidate(form);
-    if (Object.keys(errs).length) {
-      setErrors(errs);
-      setErrorSummary("Revise os campos destacados em vermelho.");
-      focusFirstError(errs, refs);
+    // Validação cliente
+    const clientErrs = clientValidate(form);
+    if (clientErrs.summary.length || Object.keys(clientErrs.fields).length) {
+      setErrors(clientErrs);
+      focusFirstError(clientErrs, refs);
       return;
     }
 
+    // Monta payload
     const payload = {
       ...form,
-      valor: form.forma_pagamento === "gratuito" ? "0" : (form.valor || "0").replace(/\./g, "").replace(",", "."),
+      valor:
+        form.forma_pagamento === "gratuito"
+          ? "0"
+          : (form.valor || "0").replace(/\./g, "").replace(",", "."),
       ...(form.forma_pagamento !== "parcelado" ? { quantidade_parcelas: "" } : {}),
     };
 
@@ -513,15 +706,28 @@ export default function FormularioExumacao({ exumacaoId, onCancel, onSuccess }) 
       }
       onSuccess?.();
     } catch (err0) {
+      console.error("POST /exumacoes erro:", err0?.response?.status, err0?.response?.data);
       const ct = err0?.response?.headers?.["content-type"] || "";
       if (!ct.includes("application/json")) {
-        setErrorSummary("Erro interno do servidor (500).");
-        return;
+        const errs = { summary: ["Erro interno do servidor (500)."], fields: {} };
+        setErrors(errs);
+        return focusFirstError(errs, refs);
       }
       const norm = normalizeApiErrors(err0?.response?.data);
-      setErrors(norm.fields);
-      setErrorSummary(norm.summary);
-      focusFirstError(norm.fields, refs);
+
+      // Mapeia alguns nomes (se o back usar outro) -> ajuste se necessário
+      const alias = {
+        sepultado_id: "sepultado",
+        tumulo_id: "tumulo",
+        valor_total: "valor",
+      };
+      const mapped = { summary: norm.summary.slice(), fields: {} };
+      Object.entries(norm.fields).forEach(([k, v]) => {
+        mapped.fields[alias[k] || k] = v;
+      });
+
+      setErrors(mapped);
+      focusFirstError(mapped, refs);
     } finally {
       setSalvando(false);
     }
@@ -543,7 +749,13 @@ export default function FormularioExumacao({ exumacaoId, onCancel, onSuccess }) 
         }`}
         {...props}
       />
-      {err(name) && <p className="mt-1 text-xs text-red-600">{err(name)}</p>}
+      {err(name) && (
+        <ul className="mt-1 text-xs text-red-600 list-disc pl-5">
+          {err(name).map((e, i) => (
+            <li key={i}>{e}</li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 
@@ -555,9 +767,22 @@ export default function FormularioExumacao({ exumacaoId, onCancel, onSuccess }) 
         </h2>
       </div>
 
-      {errorSummary && (
-        <div className="bg-red-50 border border-red-300 text-red-800 rounded-lg px-4 py-2">
-          {errorSummary}
+      {((errors.summary && errors.summary.length) ||
+        (errors.fields && Object.keys(errors.fields).length)) && (
+        <div className="bg-red-50 border border-red-300 text-red-800 rounded-lg px-4 py-3">
+          <div className="font-semibold mb-1">Por favor, corrija os problemas abaixo:</div>
+          <ul className="list-disc pl-5 space-y-0.5">
+            {errors.summary?.map((s, i) => (
+              <li key={`s-${i}`}>{s}</li>
+            ))}
+            {Object.entries(errors.fields || {}).map(([k, arr]) =>
+              (arr || []).map((m, i) => (
+                <li key={`f-${k}-${i}`}>
+                  <span className="font-semibold">{k}:</span> {m}
+                </li>
+              ))
+            )}
+          </ul>
         </div>
       )}
 
@@ -588,29 +813,31 @@ export default function FormularioExumacao({ exumacaoId, onCancel, onSuccess }) 
                 <label className="block text-sm text-green-900 mb-1">Sepultado *</label>
                 <SepultadoDropdown
                   value={form.sepultado}
-                  onChange={(v) => setField("sepultado", v)}
+                  onChange={onSelectSepultado}
                   api={api}
                   cemiterioId={cem.id}
                   error={err("sepultado")}
                   inputRef={(el) => (refs.current["sepultado"] = el)}
+                  initialLabel={sepLabel}
                 />
               </div>
               <div>
                 <label className="block text-sm text-green-900 mb-1">Túmulo de Origem</label>
                 <TumuloDropdown
                   value={form.tumulo}
-                  onChange={(v) => setField("tumulo", v)}
+                  onChange={onSelectTumulo}
                   api={api}
                   cemiterioId={cem.id}
                   error={err("tumulo")}
                   inputRef={(el) => (refs.current["tumulo"] = el)}
+                  initialLabel={tumLabel}
                 />
               </div>
               <div />
             </div>
           </div>
 
-          {/* Motivo/Observações */}
+          {/* Informações */}
           <div>
             <div className="text-green-900 font-semibold mb-2">Informações</div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -626,6 +853,13 @@ export default function FormularioExumacao({ exumacaoId, onCancel, onSuccess }) 
                     err("motivo") ? "border-red-400 ring-1 ring-red-500" : "border-[#bcd2a7]"
                   }`}
                 />
+                {err("motivo") && (
+                  <ul className="mt-1 text-xs text-red-600 list-disc pl-5">
+                    {err("motivo").map((e, i) => (
+                      <li key={i}>{e}</li>
+                    ))}
+                  </ul>
+                )}
               </div>
               <div className="md:col-span-3">
                 <label className="block text-sm text-green-900 mb-1">Observações</label>
@@ -639,6 +873,13 @@ export default function FormularioExumacao({ exumacaoId, onCancel, onSuccess }) 
                     err("observacoes") ? "border-red-400 ring-1 ring-red-500" : "border-[#bcd2a7]"
                   }`}
                 />
+                {err("observacoes") && (
+                  <ul className="mt-1 text-xs text-red-600 list-disc pl-5">
+                    {err("observacoes").map((e, i) => (
+                      <li key={i}>{e}</li>
+                    ))}
+                  </ul>
+                )}
               </div>
             </div>
           </div>
@@ -660,7 +901,13 @@ export default function FormularioExumacao({ exumacaoId, onCancel, onSuccess }) 
                     err("cpf") ? "border-red-400 ring-1 ring-red-500" : "border-[#bcd2a7]"
                   }`}
                 />
-                {err("cpf") && <p className="mt-1 text-xs text-red-600">{err("cpf")}</p>}
+                {err("cpf") && (
+                  <ul className="mt-1 text-xs text-red-600 list-disc pl-5">
+                    {err("cpf").map((e, i) => (
+                      <li key={i}>{e}</li>
+                    ))}
+                  </ul>
+                )}
               </div>
               <div>
                 <label className="block text-sm text-green-900 mb-1">Telefone</label>
@@ -674,7 +921,13 @@ export default function FormularioExumacao({ exumacaoId, onCancel, onSuccess }) 
                     err("telefone") ? "border-red-400 ring-1 ring-red-500" : "border-[#bcd2a7]"
                   }`}
                 />
-                {err("telefone") && <p className="mt-1 text-xs text-red-600">{err("telefone")}</p>}
+                {err("telefone") && (
+                  <ul className="mt-1 text-xs text-red-600 list-disc pl-5">
+                    {err("telefone").map((e, i) => (
+                      <li key={i}>{e}</li>
+                    ))}
+                  </ul>
+                )}
               </div>
               {input("Endereço", "endereco")}
             </div>
@@ -700,7 +953,11 @@ export default function FormularioExumacao({ exumacaoId, onCancel, onSuccess }) 
                   <option value="parcelado">Parcelado</option>
                 </select>
                 {err("forma_pagamento") && (
-                  <p className="mt1 text-xs text-red-600">{err("forma_pagamento")}</p>
+                  <ul className="mt-1 text-xs text-red-600 list-disc pl-5">
+                    {err("forma_pagamento").map((e, i) => (
+                      <li key={i}>{e}</li>
+                    ))}
+                  </ul>
                 )}
               </div>
 
@@ -721,7 +978,13 @@ export default function FormularioExumacao({ exumacaoId, onCancel, onSuccess }) 
                       err("valor") ? "border-red-400 ring-1 ring-red-500" : "border-[#bcd2a7]"
                     }`}
                   />
-                  {err("valor") && <p className="mt-1 text-xs text-red-600">{err("valor")}</p>}
+                  {err("valor") && (
+                    <ul className="mt-1 text-xs text-red-600 list-disc pl-5">
+                      {err("valor").map((e, i) => (
+                        <li key={i}>{e}</li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
               )}
             </div>
@@ -747,7 +1010,7 @@ export default function FormularioExumacao({ exumacaoId, onCancel, onSuccess }) 
         </div>
       </form>
 
-      {/* anexos */}
+      {/* Anexos */}
       <AnexosWidget objectId={isEdit ? exumacaoId : null} api={api} disabled={!isEdit} />
     </div>
   );

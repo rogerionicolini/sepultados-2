@@ -401,12 +401,111 @@ class ConcessaoContratoViewSet(ContextoRestritoQuerysetMixin, viewsets.ModelView
 
 
 
+# views_api.py
+from datetime import date
+from django.db import transaction
+from django.core.exceptions import ValidationError as DjangoValidationError
+from rest_framework.exceptions import ValidationError
+from django.db.models import Q
+
 class ExumacaoViewSet(ContextoRestritoQuerysetMixin, viewsets.ModelViewSet):
-    queryset = Exumacao.objects.all()
+    queryset = Exumacao.objects.all().select_related(
+        "sepultado", "tumulo", "tumulo__quadra", "tumulo__quadra__cemiterio"
+    )
     serializer_class = ExumacaoSerializer
     cemiterio_field = "tumulo__quadra__cemiterio"
     prefeitura_field = "tumulo__quadra__cemiterio__prefeitura"
     permission_classes = [IsAuthenticated]
+
+    def _prefeitura_from_request_or_relations(self, validated):
+        pref = getattr(self.request, "prefeitura_ativa", None) or getattr(self.request.user, "prefeitura", None)
+        if pref:
+            return pref
+        tum = validated.get("tumulo")
+        if tum and getattr(tum, "quadra", None) and getattr(tum.quadra, "cemiterio", None):
+            return tum.quadra.cemiterio.prefeitura
+        sep = validated.get("sepultado")
+        if sep and getattr(sep, "tumulo", None) and getattr(sep.tumulo, "quadra", None):
+            return sep.tumulo.quadra.cemiterio.prefeitura
+        return None
+
+    # também lista por cemitério do sepultado se necessário
+    def get_queryset(self):
+        qs = super().get_queryset()
+        cem = self.request.query_params.get("cemiterio")
+        if cem:
+            qs = qs.filter(
+                Q(tumulo__quadra__cemiterio_id=cem) |
+                Q(sepultado__tumulo__quadra__cemiterio_id=cem)
+            )
+        return qs
+
+    def _normalize_validated(self, validated):
+        # herda tumulo do sepultado se não veio
+        sep = validated.get("sepultado")
+        if not validated.get("tumulo") and sep and getattr(sep, "tumulo", None):
+            validated["tumulo"] = sep.tumulo
+
+        # limpa hífen de número de documento
+        nd = validated.get("numero_documento")
+        if nd == "-" or nd == "":
+            validated.pop("numero_documento", None)
+
+        return validated
+
+    def perform_create(self, serializer):
+        validated = self._normalize_validated(dict(serializer.validated_data))
+        pref = self._prefeitura_from_request_or_relations(validated)
+        if not pref:
+            raise ValidationError({"detail": "Não foi possível determinar a prefeitura."})
+
+        instance = Exumacao(**validated)
+        instance.prefeitura = pref
+        instance.usuario_registro = self.request.user
+
+        # default para data, se o model exigir
+        if getattr(instance, "data", None) in (None, ""):
+            try:
+                instance._meta.get_field("data")  # só se o campo existir
+                instance.data = date.today()
+            except Exception:
+                pass
+
+        try:
+            instance.full_clean()
+            with transaction.atomic():
+                instance.save()
+        except DjangoValidationError as e:
+            # devolve erros por campo (o front consegue exibir)
+            raise ValidationError(e.message_dict or {"detail": e.messages})
+        serializer.instance = instance
+
+    def perform_update(self, serializer):
+        instance = self.get_object()
+        validated = self._normalize_validated(dict(serializer.validated_data))
+        pref = self._prefeitura_from_request_or_relations(validated)
+        if not pref:
+            raise ValidationError({"detail": "Não foi possível determinar a prefeitura."})
+
+        for k, v in validated.items():
+            setattr(instance, k, v)
+        instance.prefeitura = pref
+        instance.usuario_registro = self.request.user
+
+        if getattr(instance, "data", None) in (None, ""):
+            try:
+                instance._meta.get_field("data")
+                instance.data = date.today()
+            except Exception:
+                pass
+
+        try:
+            instance.full_clean()
+            with transaction.atomic():
+                instance.save()
+        except DjangoValidationError as e:
+            raise ValidationError(e.message_dict or {"detail": e.messages})
+
 
 
 class TransladoViewSet(ContextoRestritoQuerysetMixin, viewsets.ModelViewSet):
