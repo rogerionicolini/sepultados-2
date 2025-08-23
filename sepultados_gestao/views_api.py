@@ -276,6 +276,11 @@ class TumuloViewSet(viewsets.ModelViewSet):
 # views_api.py
 from rest_framework import viewsets
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.decorators import action
+from django.shortcuts import get_object_or_404
+from rest_framework_simplejwt.authentication import JWTAuthentication
+
+from .views import gerar_guia_sepultamento_pdf  # <- função correta do views.py
 
 class SepultadoViewSet(ContextoRestritoQuerysetMixin, viewsets.ModelViewSet):
     queryset = Sepultado.objects.all()
@@ -283,26 +288,36 @@ class SepultadoViewSet(ContextoRestritoQuerysetMixin, viewsets.ModelViewSet):
     cemiterio_field = "tumulo__quadra__cemiterio"
     prefeitura_field = "tumulo__quadra__cemiterio__prefeitura"
     permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
 
     def get_queryset(self):
-        # aplica o filtro de prefeitura/cemitério do mixin
         qs = (
             super()
             .get_queryset()
-            .select_related(
-                "tumulo",
-                "tumulo__quadra",
-                "tumulo__quadra__cemiterio",
-            )
+            .select_related("tumulo", "tumulo__quadra", "tumulo__quadra__cemiterio")
             .order_by("-data_sepultamento", "-id")
         )
-
-        # 🔴 filtro específico do túmulo passado na query (?tumulo=ID)
+        # filtro específico do túmulo passado na query (?tumulo=ID)
         tumulo_id = self.request.query_params.get("tumulo")
         if tumulo_id:
             qs = qs.filter(tumulo_id=tumulo_id)
-
         return qs
+
+    @action(detail=True, methods=["get"], url_path="pdf")
+    def pdf(self, request, pk=None):
+        """
+        /api/sepultados/<id>/pdf/?cemiterio=<id>
+        Gera a mesma 'Guia de Sepultamento' usada no admin.
+        """
+        sep = get_object_or_404(Sepultado, pk=pk)
+
+        # a função do seu views.py aceita 'pk'
+        try:
+            return gerar_guia_sepultamento_pdf(request._request, pk=sep.pk)
+        except TypeError:
+            # fallback caso em algum ambiente ela espere outro nome de argumento
+            return gerar_guia_sepultamento_pdf(request._request, sepultado_pk=sep.pk)
+
 
 
 

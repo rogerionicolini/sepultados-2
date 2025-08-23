@@ -121,8 +121,6 @@ export default function Sepultados() {
     }
   }
 
-
-
   useEffect(() => {
     if (!modoFormulario) {
       Promise.all([buscarSepultados(), carregarTumulosMap()]);
@@ -137,6 +135,7 @@ export default function Sepultados() {
       setModoFormulario(true);
     }
   }, [search]);
+
   function rotuloTumulo(t, quadrasMap = new Map()) {
     if (!t) return "";
     const id = t.id ?? t.pk ?? "";
@@ -178,7 +177,6 @@ export default function Sepultados() {
     return [base, linhaTxt, quadraTxt].filter(Boolean).join(" ");
   }
 
-
   function tumuloLabelFromRow(s) {
     if (s?.tumulo && typeof s.tumulo === "object") {
       return rotuloTumulo(s.tumulo, new Map()); // já veio resolvido
@@ -189,8 +187,6 @@ export default function Sepultados() {
     }
     return "-";
   }
-
-
 
   const filtrados = useMemo(() => {
     const q = busca.trim().toLowerCase();
@@ -207,11 +203,12 @@ export default function Sepultados() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sepultados, busca, tumulosMap]);
 
-  /** ------- ações ------- */
   async function excluir(id) {
     if (!window.confirm("Excluir este registro?")) return;
     try {
-      await api.delete(`${SEPULTADOS_EP}${id}/`);
+      await api.delete(`${SEPULTADOS_EP}${id}/`, {
+        params: { cemiterio: cemiterioId }, // ← ESSENCIAL
+      });
       await buscarSepultados();
     } catch (e) {
       console.error("excluir sepultado ERRO:", e?.response?.data || e);
@@ -219,38 +216,41 @@ export default function Sepultados() {
     }
   }
 
+
   async function abrirRelatorio(s) {
-    const id = s.id ?? s.pk;
-    const tentativas = [
-      `${SEPULTADOS_EP}${id}/pdf/`,
-      `${SEPULTADOS_EP}${id}/relatorio_pdf/`,
-      `${SEPULTADOS_EP}${id}/report/`,
-    ];
-    for (const url of tentativas) {
-      try {
-        const res = await api.get(url, { responseType: "blob" });
-        const ct = (res?.headers && res.headers["content-type"]) || "";
-        if (ct.includes("pdf")) {
-          const blob = new Blob([res.data], { type: "application/pdf" });
-          const blobUrl = URL.createObjectURL(blob);
-          const w = window.open(blobUrl, "_blank");
-          if (!w) {
-            const a = document.createElement("a");
-            a.href = blobUrl;
-            a.download = `sepultado_${id}.pdf`;
-            document.body.appendChild(a);
-            a.click();
-            a.remove();
-          }
-          setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
-          return;
-        }
-      } catch {
-        // tenta o próximo
+    try {
+      const id = s.id ?? s.pk;
+      if (!id) throw new Error("ID do sepultado ausente.");
+      if (!cemiterioId) {
+        alert("Selecione um cemitério para gerar o relatório.");
+        return;
       }
+
+      // igual ao padrão de Túmulos: endpoint do recurso + params + blob
+      const res = await api.get(`${SEPULTADOS_EP}${id}/pdf/`, {
+        params: { cemiterio: cemiterioId },
+        responseType: "blob",
+      });
+
+      const blob = new Blob([res.data], { type: "application/pdf" });
+      const url = URL.createObjectURL(blob);
+
+      const win = window.open(url, "_blank");
+      if (!win) {
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `sepultado_${id}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      }
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (e) {
+      console.error("PDF sepultado erro:", e?.response?.status, e?.response?.data || e);
+      alert("Não foi possível gerar o PDF deste sepultado.");
     }
-    alert("Não foi possível gerar o PDF deste sepultado.");
   }
+
 
   /** ------- render ------- */
   return (
@@ -262,7 +262,7 @@ export default function Sepultados() {
             onClose={() => {
               setModoFormulario(false);
               setEditandoId(null);
-              buscarSepultados();                   // recarrega a lista ao fechar (salvo/cancelado)
+              buscarSepultados(); // recarrega a lista ao fechar (salvo/cancelado)
               navigate("/sepultados", { replace: true }); // limpa ?novo=1
             }}
           />
