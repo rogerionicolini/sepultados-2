@@ -45,14 +45,22 @@ export default function Exumacoes() {
   const [search] = useSearchParams();
   const navigate = useNavigate();
 
-  const api = useMemo(
-    () =>
-      axios.create({
-        baseURL: API_BASE,
-        headers: { Authorization: `Bearer ${token}` },
-      }),
-    [token]
-  );
+  const api = useMemo(() => {
+    const a = axios.create({
+      baseURL: API_BASE,
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    a.interceptors.request.use((cfg) => {
+      if ((cfg.method || "get").toLowerCase() === "get") {
+        const hasQuery = cfg.url && cfg.url.includes("?");
+        const sep = hasQuery ? "&" : "?";
+        cfg.url = `${cfg.url}${sep}_ts=${Date.now()}`;
+      }
+      return cfg;
+    });
+    return a;
+  }, [token]);
+
 
   async function carregar() {
     try {

@@ -508,7 +508,7 @@ class ConcessaoContratoViewSet(ContextoRestritoQuerysetMixin, viewsets.ModelView
     def report(self, request, pk=None):
         return self.pdf(request, pk)
 
-# views_api.py
+
 from datetime import date
 from django.db import transaction
 from django.core.exceptions import ValidationError as DjangoValidationError
@@ -583,9 +583,77 @@ class ExumacaoViewSet(ContextoRestritoQuerysetMixin, viewsets.ModelViewSet):
             with transaction.atomic():
                 instance.save()
         except DjangoValidationError as e:
-            # devolve erros por campo (o front consegue exibir)
-            raise ValidationError(e.message_dict or {"detail": e.messages})
-        serializer.instance = instance
+            payload = {}
+
+            # 1) Dict por campo (ex.: {"data": ["..."], "__all__": ["..."]})
+            if getattr(e, "message_dict", None):
+                payload = dict(e.message_dict)
+
+            # 2) "__all__" -> non_field_errors
+            if "__all__" in payload:
+                msgs = payload.pop("__all__") or []
+                if not isinstance(msgs, (list, tuple)):
+                    msgs = [msgs]
+                payload.setdefault("non_field_errors", [])
+                payload["non_field_errors"].extend(msgs)
+
+            # 3) lista simples -> non_field_errors
+            if not payload and getattr(e, "messages", None):
+                msgs = e.messages
+                if not isinstance(msgs, (list, tuple)):
+                    msgs = [msgs]
+                payload = {"non_field_errors": msgs}
+
+            # 4) default se vazio
+            if not payload:
+                payload = {"non_field_errors": ["Não foi possível validar a exumação."]}
+
+            # 5) Se ficou genérica, calcula e injeta "faltam X dia(s)"
+            try:
+                gen_texts = (
+                    "Não foi possível validar a data da exumação",
+                    "Nao foi possivel validar a data da exumacao",
+                )
+                has_generic = any(any(gt in str(m) for gt in gen_texts)
+                                  for m in payload.get("non_field_errors", []))
+
+                sep = validated.get("sepultado")
+                tum = validated.get("tumulo") or (getattr(sep, "tumulo", None) if sep else None)
+                cem = getattr(getattr(tum, "quadra", None), "cemiterio", None) if tum else None
+                meses = int(getattr(cem, "tempo_minimo_exumacao", 0) or 0)
+                dt_sep = getattr(sep, "data_sepultamento", None) if sep else None
+                dt_exu = validated.get("data")
+
+                if meses and dt_sep and dt_exu:
+                    if hasattr(dt_sep, "date"):
+                        dt_sep = dt_sep.date()
+                    if hasattr(dt_exu, "date"):
+                        dt_exu = dt_exu.date()
+
+                    from calendar import monthrange
+                    from datetime import date as _date
+
+                    def _add_months(d: _date, m: int) -> _date:
+                        y = d.year + (d.month - 1 + m) // 12
+                        mo = (d.month - 1 + m) % 12 + 1
+                        day = min(d.day, monthrange(y, mo)[1])
+                        return _date(y, mo, day)
+
+                    data_min = _add_months(dt_sep, meses)
+                    if dt_exu < data_min:
+                        faltam = (data_min - dt_exu).days
+                        claro = f"Exumação só é permitida após {meses} mês(es) do sepultamento. Faltam {faltam} dia(s)."
+                        payload.setdefault("data", []).append(claro)
+                        payload.setdefault("non_field_errors", []).append(claro)
+                        # remove genérica, se presente
+                        payload["non_field_errors"] = [
+                            m for m in payload["non_field_errors"]
+                            if not any(gt in str(m) for gt in gen_texts)
+                        ]
+            except Exception:
+                pass
+
+            raise ValidationError(payload)
 
     def perform_update(self, serializer):
         instance = self.get_object()
@@ -611,7 +679,76 @@ class ExumacaoViewSet(ContextoRestritoQuerysetMixin, viewsets.ModelViewSet):
             with transaction.atomic():
                 instance.save()
         except DjangoValidationError as e:
-            raise ValidationError(e.message_dict or {"detail": e.messages})
+            payload = {}
+
+            # 1) Dict por campo
+            if getattr(e, "message_dict", None):
+                payload = dict(e.message_dict)
+
+            # 2) "__all__" -> non_field_errors
+            if "__all__" in payload:
+                msgs = payload.pop("__all__") or []
+                if not isinstance(msgs, (list, tuple)):
+                    msgs = [msgs]
+                payload.setdefault("non_field_errors", [])
+                payload["non_field_errors"].extend(msgs)
+
+            # 3) lista simples -> non_field_errors
+            if not payload and getattr(e, "messages", None):
+                msgs = e.messages
+                if not isinstance(msgs, (list, tuple)):
+                    msgs = [msgs]
+                payload = {"non_field_errors": msgs}
+
+            # 4) default se vazio
+            if not payload:
+                payload = {"non_field_errors": ["Não foi possível validar a exumação."]}
+
+            # 5) Se ficou genérica, calcula e injeta "faltam X dia(s)"
+            try:
+                gen_texts = (
+                    "Não foi possível validar a data da exumação",
+                    "Nao foi possivel validar a data da exumacao",
+                )
+                has_generic = any(any(gt in str(m) for gt in gen_texts)
+                                  for m in payload.get("non_field_errors", []))
+
+                sep = validated.get("sepultado")
+                tum = validated.get("tumulo") or (getattr(sep, "tumulo", None) if sep else None)
+                cem = getattr(getattr(tum, "quadra", None), "cemiterio", None) if tum else None
+                meses = int(getattr(cem, "tempo_minimo_exumacao", 0) or 0)
+                dt_sep = getattr(sep, "data_sepultamento", None) if sep else None
+                dt_exu = validated.get("data")
+
+                if meses and dt_sep and dt_exu:
+                    if hasattr(dt_sep, "date"):
+                        dt_sep = dt_sep.date()
+                    if hasattr(dt_exu, "date"):
+                        dt_exu = dt_exu.date()
+
+                    from calendar import monthrange
+                    from datetime import date as _date
+
+                    def _add_months(d: _date, m: int) -> _date:
+                        y = d.year + (d.month - 1 + m) // 12
+                        mo = (d.month - 1 + m) % 12 + 1
+                        day = min(d.day, monthrange(y, mo)[1])
+                        return _date(y, mo, day)
+
+                    data_min = _add_months(dt_sep, meses)
+                    if dt_exu < data_min:
+                        faltam = (data_min - dt_exu).days
+                        claro = f"Exumação só é permitida após {meses} mês(es) do sepultamento. Faltam {faltam} dia(s)."
+                        payload.setdefault("data", []).append(claro)
+                        payload.setdefault("non_field_errors", []).append(claro)
+                        payload["non_field_errors"] = [
+                            m for m in payload["non_field_errors"]
+                            if not any(gt in str(m) for gt in gen_texts)
+                        ]
+            except Exception:
+                pass
+
+            raise ValidationError(payload)
 
     @action(detail=True, methods=["get"], url_path="pdf")
     def pdf(self, request, pk=None):

@@ -7,10 +7,6 @@ import InputMask from "react-input-mask";
 const API_BASE = "http://127.0.0.1:8000/api/";
 const CT_EXUMACAO = "sepultados_gestao.exumacao";
 
-/** Configuração de regra de negócio (client-side) */
-const MIN_DIAS_EXUMACAO = 1095; // 3 anos. Ajuste se a regra for diferente.
-
-/* ===== Helpers comuns ===== */
 function getCemiterioAtivo() {
   try {
     const raw = localStorage.getItem("cemiterioAtivo");
@@ -58,7 +54,7 @@ function normalizeApiErrors(data) {
         ? [JSON.stringify(v)]
         : [String(v)];
 
-    if (["detail", "non_field_errors"].includes(k)) {
+    if (["detail", "non_field_errors", "__all__"].includes(k)) {
       arr.forEach((s) => out.summary.push(s));
     } else {
       out.fields[k] = (out.fields[k] || []).concat(arr);
@@ -533,6 +529,8 @@ export default function FormularioExumacao({ exumacaoId, onCancel, onSuccess }) 
   const isEdit = !!exumacaoId;
   const token = localStorage.getItem("accessToken");
   const cem = getCemiterioAtivo();
+  const [mesesMinimos, setMesesMinimos] = useState(0);
+  
 
   const api = useMemo(
     () =>
@@ -576,6 +574,28 @@ export default function FormularioExumacao({ exumacaoId, onCancel, onSuccess }) 
     quantidade_parcelas: "",
     valor: "",
   });
+    // Carrega tempo_minimo_exumacao (em MESES) do cemitério ativo
+  useEffect(() => {
+    let cancel = false;
+    (async () => {
+      if (!cem?.id) return;
+      try {
+        // Tenta endpoint de detalhe
+        const { data } = await api.get(`cemiterios/${cem.id}/`);
+        if (!cancel) { setMesesMinimos(Number(data?.tempo_minimo_exumacao) || 0); return; }
+      } catch (e) {
+        // Fallback: lista e filtra pelo id (DRF pode exigir barra final no detalhe)
+        try {
+          const res = await api.get(`cemiterios/?id=${cem.id}`);
+          const arr = Array.isArray(res.data) ? res.data : res.data?.results ?? [];
+          const item = arr.find((x) => Number(x?.id) === Number(cem.id));
+          if (!cancel) { setMesesMinimos(Number(item?.tempo_minimo_exumacao) || 0); return; }
+        } catch {}
+        if (!cancel) setMesesMinimos(0);
+      }
+    })();
+    return () => { cancel = true; };
+  }, [cem?.id, api]);
 
   /* ===== Carregar registro p/ edição ===== */
   useEffect(() => {
@@ -733,6 +753,41 @@ export default function FormularioExumacao({ exumacaoId, onCancel, onSuccess }) 
     }
   }
 
+  
+  // Helpers locais para trabalhar com meses e evitar erro de fuso/UTC
+  function parseISODateLocal(s) {
+    if (!s) return null;
+    try {
+      const str = String(s).trim();
+      // Aceita “DD/MM/YYYY”
+      if (str.includes("/")) {
+        const [d, m, y] = str.split("/").map(Number);
+        if (!y || !m || !d) return null;
+        return new Date(y, m - 1, d, 12, 0, 0);
+      }
+      // Aceita “YYYY-MM-DD” (do input date)
+      const [y, m, d] = str.split("T")[0].split("-").map(Number);
+      if (!y || !m || !d) return null;
+      return new Date(y, m - 1, d, 12, 0, 0); // meio-dia evita off-by-one
+    } catch {
+      return null;
+    }
+  }
+
+  function addMonthsLocal(dt, months) {
+    if (!dt) return null;
+    const base = new Date(dt.getFullYear(), dt.getMonth(), dt.getDate(), 12, 0, 0);
+    const target = new Date(base.getFullYear(), base.getMonth() + months, base.getDate(), 12, 0, 0);
+    // Ajuste para meses com menos dias
+    if (target.getMonth() !== ((base.getMonth() + months) % 12 + 12) % 12) target.setDate(0);
+    return target;
+  }
+  function diffCalendarDays(a, b) {
+    const A = new Date(a.getFullYear(), a.getMonth(), a.getDate());
+    const B = new Date(b.getFullYear(), b.getMonth(), b.getDate());
+    return Math.round((+A - +B) / 86400000);
+  }
+
   function clientValidate(f) {
     const fieldErrs = {};
     const summary = [];
@@ -751,16 +806,47 @@ export default function FormularioExumacao({ exumacaoId, onCancel, onSuccess }) 
       }
     }
 
-    // Regra: tempo mínimo desde o sepultamento
-    if (f.data && sepInfo?.data_sepultamento) {
-      const dias = diasEntre(sepInfo.data_sepultamento, f.data);
-      if (dias !== null && dias < MIN_DIAS_EXUMACAO) {
-        const faltam = MIN_DIAS_EXUMACAO - dias;
-        const msg = `Exumação só é permitida após ${MIN_DIAS_EXUMACAO} dias do sepultamento. Faltam ${faltam} dia(s).`;
-        fieldErrs.data = (fieldErrs.data || []).concat([msg]);
-        summary.push(msg);
+    // Regra: tempo mínimo desde o sepultamento (usa MESES do cemitério)
+    if (f.data && sepInfo?.data_sepultamento && mesesMinimos > 0) {
+      const parseLocal = (s) => {
+        if (!s) return null;
+        const str = String(s).trim();
+        if (str.includes("/")) { // DD/MM/YYYY
+          const [d, m, y] = str.split("/").map(Number);
+          if (!y || !m || !d) return null;
+          return new Date(y, m - 1, d, 12, 0, 0);
+        }
+        // YYYY-MM-DD (input date / DRF)
+        const [y, m, d] = str.split("T")[0].split("-").map(Number);
+        if (!y || !m || !d) return null;
+        return new Date(y, m - 1, d, 12, 0, 0);
+      };
+      const addMonthsLocal = (dt, months) => {
+        const base = new Date(dt.getFullYear(), dt.getMonth(), dt.getDate(), 12, 0, 0);
+        const target = new Date(base.getFullYear(), base.getMonth() + months, base.getDate(), 12, 0, 0);
+        // Ajuste para meses com menos dias
+        if (target.getMonth() !== ((base.getMonth() + months) % 12 + 12) % 12) target.setDate(0);
+        return target;
+      };
+      const diffCalendarDays = (a, b) => {
+        const A = new Date(a.getFullYear(), a.getMonth(), a.getDate());
+        const B = new Date(b.getFullYear(), b.getMonth(), b.getDate());
+        return Math.round((+A - +B) / 86400000);
+      };
+
+      const sep = parseLocal(sepInfo.data_sepultamento);
+      const exu = parseLocal(f.data);
+      if (sep && exu) {
+        const limite = addMonthsLocal(sep, mesesMinimos);
+        if (exu < limite) {
+          const faltam = diffCalendarDays(limite, exu);
+          const msg = `Exumação só é permitida após ${mesesMinimos} mês(es) do sepultamento. Faltam ${faltam} dia(s).`;
+          fieldErrs.data = (fieldErrs.data || []).concat([msg]);
+          summary.push(msg);
+        }
       }
     }
+
 
     // Pagamento
     if (f.forma_pagamento === "parcelado") {
@@ -838,7 +924,31 @@ export default function FormularioExumacao({ exumacaoId, onCancel, onSuccess }) 
       Object.entries(norm.fields).forEach(([k, v]) => {
         mapped.fields[alias[k] || k] = v;
       });
+      (() => {
+        const msgGen = "Não foi possível validar a data da exumação";
+        const temGen = (mapped.summary || []).some((s) => String(s).includes(msgGen));
+        if (!temGen) return;
 
+        if (sepInfo?.data_sepultamento && form.data && mesesMinimos > 0) {
+          const exu = parseISODateLocal(form.data);
+          const sep = parseISODateLocal(sepInfo.data_sepultamento);
+          if (exu && sep) {
+            const limite = addMonthsLocal(sep, mesesMinimos);
+            const faltam = Math.max(0, diffCalendarDays(limite, exu));
+            const claro = `Exumação só é permitida após ${mesesMinimos} mês(es) do sepultamento. Faltam ${faltam} dia(s).`;
+
+            // troca na lista geral
+            mapped.summary = (mapped.summary || [])
+              .filter((s) => !String(s).includes(msgGen))
+              .concat([claro]);
+
+            // e também no campo "data", se veio erro lá
+            mapped.fields.data = (mapped.fields.data || [])
+              .filter((s) => !String(s).includes(msgGen))
+              .concat([claro]);
+          }
+        }
+      })();
       setErrors(mapped);
       focusFirstError(mapped, refs);
     } finally {
