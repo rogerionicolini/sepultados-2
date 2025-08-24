@@ -61,3 +61,57 @@ def restaurar_prefeitura(prefeitura: Prefeitura, responsavel=None, motivo: str =
         .update(is_active=True, desativado_por_arquivamento=False)
 
     return prefeitura
+
+
+from django.db import transaction
+from sepultados_gestao.models import Exumacao, Sepultado
+
+
+@transaction.atomic
+def sync_sepultado_status(sepultado: "Sepultado"):
+    """
+    Recalcula e sincroniza os campos do sepultado a partir das exumações existentes.
+    - exumado: True se existe ao menos uma Exumacao, senão False
+    - status: EXUMADO/SEPULTADO (se o model tiver enum Status) ou "exumado"/"sepultado"
+    - data_exumacao: data da última exumação ou None
+    Idempotente e seguro para ser chamado em save/delete/signals.
+    """
+    if not sepultado or not getattr(sepultado, "pk", None):
+        return
+
+    # Busca exumações e última data
+    qs = Exumacao.objects.filter(sepultado=sepultado).order_by("-data", "-pk")
+    tem_exumacao = qs.exists()
+    ultima = qs.first()
+
+    exumado = bool(tem_exumacao)
+    nova_data_exu = getattr(ultima, "data", None)
+
+    updates = []
+
+    # Atualiza flag exumado (se existir)
+    if hasattr(sepultado, "exumado") and sepultado.exumado != exumado:
+        sepultado.exumado = exumado
+        updates.append("exumado")
+
+    # Atualiza status (se existir)
+    if hasattr(sepultado, "status"):
+        try:
+            Status = sepultado.__class__.Status
+            novo_status = Status.EXUMADO if exumado else Status.SEPULTADO
+        except Exception:
+            novo_status = "exumado" if exumado else "sepultado"
+        if sepultado.status != novo_status:
+            sepultado.status = novo_status
+            updates.append("status")
+
+    # Atualiza data_exumacao (se existir)
+    if hasattr(sepultado, "data_exumacao"):
+        if nova_data_exu is not None and hasattr(nova_data_exu, "date"):
+            nova_data_exu = nova_data_exu.date()
+        if sepultado.data_exumacao != nova_data_exu:
+            sepultado.data_exumacao = nova_data_exu
+            updates.append("data_exumacao")
+
+    if updates:
+        sepultado.save(update_fields=updates)

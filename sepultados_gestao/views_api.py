@@ -514,6 +514,7 @@ from django.db import transaction
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework.exceptions import ValidationError
 from django.db.models import Q
+from sepultados_gestao.services.arquivamento import sync_sepultado_status
 
 class ExumacaoViewSet(ContextoRestritoQuerysetMixin, viewsets.ModelViewSet):
     queryset = Exumacao.objects.all().select_related(
@@ -749,6 +750,12 @@ class ExumacaoViewSet(ContextoRestritoQuerysetMixin, viewsets.ModelViewSet):
                 pass
 
             raise ValidationError(payload)
+
+    def perform_destroy(self, instance):
+        sep = instance.sepultado
+        with transaction.atomic():
+            super().perform_destroy(instance)
+            sync_sepultado_status(sep)
 
     @action(detail=True, methods=["get"], url_path="pdf")
     def pdf(self, request, pk=None):
