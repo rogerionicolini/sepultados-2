@@ -53,33 +53,89 @@ function focusFirstError(errorsObj, refs) {
   }
 }
 
-/* ===== dropdowns com busca ===== */
+/* ===== rótulo de túmulo (mesmo padrão da Exumação) ===== */
+function rotuloTumulo(t, quadrasMap = new Map()) {
+  if (!t) return "";
+  const id = t.id ?? t.pk ?? "";
+  const base =
+    t.identificador || t.codigo || t.nome || `T ${String(id).padStart(2, "0")}`;
+
+  let linhaTxt = "";
+  const lraw =
+    typeof t.linha === "object" ? (t.linha?.id ?? t.linha?.numero ?? t.linha?.codigo) : t.linha;
+  if (t.usar_linha && (lraw || lraw === 0)) linhaTxt = `L ${lraw}`;
+
+  let quadraTxt = "";
+  const q = t.quadra;
+  const resolveQuadra = (qInfo) => {
+    if (!qInfo) return "";
+    if (qInfo.nome) return qInfo.nome;
+    if (qInfo.codigo != null) {
+      const cod = String(qInfo.codigo);
+      return /^\d+$/.test(cod) ? `Quadra ${cod.padStart(2, "0")}` : cod;
+    }
+    if (qInfo.id != null) return `Quadra ${qInfo.id}`;
+    return "";
+  };
+  if (q) {
+    if (typeof q === "object") quadraTxt = resolveQuadra(q);
+    else {
+      const info = quadrasMap.get(String(q)) || quadrasMap.get(Number(q));
+      quadraTxt = info ? resolveQuadra(info) : String(q);
+    }
+  }
+  return [base, linhaTxt, quadraTxt].filter(Boolean).join(" ");
+}
+
+/* ===== dropdowns com busca (mostram valor selecionado em edição) ===== */
 function TumuloDropdown({ value, onChange, api, cemiterioId, error, inputRef }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const [itens, setItens] = useState([]);
+  const [selecionado, setSelecionado] = useState(null);
+  const [quadrasMap, setQuadrasMap] = useState(new Map());
   const wrapRef = useRef(null);
 
-  useEffect(() => {
-    if (!open || !cemiterioId) return;
-    (async () => {
-      try {
-        const { data } = await api.get("tumulos/", { params: { cemiterio: cemiterioId } });
+  async function carregarLista() {
+    if (!cemiterioId) return;
+    const [tumulosRes, quadrasRes] = await Promise.all([
+      api.get("tumulos/", { params: { cemiterio: cemiterioId } }),
+      api.get("quadras/", { params: { cemiterio: cemiterioId } }),
+    ]);
+    const quadArr = Array.isArray(quadrasRes.data) ? quadrasRes.data : quadrasRes.data?.results ?? [];
+    const qMap = new Map();
+    quadArr.forEach((q) => {
+      const qid = String(q.id ?? q.pk);
+      qMap.set(qid, { id: q.id ?? q.pk, nome: q.nome, codigo: q.codigo });
+    });
+    setQuadrasMap(qMap);
+
+    const tArr = Array.isArray(tumulosRes.data) ? tumulosRes.data : tumulosRes.data?.results ?? [];
+    setItens(tArr.map((t) => ({ id: t.id ?? t.pk, label: rotuloTumulo(t, qMap) })));
+  }
+
+  async function carregarSelecionado() {
+    if (!cemiterioId || !value) return;
+    try {
+      let qMap = quadrasMap;
+      if (qMap.size === 0) {
+        const { data } = await api.get("quadras/", { params: { cemiterio: cemiterioId } });
         const arr = Array.isArray(data) ? data : data?.results ?? [];
-        setItens(
-          arr.map((t) => ({
-            id: t.id ?? t.pk,
-            label:
-              (t.quadra?.codigo ? `Q ${t.quadra.codigo} - ` : "") +
-              (t.identificador || t.codigo || t.nome || `Túmulo ${t.id ?? t.pk}`) +
-              (t.usar_linha && (t.linha || t.linha === 0) ? ` L${t.linha}` : ""),
-          }))
+        qMap = new Map();
+        arr.forEach((q) =>
+          qMap.set(String(q.id ?? q.pk), { id: q.id ?? q.pk, nome: q.nome, codigo: q.codigo })
         );
-      } catch {
-        setItens([]);
+        setQuadrasMap(qMap);
       }
-    })();
-  }, [open, cemiterioId, api]);
+      const { data: t } = await api.get(`tumulos/${value}/`, { params: { cemiterio: cemiterioId } });
+      setSelecionado({ id: t.id ?? t.pk, label: rotuloTumulo(t, qMap) });
+    } catch {
+      setSelecionado(null);
+    }
+  }
+
+  useEffect(() => { if (open) carregarLista(); }, [open, cemiterioId]); // abrir -> carrega lista
+  useEffect(() => { if (value && !open) carregarSelecionado(); /* eslint-disable-line */ }, [value, cemiterioId]);
 
   useEffect(() => {
     function out(e) {
@@ -90,8 +146,13 @@ function TumuloDropdown({ value, onChange, api, cemiterioId, error, inputRef }) 
     return () => document.removeEventListener("mousedown", out);
   }, [open]);
 
-  const filtered = itens.filter((i) => i.label.toLowerCase().includes(q.trim().toLowerCase()));
-  const current = itens.find((o) => String(o.id) === String(value))?.label || "Selecione…";
+  const filtered = q
+    ? itens.filter((i) => i.label.toLowerCase().includes(q.trim().toLowerCase()))
+    : itens;
+
+  const current =
+    itens.find((o) => String(o.id) === String(value))?.label ||
+    (selecionado && String(selecionado.id) === String(value) ? selecionado.label : "Selecione…");
 
   return (
     <div ref={wrapRef} className="relative">
@@ -102,6 +163,7 @@ function TumuloDropdown({ value, onChange, api, cemiterioId, error, inputRef }) 
         className={`w-full px-3 py-2 rounded-lg border ${
           error ? "border-red-400 ring-1 ring-red-500" : "border-[#bcd2a7]"
         } bg-white text-left hover:bg-[#f7fbf2]`}
+        title={current}
       >
         <span className="truncate">{current}</span>
         <span className="float-right">▾</span>
@@ -146,27 +208,36 @@ function SepultadoDropdown({ value, onChange, api, cemiterioId, error, inputRef 
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const [itens, setItens] = useState([]);
+  const [selecionado, setSelecionado] = useState(null);
   const wrapRef = useRef(null);
 
-  useEffect(() => {
-    if (!open || !cemiterioId) return;
-    (async () => {
-      try {
-        const { data } = await api.get("sepultados/", { params: { cemiterio: cemiterioId } });
-        const arr = Array.isArray(data) ? data : data?.results ?? [];
-        setItens(
-          arr.map((s) => ({
-            id: s.id ?? s.pk,
-            label:
-              (s.numero_sepultamento ? `${s.numero_sepultamento} - ` : "") +
-              (s.nome || "Sem nome"),
-          }))
-        );
-      } catch {
-        setItens([]);
-      }
-    })();
-  }, [open, cemiterioId, api]);
+  async function carregarLista() {
+    if (!cemiterioId) return;
+    const { data } = await api.get("sepultados/", { params: { cemiterio: cemiterioId } });
+    const arr = Array.isArray(data) ? data : data?.results ?? [];
+    setItens(
+      arr.map((s) => ({
+        id: s.id ?? s.pk,
+        label: (s.numero_sepultamento ? `${s.numero_sepultamento} - ` : "") + (s.nome || "Sem nome"),
+      }))
+    );
+  }
+
+  async function carregarSelecionado() {
+    if (!cemiterioId || !value) return;
+    try {
+      const { data: s } = await api.get(`sepultados/${value}/`, { params: { cemiterio: cemiterioId } });
+      setSelecionado({
+        id: s.id ?? s.pk,
+        label: (s.numero_sepultamento ? `${s.numero_sepultamento} - ` : "") + (s.nome || "Sem nome"),
+      });
+    } catch {
+      setSelecionado(null);
+    }
+  }
+
+  useEffect(() => { if (open) carregarLista(); }, [open, cemiterioId]);
+  useEffect(() => { if (value && !open) carregarSelecionado(); /* eslint-disable-line */ }, [value, cemiterioId]);
 
   useEffect(() => {
     function out(e) {
@@ -177,8 +248,13 @@ function SepultadoDropdown({ value, onChange, api, cemiterioId, error, inputRef 
     return () => document.removeEventListener("mousedown", out);
   }, [open]);
 
-  const filtered = itens.filter((i) => i.label.toLowerCase().includes(q.trim().toLowerCase()));
-  const current = itens.find((o) => String(o.id) === String(value))?.label || "Selecione…";
+  const filtered = q
+    ? itens.filter((i) => i.label.toLowerCase().includes(q.trim().toLowerCase()))
+    : itens;
+
+  const current =
+    itens.find((o) => String(o.id) === String(value))?.label ||
+    (selecionado && String(selecionado.id) === String(value) ? selecionado.label : "Selecione…");
 
   return (
     <div ref={wrapRef} className="relative">
@@ -189,6 +265,7 @@ function SepultadoDropdown({ value, onChange, api, cemiterioId, error, inputRef 
         className={`w-full px-3 py-2 rounded-lg border ${
           error ? "border-red-400 ring-1 ring-red-500" : "border-[#bcd2a7]"
         } bg-white text-left hover:bg-[#f7fbf2]`}
+        title={current}
       >
         <span className="truncate">{current}</span>
         <span className="float-right">▾</span>
@@ -402,13 +479,13 @@ export default function FormularioTranslado({ transladoId, onCancel, onSuccess }
     valor: "",
   });
 
-  // carregar edição
+  // carregar edição + deixar dropdowns com rótulo do valor atual
   useEffect(() => {
     if (!isEdit) return;
     (async () => {
       try {
         setCarregando(true);
-        const { data } = await api.get(`translados/${transladoId}/`, {
+        const { data } = await api.get(`traslados/${transladoId}/`, {
           params: { cemiterio: cem?.id },
         });
         const v = (x) => (x === null || x === undefined ? "" : x);
@@ -435,6 +512,7 @@ export default function FormularioTranslado({ transladoId, onCancel, onSuccess }
           quantidade_parcelas: v(data.quantidade_parcelas),
           valor: data.valor ? String(data.valor).replace(".", ",") : "",
         }));
+        // dropdowns buscarão o rótulo do selecionado sozinhos (fetch individual)
       } catch {
         alert("Não foi possível carregar este translado.");
         onCancel?.();
@@ -512,7 +590,10 @@ export default function FormularioTranslado({ transladoId, onCancel, onSuccess }
 
     const payload = {
       ...form,
-      valor: form.forma_pagamento === "gratuito" ? "0" : (form.valor || "0").replace(/\./g, "").replace(",", "."),
+      valor:
+        form.forma_pagamento === "gratuito"
+          ? "0"
+          : (form.valor || "0").replace(/\./g, "").replace(",", "."),
       ...(form.forma_pagamento !== "parcelado" ? { quantidade_parcelas: "" } : {}),
       ...(form.destino !== "outro_tumulo" ? { tumulo_destino: "" } : {}),
       ...(form.destino !== "outro_cemiterio" ? { cemiterio_nome: "", cemiterio_endereco: "" } : {}),
@@ -528,9 +609,9 @@ export default function FormularioTranslado({ transladoId, onCancel, onSuccess }
     try {
       setSalvando(true);
       if (isEdit) {
-        await api.put(`translados/${transladoId}/`, fd, { params: { cemiterio: cem?.id } });
+        await api.put(`traslados/${transladoId}/`, fd, { params: { cemiterio: cem?.id } });
       } else {
-        await api.post("translados/", fd);
+        await api.post("traslados/", fd);
       }
       onSuccess?.();
     } catch (err0) {

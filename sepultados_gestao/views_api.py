@@ -793,22 +793,6 @@ class ExumacaoViewSet(ContextoRestritoQuerysetMixin, viewsets.ModelViewSet):
 
 
 
-from django.db.models import Q
-from django.shortcuts import get_object_or_404
-from django.http import HttpResponse
-from django.template.loader import render_to_string
-from rest_framework import viewsets
-from rest_framework.decorators import action
-from rest_framework.permissions import IsAuthenticated
-from weasyprint import HTML
-from django.conf import settings
-import os
-
-# imports dos seus modelos/serializers:
-# from .models import Translado
-# from .serializers import TransladoSerializer
-# from .mixins import ContextoRestritoQuerysetMixin
-
 class TransladoViewSet(ContextoRestritoQuerysetMixin, viewsets.ModelViewSet):
     """
     - Lista por CEMITÉRIO do túmulo ATUAL do sepultado OU do TÚMULO DE DESTINO.
@@ -819,6 +803,7 @@ class TransladoViewSet(ContextoRestritoQuerysetMixin, viewsets.ModelViewSet):
     cemiterio_field = "tumulo_destino__quadra__cemiterio"
     prefeitura_field = "tumulo_destino__quadra__cemiterio__prefeitura"
     permission_classes = [IsAuthenticated]
+    http_method_names = ["get", "post", "put", "patch", "delete", "head", "options"]
 
     def get_queryset(self):
         """
@@ -855,7 +840,25 @@ class TransladoViewSet(ContextoRestritoQuerysetMixin, viewsets.ModelViewSet):
 
         return qs.none()
 
-    # ---------- helpers ----------
+    # ------------ helpers ------------
+    def _prefeitura_from_request_or_relations(self, validated):
+        pref = getattr(self.request, "prefeitura_ativa", None) or getattr(self.request.user, "prefeitura", None)
+        if pref:
+            return pref
+        tum = validated.get("tumulo_destino")
+        if tum and getattr(tum, "quadra", None) and getattr(tum.quadra, "cemiterio", None):
+            return tum.quadra.cemiterio.prefeitura
+        sep = validated.get("sepultado")
+        if sep and getattr(sep, "tumulo", None) and getattr(sep.tumulo, "quadra", None):
+            return sep.tumulo.quadra.cemiterio.prefeitura
+        return None
+
+    def _normalize_validated(self, validated):
+        nd = validated.get("numero_documento")
+        if nd == "-" or nd == "":
+            validated.pop("numero_documento", None)
+        return validated
+
     def _render_pdf(self, translado):
         """Gera o PDF (usa prefeitura do destino; se não houver, da origem)."""
         prefeitura = (
@@ -875,7 +878,92 @@ class TransladoViewSet(ContextoRestritoQuerysetMixin, viewsets.ModelViewSet):
         })
         return HTML(string=html).write_pdf()
 
-    # ---------- actions ----------
+    # ------------ create/update ------------
+    def perform_create(self, serializer):
+        validated = self._normalize_validated(dict(serializer.validated_data))
+        pref = self._prefeitura_from_request_or_relations(validated)
+        if not pref:
+            raise ValidationError({"detail": "Não foi possível determinar a prefeitura."})
+
+        instance = Translado(**validated)
+        instance.usuario_registro = self.request.user
+        instance.usuario_registro = self.request.user
+
+        if getattr(instance, "data", None) in (None, ""):
+            try:
+                instance._meta.get_field("data")
+                instance.data = date.today()
+            except Exception:
+                pass
+
+        try:
+            instance.full_clean()
+            with transaction.atomic():
+                instance.save()
+        except DjangoValidationError as e:
+            payload = {}
+            if getattr(e, "message_dict", None):
+                payload = dict(e.message_dict)
+            if "__all__" in payload:
+                msgs = payload.pop("__all__") or []
+                if not isinstance(msgs, (list, tuple)):
+                    msgs = [msgs]
+                payload.setdefault("non_field_errors", [])
+                payload["non_field_errors"].extend(msgs)
+            if not payload and getattr(e, "messages", None):
+                msgs = e.messages
+                if not isinstance(msgs, (list, tuple)):
+                    msgs = [msgs]
+                payload = {"non_field_errors": msgs}
+            if not payload:
+                payload = {"non_field_errors": ["Não foi possível validar o traslado."]}
+            raise ValidationError(payload)
+
+        serializer.instance = instance
+
+    def perform_update(self, serializer):
+        instance = self.get_object()
+        validated = self._normalize_validated(dict(serializer.validated_data))
+        pref = self._prefeitura_from_request_or_relations(validated)
+        if not pref:
+            raise ValidationError({"detail": "Não foi possível determinar a prefeitura."})
+
+        for k, v in validated.items():
+            setattr(instance, k, v)
+        instance.usuario_registro = self.request.user
+        instance.usuario_registro = self.request.user
+
+        if getattr(instance, "data", None) in (None, ""):
+            try:
+                instance._meta.get_field("data")
+                instance.data = date.today()
+            except Exception:
+                pass
+
+        try:
+            instance.full_clean()
+            with transaction.atomic():
+                instance.save()
+        except DjangoValidationError as e:
+            payload = {}
+            if getattr(e, "message_dict", None):
+                payload = dict(e.message_dict)
+            if "__all__" in payload:
+                msgs = payload.pop("__all__") or []
+                if not isinstance(msgs, (list, tuple)):
+                    msgs = [msgs]
+                payload.setdefault("non_field_errors", [])
+                payload["non_field_errors"].extend(msgs)
+            if not payload and getattr(e, "messages", None):
+                msgs = e.messages
+                if not isinstance(msgs, (list, tuple)):
+                    msgs = [msgs]
+                payload = {"non_field_errors": msgs}
+            if not payload:
+                payload = {"non_field_errors": ["Não foi possível validar o traslado."]}
+            raise ValidationError(payload)
+
+    # ------------ actions ------------
     @action(detail=True, methods=["get"], url_path="pdf")
     def pdf(self, request, pk=None):
         """
@@ -899,7 +987,6 @@ class TransladoViewSet(ContextoRestritoQuerysetMixin, viewsets.ModelViewSet):
     @action(detail=True, methods=["get"], url_path="report")
     def report(self, request, pk=None):
         return self.pdf(request, pk)
-
 
 
 
