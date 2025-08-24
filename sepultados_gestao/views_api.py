@@ -647,20 +647,28 @@ class ExumacaoViewSet(ContextoRestritoQuerysetMixin, viewsets.ModelViewSet):
     def report(self, request, pk=None):
         return self.pdf(request, pk)
 
+
+
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
+from django.http import HttpResponse
+from django.template.loader import render_to_string
 from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
+from weasyprint import HTML
+from django.conf import settings
+import os
+
+# imports dos seus modelos/serializers:
+# from .models import Translado
+# from .serializers import TransladoSerializer
+# from .mixins import ContextoRestritoQuerysetMixin
 
 class TransladoViewSet(ContextoRestritoQuerysetMixin, viewsets.ModelViewSet):
     """
-    Translados via API:
-    - Lista/filtra por cemitério do DESTINO ou do SEPULTADO (origem).
-    - Endpoints de PDF:
-        GET /api/traslados/<id>/pdf/
-        GET /api/traslados/<id>/relatorio_pdf/
-        GET /api/traslados/<id>/report/
+    - Lista por CEMITÉRIO do túmulo ATUAL do sepultado OU do TÚMULO DE DESTINO.
+    - Gera PDF em: /api/traslados/<id>/pdf/ (aliases: /relatorio_pdf/ e /report/)
     """
     queryset = Translado.objects.all()
     serializer_class = TransladoSerializer
@@ -669,49 +677,76 @@ class TransladoViewSet(ContextoRestritoQuerysetMixin, viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        qs = self.queryset
+        """
+        NÃO chama super().get_queryset() para não aplicar o filtro do mixin
+        baseado apenas em tumulo_destino, que escondia registros.
+        """
+        qs = self.queryset.select_related(
+            "sepultado__tumulo__quadra__cemiterio__prefeitura",
+            "tumulo_destino__quadra__cemiterio__prefeitura",
+        )
+
         req = self.request
-        if not req.user.is_authenticated:
-            return qs.none()
-
-        cem_id = req.query_params.get("cemiterio") or req.session.get("cemiterio_ativo")
+        cem_id = (
+            req.query_params.get("cemiterio")
+            or req.query_params.get("cemiterio_id")
+            or req.session.get("cemiterio_ativo_id")
+            or req.session.get("cemiterio_ativo")
+        )
         if cem_id:
-            qs = qs.filter(
-                Q(tumulo_destino__quadra__cemiterio_id=cem_id) |
-                Q(sepultado__tumulo__quadra__cemiterio_id=cem_id)
-            )
-        else:
-            pref_id = req.query_params.get("prefeitura") or getattr(getattr(req, "prefeitura_ativa", None), "id", None)
-            if pref_id:
-                qs = qs.filter(
-                    Q(tumulo_destino__quadra__cemiterio__prefeitura_id=pref_id) |
-                    Q(sepultado__tumulo__quadra__cemiterio__prefeitura_id=pref_id)
-                )
-            else:
-                qs = qs.none()
+            return qs.filter(
+                Q(sepultado__tumulo__quadra__cemiterio_id=cem_id) |
+                Q(tumulo_destino__quadra__cemiterio_id=cem_id)
+            ).order_by("-data", "-id")
 
-        return qs.select_related(
-            "sepultado",
-            "tumulo_destino",
-            "tumulo_destino__quadra",
-            "tumulo_destino__quadra__cemiterio",
-        ).order_by("-data", "-id")
+        pref_id = (
+            req.query_params.get("prefeitura")
+            or getattr(getattr(req, "prefeitura_ativa", None), "id", None)
+        )
+        if pref_id:
+            return qs.filter(
+                Q(sepultado__tumulo__quadra__cemiterio__prefeitura_id=pref_id) |
+                Q(tumulo_destino__quadra__cemiterio__prefeitura_id=pref_id)
+            ).order_by("-data", "-id")
 
-    # --------- PDF ----------
+        return qs.none()
+
+    # ---------- helpers ----------
+    def _render_pdf(self, translado):
+        """Gera o PDF (usa prefeitura do destino; se não houver, da origem)."""
+        prefeitura = (
+            getattr(getattr(getattr(translado, "tumulo_destino", None), "quadra", None), "cemiterio", None)
+            and translado.tumulo_destino.quadra.cemiterio.prefeitura
+        ) or (translado.sepultado and translado.sepultado.tumulo
+              and translado.sepultado.tumulo.quadra.cemiterio.prefeitura)
+
+        brasao_path = ""
+        if prefeitura and getattr(prefeitura, "brasao", None):
+            brasao_absoluto = os.path.join(settings.MEDIA_ROOT, prefeitura.brasao.name)
+            brasao_path = f"file:///{brasao_absoluto.replace(os.sep, '/')}"
+
+        html = render_to_string("pdf/translado.html", {
+            "movimentacao": translado,
+            "brasao_path": brasao_path,
+        })
+        return HTML(string=html).write_pdf()
+
+    # ---------- actions ----------
     @action(detail=True, methods=["get"], url_path="pdf")
     def pdf(self, request, pk=None):
-        translado = get_object_or_404(self.get_queryset(), pk=pk)
-        from .views import pdf_translado as raw_view
-
-        # remove decoradores (ex.: @staff_member_required)
-        func = raw_view
-        for _ in range(5):
-            wrapped = getattr(func, "__wrapped__", None)
-            if not wrapped:
-                break
-            func = wrapped
-
-        return func(request._request, pk=translado.pk)
+        """
+        Busca por PK sem o filtro de contexto (para o PDF nunca “sumir”).
+        Se quiser obrigar cemitério, valide request.query_params['cemiterio'] aqui.
+        """
+        translado = get_object_or_404(
+            Translado.objects.select_related(
+                "sepultado__tumulo__quadra__cemiterio__prefeitura",
+                "tumulo_destino__quadra__cemiterio__prefeitura",
+            ),
+            pk=pk,
+        )
+        pdf_bytes = self._render_pdf(translado)
+        return HttpResponse(pdf_bytes, content_type="application/pdf")
 
     @action(detail=True, methods=["get"], url_path="relatorio_pdf")
     def relatorio_pdf(self, request, pk=None):
@@ -720,6 +755,7 @@ class TransladoViewSet(ContextoRestritoQuerysetMixin, viewsets.ModelViewSet):
     @action(detail=True, methods=["get"], url_path="report")
     def report(self, request, pk=None):
         return self.pdf(request, pk)
+
 
 
 

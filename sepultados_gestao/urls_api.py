@@ -38,7 +38,7 @@ router.register(r"quadras", QuadraViewSet)
 router.register(r"receitas", ReceitaViewSet)
 router.register(r"auditorias", RegistroAuditoriaViewSet)
 router.register(r"sepultados", SepultadoViewSet)
-router.register(r"traslados", TransladoViewSet)
+router.register(r"traslados", TransladoViewSet, basename="traslados")
 router.register(r"tumulos", TumuloViewSet)
 router.register(r"anexos", AnexoViewSet, basename="anexo")
 

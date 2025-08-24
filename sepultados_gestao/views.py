@@ -198,38 +198,42 @@ def pdf_exumacao(request, pk):
 
 
 
-from django.contrib.admin.views.decorators import staff_member_required
+# views.py
 from django.shortcuts import get_object_or_404
 from django.http import HttpResponse
 from django.template.loader import render_to_string
 from weasyprint import HTML
 from django.conf import settings
 import os
-
-from .models import Translado  # usa o novo modelo separado
+from .models import Translado
 
 @staff_member_required
 def pdf_translado(request, pk):
     translado = get_object_or_404(
         Translado.objects.select_related(
-            'tumulo_destino__quadra__cemiterio'
+            "sepultado__tumulo__quadra__cemiterio__prefeitura",
+            "tumulo_destino__quadra__cemiterio__prefeitura",
         ),
-        pk=pk
+        pk=pk,
     )
 
-    prefeitura = translado.tumulo_destino.quadra.cemiterio.prefeitura
-    brasao_path = ''
-    if prefeitura and prefeitura.brasao:
+    # usa a prefeitura do destino se existir; senão, a do túmulo de origem do sepultado
+    prefeitura = (
+        getattr(getattr(getattr(translado, "tumulo_destino", None), "quadra", None), "cemiterio", None)
+            and translado.tumulo_destino.quadra.cemiterio.prefeitura
+    ) or translado.sepultado.tumulo.quadra.cemiterio.prefeitura
+
+    brasao_path = ""
+    if prefeitura and getattr(prefeitura, "brasao", None):
         brasao_absoluto = os.path.join(settings.MEDIA_ROOT, prefeitura.brasao.name)
         brasao_path = f"file:///{brasao_absoluto.replace(os.sep, '/')}"
 
     html = render_to_string("pdf/translado.html", {
-        "movimentacao": translado,
+        "movimentacao": translado,  # seu template usa 'movimentacao'
         "brasao_path": brasao_path,
     })
-
     pdf = HTML(string=html).write_pdf()
-    return HttpResponse(pdf, content_type='application/pdf')
+    return HttpResponse(pdf, content_type="application/pdf")
 
 
 

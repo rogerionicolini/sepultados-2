@@ -130,7 +130,8 @@ export default function Translados() {
   async function excluir(id) {
     if (!window.confirm("Excluir este translado?")) return;
     try {
-      await api.delete(`${TRANSLADOS_EP}${id}/`);
+      const params = cemiterioId ? { cemiterio: cemiterioId } : undefined;
+      await api.delete(`${TRANSLADOS_EP}${id}/`, { params });
       carregar();
     } catch (e) {
       alert(
@@ -142,26 +143,36 @@ export default function Translados() {
 
   async function abrirPDF(row) {
     const id = row.id ?? row.pk;
+    if (!id) {
+      alert("Translado sem ID.");
+      return;
+    }
+
+    // passa o cemitério ativo para o backend conseguir autorizar/filtrar
+    const params = cemiterioId ? { cemiterio: cemiterioId } : undefined;
+
     const tentativas = [
       `${TRANSLADOS_EP}${id}/pdf/`,
       `${TRANSLADOS_EP}${id}/relatorio_pdf/`,
       `${TRANSLADOS_EP}${id}/report/`,
     ];
+
     for (const url of tentativas) {
       try {
-        const res = await api.get(url, { responseType: "blob" });
-        const ct = res?.headers?.["content-type"] || "";
-        if (ct.includes("pdf")) {
-          const blob = new Blob([res.data], { type: "application/pdf" });
-          const blobUrl = URL.createObjectURL(blob);
-          window.open(blobUrl, "_blank");
-          setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
-          return;
-        }
-      } catch {}
+        const res = await api.get(url, { responseType: "blob", params });
+        // se retornou blob, abre
+        const blob = new Blob([res.data], { type: "application/pdf" });
+        const blobUrl = URL.createObjectURL(blob);
+        window.open(blobUrl, "_blank", "noopener,noreferrer");
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+        return;
+      } catch (e) {
+        // tenta a próxima rota
+      }
     }
     alert("Não foi possível gerar o PDF.");
   }
+
 
   return (
     <div className="p-6">
