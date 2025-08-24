@@ -304,13 +304,20 @@ class Tumulo(models.Model):
         return 'ocupado' if sepultados_ativos >= self.capacidade else 'disponivel'
 
     def save(self, *args, **kwargs):
-        is_new = self.pk is None
+        # valida como já fazia
         self.full_clean()
+
+        # salva as mudanças do próprio túmulo (reservado, motivo, capacidade etc.)
         super().save(*args, **kwargs)
 
-        if is_new:
-            self.status = self.calcular_status_dinamico()
-            super().save(update_fields=["status"])
+        # SEMPRE recalcula o status com base no estado atual do BD
+        new_status = self.calcular_status_dinamico()
+
+        # evita update desnecessário e evita recursão
+        if new_status != self.status:
+            type(self).objects.filter(pk=self.pk).update(status=new_status)
+            self.status = new_status  # mantém em memória coerente
+
 
     def __str__(self):
         partes = []
@@ -332,8 +339,12 @@ class Tumulo(models.Model):
         return " ".join(partes) or f"Túmulo {self.pk}"
 
     def atualizar_status(self):
-        self.status = self.calcular_status_dinamico()
-        self.save(update_fields=["status"])
+        """Use este helper quando algo externo ao túmulo mudar (p.ex. criar/exumar/trasladar)."""
+        new_status = self.calcular_status_dinamico()
+        if new_status != self.status:
+            type(self).objects.filter(pk=self.pk).update(status=new_status)
+            self.status = new_status
+
 
     class Meta:
         verbose_name = "Túmulo"

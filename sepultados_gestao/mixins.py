@@ -84,3 +84,48 @@ class PrefeituraObrigatoriaAdminMixin:
 
         return qs.none()
 
+# sepultados_gestao/mixins.py
+
+class ContextoRestritoQuerysetMixin:
+    """
+    Restringe o queryset pelo cemitério/prefeitura informados na querystring
+    (?cemiterio=<id>&prefeitura=<id>) ou pelos objetos anexados ao request
+    (request.cemiterio_ativo / request.prefeitura_ativa / request.user.prefeitura).
+
+    A viewset deve definir:
+      - cemiterio_field   -> caminho até o FK de cemitério (ex.: "tumulo__quadra__cemiterio")
+      - prefeitura_field  -> caminho até o FK de prefeitura (ex.: "tumulo__quadra__cemiterio__prefeitura")
+    """
+
+    cemiterio_field = None           # sobrescreva na ViewSet
+    prefeitura_field = None          # sobrescreva na ViewSet
+    cemiterio_query_param = "cemiterio"
+    prefeitura_query_param = "prefeitura"
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        request = getattr(self, "request", None)
+        if not request:
+            return qs
+
+        # 1) tenta querystring
+        cem_id = request.query_params.get(self.cemiterio_query_param)
+        pref_id = request.query_params.get(self.prefeitura_query_param)
+
+        # 2) fallbacks do middleware/session (se você os usa)
+        if not cem_id and getattr(request, "cemiterio_ativo", None):
+            cem_id = getattr(request.cemiterio_ativo, "id", None)
+        if not pref_id and getattr(request, "prefeitura_ativa", None):
+            pref_id = getattr(request.prefeitura_ativa, "id", None)
+
+        # 3) fallback para o usuário (se ele tiver prefeitura)
+        if not pref_id and getattr(request.user, "prefeitura_id", None):
+            pref_id = request.user.prefeitura_id
+
+        filtros = {}
+        if cem_id and self.cemiterio_field:
+            filtros[f"{self.cemiterio_field}__id"] = cem_id
+        if pref_id and self.prefeitura_field:
+            filtros[f"{self.prefeitura_field}__id"] = pref_id
+
+        return qs.filter(**filtros) if filtros else qs

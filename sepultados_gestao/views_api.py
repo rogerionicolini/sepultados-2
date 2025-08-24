@@ -321,33 +321,44 @@ class SepultadoViewSet(ContextoRestritoQuerysetMixin, viewsets.ModelViewSet):
 
 
 
-# views_api.py
 from django.db import transaction
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.shortcuts import get_object_or_404
 
-from rest_framework import viewsets
+from rest_framework import viewsets, status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.exceptions import ValidationError
+from rest_framework.decorators import action
+from rest_framework.response import Response
 
+
+from .mixins import ContextoRestritoQuerysetMixin
 from .models import ConcessaoContrato
 from .serializers import ConcessaoContratoSerializer
 
+
 class ConcessaoContratoViewSet(ContextoRestritoQuerysetMixin, viewsets.ModelViewSet):
+    """
+    API de Contratos de Concessão, restrita por cemitério/prefeitura via querystring.
+    Endpoints extra:
+      GET /api/contratos/<id>/pdf/
+      GET /api/contratos/<id>/relatorio_pdf/  (alias)
+      GET /api/contratos/<id>/report/         (alias)
+    """
     queryset = ConcessaoContrato.objects.all()
     serializer_class = ConcessaoContratoSerializer
 
-    # campos usados pelo mixin para restringir por cemitério/prefeitura via querystring
+    # usados pelo mixin de contexto
     cemiterio_field = "tumulo__quadra__cemiterio"
     prefeitura_field = "tumulo__quadra__cemiterio__prefeitura"
 
     permission_classes = [IsAuthenticated]
 
+    # ----------------- helpers -----------------
     def _prefeitura_from_request_or_tumulo(self, validated_data):
-        """
-        Resolve a prefeitura primeiro pela requisição (prefeitura_ativa ou user.prefeitura),
-        e como fallback pela FK do túmulo enviado.
-        """
-        pref = getattr(self.request, "prefeitura_ativa", None) or getattr(self.request.user, "prefeitura", None)
+        pref = getattr(self.request, "prefeitura_ativa", None) or getattr(
+            self.request.user, "prefeitura", None
+        )
         if pref:
             return pref
         tumulo = validated_data.get("tumulo")
@@ -355,11 +366,8 @@ class ConcessaoContratoViewSet(ContextoRestritoQuerysetMixin, viewsets.ModelView
             return tumulo.quadra.cemiterio.prefeitura
         return None
 
+    # ----------------- CRUD -----------------
     def perform_create(self, serializer):
-        """
-        Cria a instância SEM persistir, roda full_clean() (clean do model e validadores de campo),
-        e só então salva dentro de transação. Injeta prefeitura e usuario_registro no servidor.
-        """
         validated = dict(serializer.validated_data)
         pref = self._prefeitura_from_request_or_tumulo(validated)
         if not pref:
@@ -374,16 +382,11 @@ class ConcessaoContratoViewSet(ContextoRestritoQuerysetMixin, viewsets.ModelView
             with transaction.atomic():
                 instance.save()
         except DjangoValidationError as e:
-            # Converte ValidationError do Django em erro do DRF (400) com mapeamento por campo
             raise ValidationError(e.message_dict or {"detail": e.messages})
 
         serializer.instance = instance
 
     def perform_update(self, serializer):
-        """
-        Atualiza a instância existente, roda full_clean() e salva em transação.
-        Injeta prefeitura e usuario_registro no servidor.
-        """
         instance = self.get_object()
         validated = dict(serializer.validated_data)
         pref = self._prefeitura_from_request_or_tumulo(validated)
@@ -403,18 +406,107 @@ class ConcessaoContratoViewSet(ContextoRestritoQuerysetMixin, viewsets.ModelView
             raise ValidationError(e.message_dict or {"detail": e.messages})
 
     def perform_destroy(self, instance):
-        """
-        Exclui traduzindo erros de negócio do model (ex.: receitas/sepultados vinculados)
-        em ValidationError do DRF (400). Lembre-se: o get_object() já respeita o filtro
-        do mixin (precisa do ?cemiterio=<id> na chamada).
-        """
         try:
             with transaction.atomic():
                 instance.delete()
         except DjangoValidationError as e:
             raise ValidationError(e.message_dict or {"detail": e.messages})
 
+    # ----------------- PDF -----------------
+    # views_api.py (dentro de ConcessaoContratoViewSet)
 
+    @action(detail=True, methods=["get"], url_path="pdf")
+    def pdf(self, request, pk=None):
+        """
+        GET /api/contratos/<id>/pdf/?cemiterio=<id>
+
+        - Injeta prefeitura/cemitério na sessão (usado pela sua gerar_contrato_pdf)
+        - Desembrulha decoradores e chama com a assinatura correta (contrato_id)
+        """
+        # pegamos o contrato já com relações necessárias
+        contrato = get_object_or_404(
+            ConcessaoContrato.objects.select_related(
+                "prefeitura", "tumulo__quadra__cemiterio"
+            ),
+            pk=pk,
+        )
+
+        http_request = getattr(request, "_request", request)
+
+        # garante o mesmo usuário na view clássica
+        try:
+            http_request.user = request.user
+        except Exception:
+            pass
+
+        # >>>>>> AQUI: preenche a sessão que a sua view exige <<<<<<
+        try:
+            if hasattr(http_request, "session"):
+                # prefeitura ativa usada pela gerar_contrato_pdf
+                http_request.session["prefeitura_ativa_id"] = contrato.prefeitura_id
+                http_request.session["prefeitura_ativa_nome"] = getattr(
+                    getattr(contrato, "prefeitura", None), "nome", ""
+                )
+
+                # cemitério ativo (se vier na query, prioriza ele; senão usa do contrato)
+                cem_id = request.query_params.get("cemiterio") or getattr(
+                    getattr(getattr(contrato, "tumulo", None), "quadra", None)
+                    .cemiterio if getattr(getattr(contrato, "tumulo", None), "quadra", None) else None,
+                    "id",
+                    None,
+                )
+                cem_nome = getattr(
+                    getattr(getattr(contrato, "tumulo", None), "quadra", None)
+                    .cemiterio if getattr(getattr(contrato, "tumulo", None), "quadra", None) else None,
+                    "nome",
+                    "",
+                )
+                if cem_id:
+                    http_request.session["cemiterio_ativo_id"] = int(cem_id)
+                    http_request.session["cemiterio_ativo_nome"] = cem_nome
+        except Exception:
+            pass
+
+        # importa sua função real
+        try:
+            from .views import gerar_contrato_pdf as raw_view
+        except Exception:
+            return Response(
+                {"detail": "Função gerar_contrato_pdf não encontrada em sepultados_gestao.views."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        # remove decoradores (login_required / staff_member_required)
+        func = raw_view
+        for _ in range(5):
+            wrapped = getattr(func, "__wrapped__", None)
+            if not wrapped:
+                break
+            func = wrapped
+
+        # chama com a assinatura que você usa: contrato_id
+        try:
+            return func(http_request, contrato_id=contrato.pk)
+        except TypeError:
+            # fallbacks comuns, se no futuro mudar
+            for kwargs in ({"pk": contrato.pk}, {"contrato_pk": contrato.pk}, {}):
+                try:
+                    return func(http_request, **kwargs)
+                except TypeError:
+                    continue
+
+        return Response(
+            {"detail": "View de PDF encontrada, mas a assinatura não foi reconhecida."},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+    @action(detail=True, methods=["get"], url_path="relatorio_pdf")
+    def relatorio_pdf(self, request, pk=None):
+        return self.pdf(request, pk)
+
+    @action(detail=True, methods=["get"], url_path="report")
+    def report(self, request, pk=None):
+        return self.pdf(request, pk)
 
 # views_api.py
 from datetime import date
@@ -521,14 +613,114 @@ class ExumacaoViewSet(ContextoRestritoQuerysetMixin, viewsets.ModelViewSet):
         except DjangoValidationError as e:
             raise ValidationError(e.message_dict or {"detail": e.messages})
 
+    @action(detail=True, methods=["get"], url_path="pdf")
+    def pdf(self, request, pk=None):
+        # Busca a exumação (e garante permissão via queryset do ViewSet)
+        exumacao = get_object_or_404(Exumacao, pk=pk)
 
+        # Importa a view que já gera o PDF no admin
+        from .views import pdf_exumacao as raw_view
+
+        # Desencapsula decoradores (ex.: @staff_member_required), se houver
+        func = raw_view
+        for _ in range(5):
+            wrapped = getattr(func, "__wrapped__", None)
+            if not wrapped:
+                break
+            func = wrapped
+
+        # Chama com a assinatura esperada; fallback para variações
+        http_request = request._request
+        try:
+            return func(http_request, pk=exumacao.pk)
+        except TypeError:
+            try:
+                return func(http_request, id=exumacao.pk)
+            except TypeError:
+                return func(http_request, exumacao_pk=exumacao.pk)
+
+    @action(detail=True, methods=["get"], url_path="relatorio_pdf")
+    def relatorio_pdf(self, request, pk=None):
+        return self.pdf(request, pk)
+
+    @action(detail=True, methods=["get"], url_path="report")
+    def report(self, request, pk=None):
+        return self.pdf(request, pk)
+
+from django.db.models import Q
+from django.shortcuts import get_object_or_404
+from rest_framework import viewsets
+from rest_framework.decorators import action
+from rest_framework.permissions import IsAuthenticated
 
 class TransladoViewSet(ContextoRestritoQuerysetMixin, viewsets.ModelViewSet):
+    """
+    Translados via API:
+    - Lista/filtra por cemitério do DESTINO ou do SEPULTADO (origem).
+    - Endpoints de PDF:
+        GET /api/traslados/<id>/pdf/
+        GET /api/traslados/<id>/relatorio_pdf/
+        GET /api/traslados/<id>/report/
+    """
     queryset = Translado.objects.all()
     serializer_class = TransladoSerializer
     cemiterio_field = "tumulo_destino__quadra__cemiterio"
     prefeitura_field = "tumulo_destino__quadra__cemiterio__prefeitura"
     permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        qs = self.queryset
+        req = self.request
+        if not req.user.is_authenticated:
+            return qs.none()
+
+        cem_id = req.query_params.get("cemiterio") or req.session.get("cemiterio_ativo")
+        if cem_id:
+            qs = qs.filter(
+                Q(tumulo_destino__quadra__cemiterio_id=cem_id) |
+                Q(sepultado__tumulo__quadra__cemiterio_id=cem_id)
+            )
+        else:
+            pref_id = req.query_params.get("prefeitura") or getattr(getattr(req, "prefeitura_ativa", None), "id", None)
+            if pref_id:
+                qs = qs.filter(
+                    Q(tumulo_destino__quadra__cemiterio__prefeitura_id=pref_id) |
+                    Q(sepultado__tumulo__quadra__cemiterio__prefeitura_id=pref_id)
+                )
+            else:
+                qs = qs.none()
+
+        return qs.select_related(
+            "sepultado",
+            "tumulo_destino",
+            "tumulo_destino__quadra",
+            "tumulo_destino__quadra__cemiterio",
+        ).order_by("-data", "-id")
+
+    # --------- PDF ----------
+    @action(detail=True, methods=["get"], url_path="pdf")
+    def pdf(self, request, pk=None):
+        translado = get_object_or_404(self.get_queryset(), pk=pk)
+        from .views import pdf_translado as raw_view
+
+        # remove decoradores (ex.: @staff_member_required)
+        func = raw_view
+        for _ in range(5):
+            wrapped = getattr(func, "__wrapped__", None)
+            if not wrapped:
+                break
+            func = wrapped
+
+        return func(request._request, pk=translado.pk)
+
+    @action(detail=True, methods=["get"], url_path="relatorio_pdf")
+    def relatorio_pdf(self, request, pk=None):
+        return self.pdf(request, pk)
+
+    @action(detail=True, methods=["get"], url_path="report")
+    def report(self, request, pk=None):
+        return self.pdf(request, pk)
+
 
 
 class ReceitaViewSet(PrefeituraRestritaQuerysetMixin, viewsets.ModelViewSet):

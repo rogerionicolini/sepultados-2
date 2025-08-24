@@ -32,7 +32,7 @@ from .views_api import (
 
 router = DefaultRouter()
 router.register(r"cemiterios", CemiterioViewSet)
-router.register(r"contratos", ConcessaoContratoViewSet)
+router.register(r"contratos", ConcessaoContratoViewSet, basename="contratos")
 router.register(r"exumacoes", ExumacaoViewSet)
 router.register(r"quadras", QuadraViewSet)
 router.register(r"receitas", ReceitaViewSet)

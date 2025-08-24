@@ -6,6 +6,5 @@ class SepultadosGestaoConfig(AppConfig):
     verbose_name = "Sepultados Gestão"
 
     def ready(self):
-        import sepultados_gestao.models  # se os sinais estão no models.py
-        # ou:
-        # import sepultados_gestao.signals  # se mover os sinais para signals.py
+        # garante o registro dos signals
+        from . import signals  # noqa

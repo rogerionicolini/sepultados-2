@@ -5,7 +5,7 @@ import { useSearchParams, useNavigate } from "react-router-dom";
 import FormularioTranslado from "../components/FormularioTranslado";
 
 const API_BASE = "http://127.0.0.1:8000/api/";
-const TRANSLADOS_EP = "translados/";
+const TRANSLADOS_EP = "traslados/";
 const SEPULTADOS_EP = "sepultados/";
 const TUMULOS_EP = "tumulos/";
 

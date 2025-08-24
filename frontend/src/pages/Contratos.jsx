@@ -6,7 +6,8 @@ import FormularioContrato from "../components/FormularioContrato";
 
 const API_BASE = "http://localhost:8000/api/";
 const CONTRATOS_EP = "contratos/";
-const TUMULOS_EP = "tumulos/";
+const TUMULOS_EP   = "tumulos/";
+const QUADRAS_EP   = "quadras/";
 
 const getToken = () => localStorage.getItem("accessToken") || "";
 function getCemiterioAtivoId() {
@@ -43,12 +44,57 @@ const fmtDate = (d) => {
   return Number.isNaN(dt.getTime()) ? d : dt.toISOString().slice(0, 10);
 };
 
+// Substitua a função rotuloTumulo atual por esta versão
+function rotuloTumulo(t, quadrasMap = new Map()) {
+  if (!t) return "";
+
+  const id = t.id ?? t.pk ?? "";
+  const base =
+    t.identificador || t.codigo || t.nome || `T ${String(id).padStart(2, "0")}`;
+
+  // linha (exibe apenas se usar_linha for true)
+  let linhaStr = "";
+  const rawLinha =
+    typeof t.linha === "object"
+      ? t.linha?.id ?? t.linha?.numero ?? t.linha?.codigo
+      : t.linha;
+  if (t.usar_linha && (rawLinha || rawLinha === 0)) linhaStr = `L ${rawLinha}`;
+
+  // quadra -> sempre como “Quadra 02” ou nome da quadra, sem prefixar “Q ”
+  const resolveQuadra = (qInfo) => {
+    if (!qInfo) return "";
+    if (qInfo.nome) return qInfo.nome; // ex.: "Quadra 02" (já certinho) ou um nome livre
+    if (qInfo.codigo != null) {
+      const cod = String(qInfo.codigo);
+      return /^\d+$/.test(cod) ? `Quadra ${cod.padStart(2, "0")}` : cod;
+    }
+    if (qInfo.id != null) return `Quadra ${qInfo.id}`;
+    return "";
+  };
+
+  let quadraStr = "";
+  const q = t.quadra;
+  if (q) {
+    if (typeof q === "object") {
+      quadraStr = resolveQuadra(q);
+    } else {
+      const info = quadrasMap.get(String(q)) || quadrasMap.get(Number(q));
+      quadraStr =
+        resolveQuadra(info) ||
+        (String(q).match(/^\d+$/) ? `Quadra ${String(q).padStart(2, "0")}` : String(q));
+    }
+  }
+
+  // ORDEM pedida: Túmulo, Linha, Quadra (sem hífen)
+  return [base, linhaStr, quadraStr].filter(Boolean).join(" ");
+}
+
 export default function Contratos() {
   const [modoFormulario, setModoFormulario] = useState(false);
   const [editandoId, setEditandoId] = useState(null);
 
   const [contratos, setContratos] = useState([]);
-  const [tumulosMap, setTumulosMap] = useState(new Map());
+  const [tumulosMap, setTumulosMap] = useState(new Map());   // id -> label completo
   const [busca, setBusca] = useState("");
 
   const [erro, setErro] = useState("");
@@ -69,7 +115,7 @@ export default function Contratos() {
     [token]
   );
 
-  // Interceptor: garante que toda chamada para /contratos/* leve ?cemiterio=<id>
+  // Interceptor: garante ?cemiterio=<id> em /contratos/*
   useEffect(() => {
     const interceptorId = api.interceptors.request.use((config) => {
       const url = String(config.url || "");
@@ -100,26 +146,37 @@ export default function Contratos() {
     }
   }
 
+  /** Carrega tumulos + quadras e monta um map id -> label completo */
   async function carregarTumulosMap() {
     try {
       const qs = new URLSearchParams();
       if (cemiterioId) qs.set("cemiterio", cemiterioId);
-      const url = qs.toString() ? `${TUMULOS_EP}?${qs}` : TUMULOS_EP;
+      const urlTum = qs.toString() ? `${TUMULOS_EP}?${qs}` : TUMULOS_EP;
+      const urlQua = qs.toString() ? `${QUADRAS_EP}?${qs}` : QUADRAS_EP;
 
-      const { data } = await api.get(url);
-      const arr = Array.isArray(data) ? data : data?.results ?? [];
-      const m = new Map();
-      arr.forEach((t) => {
-        const id = t.id ?? t.pk;
-        const base = t.identificador || t.codigo || t.nome || `Túmulo ${id}`;
-        const linha = t.usar_linha && (t.linha || t.linha === 0) ? ` L${t.linha}` : "";
-        const q = t.quadra?.codigo || t.quadra?.nome || t.quadra?.id || null;
-        const label = q ? `Q ${q} - ${base}${linha}` : `${base}${linha}`;
-        m.set(String(id), label);
+      const [tumulosRes, quadrasRes] = await Promise.all([api.get(urlTum), api.get(urlQua)]);
+
+      const tumArr = Array.isArray(tumulosRes.data) ? tumulosRes.data : tumulosRes.data?.results ?? [];
+      const quaArr = Array.isArray(quadrasRes.data) ? quadrasRes.data : quadrasRes.data?.results ?? [];
+
+      // monta mapa de quadras
+      const qMap = new Map();
+      quaArr.forEach((q) => {
+        const qid = String(q.id ?? q.pk);
+        qMap.set(qid, { id: q.id ?? q.pk, nome: q.nome, codigo: q.codigo });
       });
-      setTumulosMap(m);
+
+      // monta mapa de túmulos com rótulo completo
+      const tMap = new Map();
+      tumArr.forEach((t) => {
+        const id = t.id ?? t.pk;
+        tMap.set(String(id), rotuloTumulo(t, qMap));
+      });
+
+      setTumulosMap(tMap);
     } catch (e) {
-      console.warn("tumulos map ERRO:", e?.response?.status || e);
+      console.warn("tumulos/quadras map ERRO:", e?.response?.status || e);
+      setTumulosMap(new Map());
     }
   }
 
@@ -138,17 +195,26 @@ export default function Contratos() {
     }
   }, [search]);
 
-  function tumuloLabel(s) {
-    if (s?.tumulo && typeof s.tumulo === "object") {
-      const t = s.tumulo;
-      const base = t.identificador || t.codigo || t.nome || t.id || "-";
-      const linha = t.usar_linha && (t.linha || t.linha === 0) ? ` L${t.linha}` : "";
-      const q = t.quadra?.codigo || t.quadra?.nome || t.quadra?.id || null;
-      return q ? `Q ${q} - ${base}${linha}` : `${base}${linha}`;
+  /** Mostra o rótulo do túmulo (prioriza tumulo_label vindo do backend) */
+  /** Mostra o rótulo do túmulo (prioriza tumulo_label vindo do backend
+    e depois o tumulosMap, mesmo quando vier objeto) */
+  function tumuloLabel(row) {
+    // 1) Se o backend já envia pronto
+    if (row?.tumulo_label) return row.tumulo_label;
+
+    // 2) Se veio algo em tumulo (objeto ou id), tenta o map primeiro
+    if (row?.tumulo) {
+      const tid = typeof row.tumulo === "object" ? (row.tumulo.id ?? row.tumulo.pk) : row.tumulo;
+      const fromMap = tid != null ? tumulosMap.get(String(tid)) : undefined;
+      if (fromMap) return fromMap;
+
+      // 3) Fallback: montar pelo objeto se ele existir
+      if (typeof row.tumulo === "object") return rotuloTumulo(row.tumulo);
     }
-    if (s?.tumulo) return tumulosMap.get(String(s.tumulo)) || "Não encontrado";
-    return s?.tumulo_label || "Não encontrado";
+
+    return "-";
   }
+
 
   const filtrados = React.useMemo(() => {
     const q = busca.trim().toLowerCase();
@@ -157,7 +223,7 @@ export default function Contratos() {
       const num = (c.numero_contrato || "").toString().toLowerCase();
       const nome = (c.nome || "").toString().toLowerCase();
       const doc = (c.cpf || c.documento || "").toString().toLowerCase();
-      const tum = tumuloLabel(c).toString().toLowerCase();
+      const tum = (tumuloLabel(c) || "").toString().toLowerCase();
       return num.includes(q) || nome.includes(q) || doc.includes(q) || tum.includes(q);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -181,37 +247,38 @@ export default function Contratos() {
 
   async function abrirPDF(row) {
     const id = row.id ?? row.pk;
-    const tentativas = [
-      `${CONTRATOS_EP}${id}/pdf/`,
-      `${CONTRATOS_EP}${id}/relatorio_pdf/`,
-      `${CONTRATOS_EP}${id}/report/`,
-    ];
-    for (const url of tentativas) {
-      try {
-        const res = await api.get(url, {
-          responseType: "blob",
-          params: { cemiterio: cemiterioId },
-        });
-        const ct = res?.headers?.["content-type"] || "";
-        if (ct.includes("pdf")) {
-          const blob = new Blob([res.data], { type: "application/pdf" });
-          const blobUrl = URL.createObjectURL(blob);
-          const w = window.open(blobUrl, "_blank");
-          if (!w) {
-            const a = document.createElement("a");
-            a.href = blobUrl;
-            a.download = `contrato_${id}.pdf`;
-            document.body.appendChild(a);
-            a.click();
-            a.remove();
-          }
-          setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
-          return;
-        }
-      } catch {}
+    if (!id) {
+      alert("ID do contrato não encontrado.");
+      return;
     }
-    alert("Não foi possível gerar o PDF deste contrato.");
+
+    try {
+      const res = await api.get(`${CONTRATOS_EP}${id}/pdf/`, {
+        responseType: "blob",
+        params: { cemiterio: getCemiterioAtivoId() },
+      });
+
+      const ct = (res?.headers?.["content-type"] || "").toLowerCase();
+      if (!ct.includes("pdf")) throw new Error("Resposta não é PDF");
+
+      const blob = new Blob([res.data], { type: "application/pdf" });
+      const blobUrl = URL.createObjectURL(blob);
+      const w = window.open(blobUrl, "_blank");
+      if (!w) {
+        const a = document.createElement("a");
+        a.href = blobUrl;
+        a.download = `contrato_${id}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      }
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+    } catch (e) {
+      console.error("PDF contrato ERRO:", e?.response?.data || e);
+      alert("Não foi possível gerar o PDF deste contrato.");
+    }
   }
+
 
   return (
     <div className="p-6">
@@ -222,13 +289,13 @@ export default function Contratos() {
             onCancel={() => {
               setModoFormulario(false);
               setEditandoId(null);
-              navigate("/contratos", { replace: true }); // limpa ?novo=1
+              navigate("/contratos", { replace: true });
             }}
             onSuccess={() => {
               setModoFormulario(false);
               setEditandoId(null);
               buscarContratos();
-              navigate("/contratos", { replace: true }); // limpa ?novo=1
+              navigate("/contratos", { replace: true });
             }}
           />
         </div>
