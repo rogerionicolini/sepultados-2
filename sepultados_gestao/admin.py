@@ -473,21 +473,25 @@ class TumuloAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
 
 from django.contrib import admin
 from django.utils.html import format_html
-from .models import Sepultado, Tumulo
+from django.urls import reverse
+from django.db.models import Q
+
+from .models import Sepultado, Tumulo, Cemiterio
 from .mixins import PrefeituraObrigatoriaAdminMixin
 from .forms import SepultadoForm
-
+from sepultados_gestao.models import Exumacao, Translado
+from .models import Sepultado, Tumulo, Cemiterio
 
 
 class SepultadoAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
     form = SepultadoForm
-    inlines = [AnexoInline]
+    inlines = [AnexoInline]  # mantém seu inline existente
     autocomplete_fields = ['tumulo']
+
     list_display = (
         'nome', 'data_nascimento', 'data_falecimento',
         'idade_ao_falecer', 'tumulo', 'status_display', 'link_pdf'
     )
-
     list_filter = ('estado_civil',)
     search_fields = (
         'nome', 'cartorio_nome', 'cartorio_numero_registro',
@@ -543,7 +547,76 @@ class SepultadoAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
         }),
     )
 
-    from sepultados_gestao.models import Exumacao, Translado
+    def get_queryset(self, request):
+        """
+        Lista apenas sepultados do CEMITÉRIO ativo.
+        OBS: Sepultado não tem campo 'prefeitura'; filtramos pelo caminho via Túmulo→Cemitério (que tem prefeitura).
+        Cobre os dois jeitos de modelar Túmulo: com FK direta para Cemiterio OU via Quadra→Cemiterio.
+        """
+        qs = super().get_queryset(request).select_related(
+            "tumulo", "tumulo__cemiterio", "tumulo__quadra", "tumulo__quadra__cemiterio"
+        )
+
+        # Prefeitura ativa (opcional, via caminho do cemitério)
+        prefeitura_ativa = getattr(request, "prefeitura_ativa", None)
+
+        # Cemitério ativo (middleware)…
+        cemiterio_ativo = getattr(request, "cemiterio_ativo", None)
+        # …ou via sessão
+        if cemiterio_ativo is None:
+            cem_id = request.session.get("cemiterio_ativo_id")
+            if cem_id:
+                try:
+                    cemiterio_ativo = Cemiterio.objects.get(pk=cem_id)
+                except Cemiterio.DoesNotExist:
+                    cemiterio_ativo = None
+
+        # Sem cemitério ativo: não mostra nada
+        if cemiterio_ativo is None:
+            return qs.none()
+
+        # Filtra por cemitério ativo (cobre as duas formas)
+        qs = qs.filter(
+            Q(tumulo__cemiterio=cemiterio_ativo) |
+            Q(tumulo__quadra__cemiterio=cemiterio_ativo)
+        )
+
+        # Se quiser garantir também a prefeitura (sem quebrar):
+        if prefeitura_ativa:
+            qs = qs.filter(
+                Q(tumulo__cemiterio__prefeitura=prefeitura_ativa) |
+                Q(tumulo__quadra__cemiterio__prefeitura=prefeitura_ativa)
+            )
+
+        return qs
+
+
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        """
+        Restringe o campo Túmulo ao CEMITÉRIO ativo.
+        Cobre túmulos com FK direta para Cemiterio ou via Quadra→Cemiterio.
+        """
+        if db_field.name == 'tumulo':
+            # Do middleware…
+            cemiterio_ativo = getattr(request, "cemiterio_ativo", None)
+            # …ou da sessão
+            if cemiterio_ativo is None:
+                cem_id = request.session.get("cemiterio_ativo_id")
+                if cem_id:
+                    try:
+                        cemiterio_ativo = Cemiterio.objects.get(pk=cem_id)
+                    except Cemiterio.DoesNotExist:
+                        cemiterio_ativo = None
+
+            if cemiterio_ativo:
+                kwargs["queryset"] = Tumulo.objects.filter(
+                    Q(cemiterio=cemiterio_ativo) |            # FK direta
+                    Q(quadra__cemiterio=cemiterio_ativo)      # via quadra
+                ).select_related("quadra", "cemiterio")
+            else:
+                kwargs["queryset"] = Tumulo.objects.none()
+
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)
 
     def informacoes_movimentacoes(self, obj):
         if not obj:
@@ -567,12 +640,9 @@ class SepultadoAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
             html += "<strong>Trasladado:</strong> Não<br>"
 
         html += "</div>"
-
         return format_html(html)
 
     informacoes_movimentacoes.short_description = "Informações de movimentações"
-
-
 
     def get_form(self, request, obj=None, **kwargs):
         form = super().get_form(request, obj, **kwargs)
@@ -588,28 +658,18 @@ class SepultadoAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
 
         form.base_fields['data_falecimento'].required = True
         form.base_fields['data_sepultamento'].required = True
-
         return form
 
-    def formfield_for_foreignkey(self, db_field, request, **kwargs):
-        if db_field.name == 'tumulo':
-            cemiterio_id = request.session.get("cemiterio_ativo_id")
-            if cemiterio_id:
-                kwargs["queryset"] = Tumulo.objects.filter(quadra__cemiterio_id=cemiterio_id)
-            else:
-                kwargs["queryset"] = Tumulo.objects.none()
-        return super().formfield_for_foreignkey(db_field, request, **kwargs)
-
     def link_pdf(self, obj):
-            url = reverse('sepultados_gestao:gerar_guia_sepultamento_pdf', args=[obj.pk])
-            return format_html('<a href="{}" target="_blank">📄 PDF</a>', url)
+        url = reverse('sepultados_gestao:gerar_guia_sepultamento_pdf', args=[obj.pk])
+        return format_html('<a href="{}" target="_blank">📄 PDF</a>', url)
 
     link_pdf.short_description = "Guia PDF"
-    
+
     class Media:
         js = (
             'custom_admin/js/sexo_outro.js',
-            'custom_admin/js/sepultado_pagamento.js',  # novo
+            'custom_admin/js/sepultado_pagamento.js',
         )
 
 

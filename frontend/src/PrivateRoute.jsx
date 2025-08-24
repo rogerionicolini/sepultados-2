@@ -1,34 +1,37 @@
 // src/PrivateRoute.jsx
 import React, { useEffect, useState } from "react";
 import { Navigate } from "react-router-dom";
-import axios from "axios";
+import { api, getTokens, clearTokens } from "./api/api";
 
 const PrivateRoute = ({ children }) => {
   const [autenticado, setAutenticado] = useState(null);
 
   useEffect(() => {
     const verificarAutenticacao = async () => {
-      const token = localStorage.getItem("accessToken");
-
-      if (!token) {
+      const { access } = getTokens();
+      if (!access) {
         setAutenticado(false);
         return;
       }
 
       try {
-        const res = await axios.get("http://127.0.0.1:8000/api/usuario-logado/", {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
+        const res = await api.get("/usuario-logado/");
 
-        // Armazena a prefeitura ativa para o restante do sistema
-        if (res.data?.prefeitura?.id) {
-          localStorage.setItem("prefeitura_ativa_id", res.data.prefeitura.id);
+        // espelha dados para componentes legados (Header, etc.)
+        const usuario = res.data;
+        localStorage.setItem("usuario_logado", JSON.stringify(usuario));
+        if (usuario?.email) localStorage.setItem("email_usuario", usuario.email);
+        if (usuario?.nome)  localStorage.setItem("nome_usuario", usuario.nome);
+
+        if (usuario?.prefeitura?.id) {
+          localStorage.setItem("prefeitura_ativa_id", usuario.prefeitura.id);
+          if (usuario.prefeitura?.nome)  localStorage.setItem("prefeitura_nome", usuario.prefeitura.nome);
+          if (usuario.prefeitura?.brasao_url) localStorage.setItem("prefeitura_brasao_url", usuario.prefeitura.brasao_url);
         }
 
         setAutenticado(true);
       } catch (err) {
+        clearTokens();
         setAutenticado(false);
       }
     };
@@ -36,9 +39,7 @@ const PrivateRoute = ({ children }) => {
     verificarAutenticacao();
   }, []);
 
-  if (autenticado === null) {
-    return null; // ou um loader/spinner
-  }
+  if (autenticado === null) return null; // pode trocar por um spinner
 
   return autenticado ? children : <Navigate to="/login" replace />;
 };
