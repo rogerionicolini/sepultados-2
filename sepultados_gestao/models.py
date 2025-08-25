@@ -957,13 +957,7 @@ class Translado(models.Model):
         if not self.sepultado.exumado:
             raise ValidationError("Só é possível realizar o translado de sepultados que já foram exumados.")
 
-        translados_existentes = Translado.objects.filter(sepultado=self.sepultado)
-        if self.pk:
-            translados_existentes = translados_existentes.exclude(pk=self.pk)
-
-        if translados_existentes.exists():
-            raise ValidationError("Este sepultado já foi trasladado anteriormente. Não é possível duplicar.")
-
+        
         # Verifica a capacidade e contrato do túmulo de destino, se for outro túmulo
         if self.destino == 'outro_tumulo' and self.tumulo_destino:
             # Verifica se há contrato de concessão
