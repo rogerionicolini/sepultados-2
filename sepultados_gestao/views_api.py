@@ -793,6 +793,27 @@ class ExumacaoViewSet(ContextoRestritoQuerysetMixin, viewsets.ModelViewSet):
 
 
 
+from datetime import date
+from django.db import transaction
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.shortcuts import get_object_or_404
+from django.db.models import Q
+from django.http import HttpResponse
+from django.template.loader import render_to_string
+from rest_framework import viewsets
+from rest_framework.decorators import action
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.exceptions import ValidationError
+from weasyprint import HTML
+from django.conf import settings
+import os
+
+from .models import Translado, Sepultado
+from .serializers import TransladoSerializer
+from sepultados_gestao.services.arquivamento import sync_sepultado_status
+from .mixins import ContextoRestritoQuerysetMixin
+
+
 class TransladoViewSet(ContextoRestritoQuerysetMixin, viewsets.ModelViewSet):
     """
     - Lista por CEMITÉRIO do túmulo ATUAL do sepultado OU do TÚMULO DE DESTINO.
@@ -805,11 +826,8 @@ class TransladoViewSet(ContextoRestritoQuerysetMixin, viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     http_method_names = ["get", "post", "put", "patch", "delete", "head", "options"]
 
+    # -------------------- Queryset / Filtros --------------------
     def get_queryset(self):
-        """
-        NÃO chama super().get_queryset() para não aplicar o filtro do mixin
-        baseado apenas em tumulo_destino, que escondia registros.
-        """
         qs = self.queryset.select_related(
             "sepultado__tumulo__quadra__cemiterio__prefeitura",
             "tumulo_destino__quadra__cemiterio__prefeitura",
@@ -840,24 +858,44 @@ class TransladoViewSet(ContextoRestritoQuerysetMixin, viewsets.ModelViewSet):
 
         return qs.none()
 
-    # ------------ helpers ------------
-    def _prefeitura_from_request_or_relations(self, validated):
-        pref = getattr(self.request, "prefeitura_ativa", None) or getattr(self.request.user, "prefeitura", None)
-        if pref:
-            return pref
-        tum = validated.get("tumulo_destino")
-        if tum and getattr(tum, "quadra", None) and getattr(tum.quadra, "cemiterio", None):
-            return tum.quadra.cemiterio.prefeitura
-        sep = validated.get("sepultado")
-        if sep and getattr(sep, "tumulo", None) and getattr(sep.tumulo, "quadra", None):
-            return sep.tumulo.quadra.cemiterio.prefeitura
-        return None
-
+    # -------------------- Helpers --------------------
     def _normalize_validated(self, validated):
         nd = validated.get("numero_documento")
         if nd == "-" or nd == "":
             validated.pop("numero_documento", None)
         return validated
+
+    def _sepultado_has_field(self, name: str) -> bool:
+        return name in {f.name for f in Sepultado._meta.get_fields() if hasattr(f, "name")}
+
+    def _ativos_no_tumulo(self, tumulo):
+        """
+        Conta apenas ocupantes 'ativos': exumado=False e (se existir) trasladado=False.
+        """
+        if not tumulo:
+            return 0
+        kwargs = {"tumulo": tumulo, "exumado": False}
+        # campo correto é 'trasladado' (sem 'n'); deixa tolerante
+        if self._sepultado_has_field("trasladado"):
+            kwargs["trasladado"] = False
+        return Sepultado.objects.filter(**kwargs).count()
+
+    def _checar_capacidade_destino(self, destino):
+        """
+        Valida capacidade do túmulo de destino considerando somente ocupantes ativos.
+        """
+        if not destino:
+            return
+        cap = getattr(destino, "capacidade", None)
+        if cap is None:
+            return
+        ativos = self._ativos_no_tumulo(destino)
+        if ativos >= cap:
+            raise ValidationError({
+                "tumulo_destino": [
+                    f"O túmulo de destino atingiu sua capacidade máxima de {cap} sepultado(s)."
+                ]
+            })
 
     def _render_pdf(self, translado):
         """Gera o PDF (usa prefeitura do destino; se não houver, da origem)."""
@@ -878,15 +916,14 @@ class TransladoViewSet(ContextoRestritoQuerysetMixin, viewsets.ModelViewSet):
         })
         return HTML(string=html).write_pdf()
 
-    # ------------ create/update ------------
+    # -------------------- Create / Update / Delete --------------------
     def perform_create(self, serializer):
         validated = self._normalize_validated(dict(serializer.validated_data))
-        pref = self._prefeitura_from_request_or_relations(validated)
-        if not pref:
-            raise ValidationError({"detail": "Não foi possível determinar a prefeitura."})
+        destino = validated.get("tumulo_destino")
+
+        self._checar_capacidade_destino(destino)
 
         instance = Translado(**validated)
-        instance.usuario_registro = self.request.user
         instance.usuario_registro = self.request.user
 
         if getattr(instance, "data", None) in (None, ""):
@@ -897,9 +934,11 @@ class TransladoViewSet(ContextoRestritoQuerysetMixin, viewsets.ModelViewSet):
                 pass
 
         try:
-            instance.full_clean()
             with transaction.atomic():
+                instance.full_clean()
                 instance.save()
+                if instance.sepultado_id:
+                    sync_sepultado_status(instance.sepultado)
         except DjangoValidationError as e:
             payload = {}
             if getattr(e, "message_dict", None):
@@ -924,13 +963,12 @@ class TransladoViewSet(ContextoRestritoQuerysetMixin, viewsets.ModelViewSet):
     def perform_update(self, serializer):
         instance = self.get_object()
         validated = self._normalize_validated(dict(serializer.validated_data))
-        pref = self._prefeitura_from_request_or_relations(validated)
-        if not pref:
-            raise ValidationError({"detail": "Não foi possível determinar a prefeitura."})
+        destino = validated.get("tumulo_destino") or instance.tumulo_destino
+
+        self._checar_capacidade_destino(destino)
 
         for k, v in validated.items():
             setattr(instance, k, v)
-        instance.usuario_registro = self.request.user
         instance.usuario_registro = self.request.user
 
         if getattr(instance, "data", None) in (None, ""):
@@ -941,9 +979,11 @@ class TransladoViewSet(ContextoRestritoQuerysetMixin, viewsets.ModelViewSet):
                 pass
 
         try:
-            instance.full_clean()
             with transaction.atomic():
+                instance.full_clean()
                 instance.save()
+                if instance.sepultado_id:
+                    sync_sepultado_status(instance.sepultado)
         except DjangoValidationError as e:
             payload = {}
             if getattr(e, "message_dict", None):
@@ -963,13 +1003,16 @@ class TransladoViewSet(ContextoRestritoQuerysetMixin, viewsets.ModelViewSet):
                 payload = {"non_field_errors": ["Não foi possível validar o traslado."]}
             raise ValidationError(payload)
 
-    # ------------ actions ------------
+    def perform_destroy(self, instance):
+        sep = instance.sepultado
+        with transaction.atomic():
+            super().perform_destroy(instance)
+            if sep:
+                sync_sepultado_status(sep)
+
+    # -------------------- Actions (PDF) --------------------
     @action(detail=True, methods=["get"], url_path="pdf")
     def pdf(self, request, pk=None):
-        """
-        Busca por PK sem o filtro de contexto (para o PDF nunca “sumir”).
-        Se quiser obrigar cemitério, valide request.query_params['cemiterio'] aqui.
-        """
         translado = get_object_or_404(
             Translado.objects.select_related(
                 "sepultado__tumulo__quadra__cemiterio__prefeitura",
@@ -987,7 +1030,6 @@ class TransladoViewSet(ContextoRestritoQuerysetMixin, viewsets.ModelViewSet):
     @action(detail=True, methods=["get"], url_path="report")
     def report(self, request, pk=None):
         return self.pdf(request, pk)
-
 
 
 class ReceitaViewSet(PrefeituraRestritaQuerysetMixin, viewsets.ModelViewSet):

@@ -38,16 +38,125 @@ function getStatusFromRow(t) {
   return "disponivel";
 }
 
-// ➜ Agora prioriza os campos anotados pelo backend
+// ➜ prioriza campos anotados pelo backend
 function getContratoNumero(t) {
   return (
-    t?.contrato_numero ??        // anotado no queryset
+    t?.contrato_numero ??
     t?.concessao?.numero ??
     t?.contrato_concessao?.numero ??
     t?.concessao_numero ??
     null
   );
 }
+
+/* ================= Exumação/Translado helpers ================== */
+function _first(...cands) {
+  for (const c of cands) if (c !== undefined && c !== null && c !== "") return c;
+  return undefined;
+}
+function _toBool(v) {
+  if (typeof v === "boolean") return v;
+  if (typeof v === "number") return v !== 0;
+  if (typeof v === "string") {
+    const s = v.trim().toLowerCase();
+    return ["1", "true", "sim", "s", "y", "yes"].includes(s);
+  }
+  return false;
+}
+
+// -------- Exumação --------
+function exumacaoStatusFromRow(s) {
+  const b = _first(s.exumado, s.exumado_flag, s.exumada, s.is_exumado);
+  const statusTxt = _first(s.exumacao_status, s.exumacao, s.status_exumacao) || "";
+  if (b !== undefined) return _toBool(b) ? (statusTxt || "Exumado") : (statusTxt || "—");
+  return statusTxt || "—";
+}
+function exumacaoDataFromRow(s) {
+  return (
+    _first(
+      s.exumacao_data,
+      s.data_exumacao,
+      s.data_da_exumacao,
+      s.data_exum,
+      s.exumado_em
+    ) || ""
+  );
+}
+function exumacaoDisplay(s) {
+  const st = (exumacaoStatusFromRow(s) || "").toString();
+  const dt = exumacaoDataFromRow(s);
+  if (!st || st === "—") return "—";
+  return dt ? `${st} em ${dt}` : st;
+}
+
+// -------- Translado (aceita “traslado/translado” + variações) --------
+function transladoStatusFromRow(s) {
+  const b = _first(
+    s.trasladado,            // ✔ “trasladado” (S)
+    s.transladado,           // “transladado” (N)
+    s.transferido,
+    s.is_trasladado,
+    s.is_transladado,
+    s.tem_traslado,          // ✔ “traslado” (S)
+    s.tem_translado,         // “translado” (N)
+    s.possui_traslado,
+    s.possui_translado
+  );
+  const statusTxt =
+    _first(
+      s.traslado_status,
+      s.translado_status,
+      s.status_traslado,
+      s.status_translado,
+      s.ultimo_traslado_status,
+      s.ultimo_translado_status
+    ) || "";
+
+  if (b !== undefined) return _toBool(b) ? (statusTxt || "Transferido") : (statusTxt || "—");
+
+  // fallback: alguns backends mandam só um texto em s.status
+  const st = (s.status || "").toString().toLowerCase();
+  if (st.includes("traslad") || st.includes("transfer")) return statusTxt || "Transferido";
+
+  return statusTxt || "—";
+}
+function transladoDataFromRow(s) {
+  return (
+    _first(
+      s.traslado_data,        // ✔ “traslado” (S)
+      s.translado_data,       // “translado” (N)
+      s.data_traslado,
+      s.data_translado,
+      s.data_do_traslado,
+      s.data_do_translado,
+      s.transferido_em,
+      s.ultimo_traslado_data,
+      s.ultimo_translado_data
+    ) || ""
+  );
+}
+function transladoDisplay(s) {
+  const st = (transladoStatusFromRow(s) || "").toString();
+  const dt = transladoDataFromRow(s);
+  if (!st || st === "—") return "—";
+  return dt ? `${st} em ${dt}` : st;
+}
+
+/* Status consolidado do SEPULTADO */
+function statusSepultadoFromRow(s) {
+  const ex = _toBool(_first(s.exumado, s.exumado_flag, s.exumada, s.is_exumado));
+  const tr = _toBool(
+    _first(
+      s.trasladado, s.transladado, s.transferido,
+      s.is_trasladado, s.is_transladado,
+      s.tem_traslado, s.tem_translado
+    )
+  );
+  if (tr) return "Trasladado";
+  if (ex) return "Exumado";
+  return "Sepultado";
+}
+/* ================================================================ */
 
 function StatusPill({ status }) {
   const s = (status || "").toString().toLowerCase();
@@ -100,7 +209,7 @@ function QuadraDropdown({ options, value, onChange, disabled }) {
         type="button"
         disabled={disabled}
         onClick={() => setOpen((v) => !v)}
-        className={`w-full px-3 py-2 rounded-lg border border-[#bcd2a7] bg-white text-left ${
+        className={`w/full px-3 py-2 rounded-lg border border-[#bcd2a7] bg-white text-left ${
           disabled ? "opacity-60 cursor-not-allowed" : "hover:bg-[#f7fbf2]"
         }`}
       >
@@ -245,7 +354,6 @@ export default function Tumulos() {
         alert("Selecione um cemitério para gerar o relatório.");
         return;
       }
-      // Envia o cemitério como query param por causa do filtro de contexto no backend
       const res = await api.get(`${ENDPOINT}${id}/pdf_sepultados/`, {
         params: { cemiterio: cemAtivo.id },
         responseType: "blob",
@@ -301,7 +409,7 @@ export default function Tumulos() {
     }
   }
 
-  // ouvir troca do cemitério no seletor
+  // ouvir troca do cemitério
   useEffect(() => {
     const onChanged = (e) => setCemAtivo(e?.detail || getCemiterioAtivo());
     const onStorage = () => setCemAtivo(getCemiterioAtivo());
@@ -315,8 +423,7 @@ export default function Tumulos() {
 
   useEffect(() => {
     carregarPrefeitura();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, []); // eslint-disable-line
 
   useEffect(() => {
     if (cemAtivo?.id) {
@@ -324,8 +431,7 @@ export default function Tumulos() {
       setSepPorTumulo({});
       carregar();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [prefeituraId, cemAtivo?.id]);
+  }, [prefeituraId, cemAtivo?.id]); // eslint-disable-line
 
   const filtrados = useMemo(() => {
     const q = busca.trim().toLowerCase();
@@ -338,7 +444,7 @@ export default function Tumulos() {
     );
   }, [itens, busca]);
 
-  // Mapa id->label de quadras (para render da tabela)
+  // Mapa id->label de quadras
   const quadraMap = useMemo(() => {
     const m = new Map();
     quadras.forEach((q) => m.set(String(q.id), q.label));
@@ -583,7 +689,7 @@ export default function Tumulos() {
                             <span className="px-2 py-0.5 rounded bg-blue-100 text-blue-800 border border-blue-300">
                               Nº {contratoNum}
                             </span>
-                          ) : t.tem_contrato_ativo ? ( // ← usa a anotação Exists
+                          ) : t.tem_contrato_ativo ? (
                             <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
                               Com contrato
                             </span>
@@ -640,7 +746,8 @@ export default function Tumulos() {
                                         <th className="py-1 px-2 rounded-l">Nome</th>
                                         <th className="py-1 px-2">Data do sepultamento</th>
                                         <th className="py-1 px-2">Status</th>
-                                        <th className="py-1 px-2 rounded-r">Exumação</th>
+                                        <th className="py-1 px-2">Exumação</th>
+                                        <th className="py-1 px-2 rounded-r">Translado</th>
                                       </tr>
                                     </thead>
                                     <tbody>
@@ -652,9 +759,14 @@ export default function Tumulos() {
                                           <td className="py-1 px-2">
                                             {s.data_sepultamento || s.data || "-"}
                                           </td>
-                                          <td className="py-1 px-2">{s.status || "-"}</td>
                                           <td className="py-1 px-2">
-                                            {s.exumacao_status || s.exumacao || "-"}
+                                            {statusSepultadoFromRow(s)}
+                                          </td>
+                                          <td className="py-1 px-2">
+                                            {exumacaoDisplay(s)}
+                                          </td>
+                                          <td className="py-1 px-2">
+                                            {transladoDisplay(s)}
                                           </td>
                                         </tr>
                                       ))}
