@@ -85,3 +85,25 @@ body, html, #root {
   margin-top: 12px;
   text-align: center;
 }
+
+/* bloco de logos no topo do card */
+.logos {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+/* brasão da prefeitura (pequeno) */
+.logo-brasao {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+}
+
+/* marca sepultados (maior) */
+.logo-brand {
+  height: 80px;      /* ajuste fino do tamanho visual */
+  object-fit: contain;
+}

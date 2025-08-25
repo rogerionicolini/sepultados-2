@@ -990,12 +990,11 @@ export default function FormularioExumacao({ exumacaoId, onCancel, onSuccess }) 
         </h2>
       </div>
 
-      {((errors.summary && errors.summary.length) ||
-        (errors.fields && Object.keys(errors.fields).length)) && (
+      {(((errors.summary?.length || 0) + (Object.keys(errors.fields || {}).length || 0)) > 0) && (
         <div className="bg-red-50 border border-red-300 text-red-800 rounded-lg px-4 py-3">
           <div className="font-semibold mb-1">Por favor, corrija os problemas abaixo:</div>
           <ul className="list-disc pl-5 space-y-0.5">
-            {errors.summary?.map((s, i) => (
+            {(errors.summary || []).map((s, i) => (
               <li key={`s-${i}`}>{s}</li>
             ))}
             {Object.entries(errors.fields || {}).map(([k, arr]) =>
@@ -1008,6 +1007,7 @@ export default function FormularioExumacao({ exumacaoId, onCancel, onSuccess }) 
           </ul>
         </div>
       )}
+
 
       <form onSubmit={onSubmit}>
         <div className="bg-[#f0f8ea] rounded-xl p-6 shadow space-y-8">
