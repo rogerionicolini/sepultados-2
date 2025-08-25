@@ -795,7 +795,7 @@ class ExumacaoViewSet(ContextoRestritoQuerysetMixin, viewsets.ModelViewSet):
 
 from datetime import date
 from django.db import transaction
-from django.core.exceptions import ValidationError as DjangoValidationError
+from django.core.exceptions import ValidationError as DjangoValidationError, FieldError
 from django.shortcuts import get_object_or_404
 from django.db.models import Q
 from django.http import HttpResponse
@@ -865,37 +865,72 @@ class TransladoViewSet(ContextoRestritoQuerysetMixin, viewsets.ModelViewSet):
             validated.pop("numero_documento", None)
         return validated
 
-    def _sepultado_has_field(self, name: str) -> bool:
-        return name in {f.name for f in Sepultado._meta.get_fields() if hasattr(f, "name")}
-
     def _ativos_no_tumulo(self, tumulo):
         """
-        Conta apenas ocupantes 'ativos': exumado=False e (se existir) trasladado=False.
+        Ocupantes *ativos* no túmulo (exumado=False e, se existir,
+        trasladado=False).
         """
         if not tumulo:
             return 0
-        kwargs = {"tumulo": tumulo, "exumado": False}
-        # campo correto é 'trasladado' (sem 'n'); deixa tolerante
-        if self._sepultado_has_field("trasladado"):
-            kwargs["trasladado"] = False
-        return Sepultado.objects.filter(**kwargs).count()
+        qs = Sepultado.objects.filter(tumulo=tumulo, exumado=False)
+        try:
+            qs = qs.filter(trasladado=False)
+        except FieldError:
+            pass
+        return qs.count()
 
-    def _checar_capacidade_destino(self, destino):
+    def _checar_capacidade_destino(self, destino, sepultado=None):
         """
-        Valida capacidade do túmulo de destino considerando somente ocupantes ativos.
+        Valida a capacidade do destino considerando apenas ativos.
+        Se o próprio 'sepultado' já estiver nesse destino, não soma +1.
         """
         if not destino:
             return
         cap = getattr(destino, "capacidade", None)
         if cap is None:
             return
+
         ativos = self._ativos_no_tumulo(destino)
-        if ativos >= cap:
+        extra = 0
+        if sepultado is None or sepultado.tumulo_id != getattr(destino, "id", None):
+            extra = 1
+
+        if (ativos + extra) > cap:
             raise ValidationError({
                 "tumulo_destino": [
                     f"O túmulo de destino atingiu sua capacidade máxima de {cap} sepultado(s)."
                 ]
             })
+
+    def _mover_sepultado_para_destino(self, translado: Translado):
+        """
+        Efeito do translado: coloca o sepultado no tumulo_destino
+        e preenche campos usuais, se existirem.
+        """
+        s = translado.sepultado
+        d = translado.tumulo_destino
+        if not s or not d:
+            return
+
+        fields = []
+
+        if getattr(s, "tumulo_id", None) != getattr(d, "id", None):
+            s.tumulo = d
+            fields.append("tumulo")
+
+        # Se o modelo tiver esses campos, mantém atualizado:
+        if hasattr(s, "trasladado"):
+            if s.trasladado is not True:
+                s.trasladado = True
+                fields.append("trasladado")
+
+        if hasattr(s, "data_translado") and getattr(translado, "data", None):
+            if s.data_translado != translado.data:
+                s.data_translado = translado.data
+                fields.append("data_translado")
+
+        if fields:
+            s.save(update_fields=list(set(fields)))
 
     def _render_pdf(self, translado):
         """Gera o PDF (usa prefeitura do destino; se não houver, da origem)."""
@@ -920,8 +955,10 @@ class TransladoViewSet(ContextoRestritoQuerysetMixin, viewsets.ModelViewSet):
     def perform_create(self, serializer):
         validated = self._normalize_validated(dict(serializer.validated_data))
         destino = validated.get("tumulo_destino")
+        sep = validated.get("sepultado")
 
-        self._checar_capacidade_destino(destino)
+        # Apenas garante capacidade (não há regra de tempo mínimo aqui)
+        self._checar_capacidade_destino(destino, sepultado=sep)
 
         instance = Translado(**validated)
         instance.usuario_registro = self.request.user
@@ -937,6 +974,8 @@ class TransladoViewSet(ContextoRestritoQuerysetMixin, viewsets.ModelViewSet):
             with transaction.atomic():
                 instance.full_clean()
                 instance.save()
+                # move efetivamente o sepultado
+                self._mover_sepultado_para_destino(instance)
                 if instance.sepultado_id:
                     sync_sepultado_status(instance.sepultado)
         except DjangoValidationError as e:
@@ -964,8 +1003,9 @@ class TransladoViewSet(ContextoRestritoQuerysetMixin, viewsets.ModelViewSet):
         instance = self.get_object()
         validated = self._normalize_validated(dict(serializer.validated_data))
         destino = validated.get("tumulo_destino") or instance.tumulo_destino
+        sep = validated.get("sepultado") or instance.sepultado
 
-        self._checar_capacidade_destino(destino)
+        self._checar_capacidade_destino(destino, sepultado=sep)
 
         for k, v in validated.items():
             setattr(instance, k, v)
@@ -982,6 +1022,7 @@ class TransladoViewSet(ContextoRestritoQuerysetMixin, viewsets.ModelViewSet):
             with transaction.atomic():
                 instance.full_clean()
                 instance.save()
+                self._mover_sepultado_para_destino(instance)
                 if instance.sepultado_id:
                     sync_sepultado_status(instance.sepultado)
         except DjangoValidationError as e:
@@ -1007,6 +1048,7 @@ class TransladoViewSet(ContextoRestritoQuerysetMixin, viewsets.ModelViewSet):
         sep = instance.sepultado
         with transaction.atomic():
             super().perform_destroy(instance)
+            # Recalcula flags; (não tentamos "desmover" automaticamente)
             if sep:
                 sync_sepultado_status(sep)
 
