@@ -1074,11 +1074,27 @@ class TransladoViewSet(ContextoRestritoQuerysetMixin, viewsets.ModelViewSet):
         return self.pdf(request, pk)
 
 
+# views_api.py
+from django.shortcuts import get_object_or_404
+from django.http import HttpResponse
+from rest_framework.decorators import action
+from .views import gerar_recibo_pdf  # <- já existe
+
 class ReceitaViewSet(PrefeituraRestritaQuerysetMixin, viewsets.ModelViewSet):
     queryset = Receita.objects.all()
     serializer_class = ReceitaSerializer
     prefeitura_field = "prefeitura"
     permission_classes = [IsAuthenticated]
+
+    @action(detail=True, methods=["get"], url_path="pdf")
+    def pdf(self, request, pk=None):
+        """
+        Exibe o recibo em PDF (mesma saída do admin),
+        mas autenticado via API normal.
+        """
+        # Reaproveita a view existente que já renderiza e retorna HttpResponse
+        return gerar_recibo_pdf(request, receita_id=pk)
+
 
 
 class RegistroAuditoriaViewSet(PrefeituraRestritaQuerysetMixin, viewsets.ModelViewSet):
