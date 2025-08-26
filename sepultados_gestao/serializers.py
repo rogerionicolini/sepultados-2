@@ -274,8 +274,11 @@ from rest_framework import serializers
 from sepultados_gestao.models import Prefeitura
 import base64
 from django.core.files.base import ContentFile
+from decimal import Decimal, InvalidOperation
+
 
 class PrefeituraSerializer(serializers.ModelSerializer):
+    # recebe a imagem em Base64 para atualizar o brasão
     logo_base64 = serializers.CharField(write_only=True, required=False, allow_blank=True)
 
     class Meta:
@@ -288,35 +291,61 @@ class PrefeituraSerializer(serializers.ModelSerializer):
             "telefone",
             "email",
             "site",
+
             "logradouro",
             "endereco_numero",
             "endereco_bairro",
             "endereco_cidade",
             "endereco_estado",
+            "endereco_cep",                 # << NOVO
+
+            "multa_percentual",             # << NOVO
+            "juros_mensal_percentual",      # << NOVO
+            "clausulas_contrato",           # << NOVO
+
             "brasao",
             "logo_base64",
         ]
         read_only_fields = ["id", "brasao"]
 
+    def validate(self, attrs):
+        """
+        Aceita percentuais digitados com vírgula (ex.: '0,5') e
+        converte para Decimal (ex.: Decimal('0.5')).
+        """
+        for key in ("multa_percentual", "juros_mensal_percentual"):
+            if key in attrs and isinstance(attrs[key], str):
+                val = attrs[key].strip().replace(",", ".")
+                if val == "":
+                    attrs[key] = None
+                else:
+                    try:
+                        attrs[key] = Decimal(val)
+                    except InvalidOperation:
+                        raise serializers.ValidationError({key: "Valor percentual inválido."})
+        return attrs
+
     def update(self, instance, validated_data):
-        # Atualizar os dados normais
+        # retira o base64, se enviado
         logo_base64 = validated_data.pop("logo_base64", None)
 
+        # atualiza os demais campos normalmente
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
 
-        # Atualizar a imagem, se enviada
+        # atualiza a imagem, se enviada
         if logo_base64:
             try:
-                format, imgstr = logo_base64.split(";base64,")
-                ext = format.split("/")[-1]
+                format_, imgstr = logo_base64.split(";base64,")
+                ext = format_.split("/")[-1]
                 file_data = ContentFile(base64.b64decode(imgstr), name=f"logo.{ext}")
                 instance.brasao = file_data
             except Exception as e:
-                raise serializers.ValidationError(f"Erro ao processar imagem: {str(e)}")
+                raise serializers.ValidationError({"logo_base64": f"Erro ao processar imagem: {str(e)}"})
 
         instance.save()
         return instance
+
 
 class AnexoSerializer(serializers.ModelSerializer):
     arquivo_url = serializers.SerializerMethodField()
