@@ -347,6 +347,11 @@ class PrefeituraSerializer(serializers.ModelSerializer):
         return instance
 
 
+# serializers.py
+import os
+from rest_framework import serializers
+from .models import Anexo
+
 class AnexoSerializer(serializers.ModelSerializer):
     arquivo_url = serializers.SerializerMethodField()
 
@@ -361,3 +366,16 @@ class AnexoSerializer(serializers.ModelSerializer):
             url = obj.arquivo.url
             return request.build_absolute_uri(url) if request else url
         return None
+
+    def to_representation(self, instance):
+        """
+        Mantém 'nome' gravável; se vier vazio, exibe o nome do arquivo.
+        """
+        data = super().to_representation(instance)
+        nome = (data.get("nome") or "").strip()
+        if not nome and getattr(instance, "arquivo", None):
+            try:
+                data["nome"] = os.path.basename(instance.arquivo.name) or ""
+            except Exception:
+                data["nome"] = ""
+        return data

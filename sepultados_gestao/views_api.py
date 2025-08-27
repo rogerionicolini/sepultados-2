@@ -1435,6 +1435,32 @@ def _prefeitura_id_from_obj(obj):
     return None
 
 
+# views_api.py
+from django.shortcuts import get_object_or_404
+from django.contrib.contenttypes.models import ContentType
+from rest_framework import mixins, status, viewsets
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework.response import Response
+from rest_framework.exceptions import ValidationError, PermissionDenied
+
+from .models import Anexo
+from .serializers import AnexoSerializer
+
+def _prefeitura_id_from_obj(obj):
+    try:
+        if hasattr(obj, "prefeitura_id") and obj.prefeitura_id:
+            return obj.prefeitura_id
+        t = getattr(obj, "tumulo", None)
+        if t and getattr(t, "quadra", None) and getattr(t.quadra, "cemiterio", None):
+            return t.quadra.cemiterio.prefeitura_id
+        if getattr(obj, "cemiterio", None):
+            return obj.cemiterio.prefeitura_id
+    except Exception:
+        pass
+    return None
+
+
 class AnexoViewSet(mixins.ListModelMixin,
                    mixins.CreateModelMixin,
                    mixins.DestroyModelMixin,
@@ -1444,12 +1470,15 @@ class AnexoViewSet(mixins.ListModelMixin,
     permission_classes = [IsAuthenticated]
     parser_classes = (MultiPartParser, FormParser)
 
+    # --- helpers ---------------------------------------------------------
     def _parse_ct(self, s: str) -> ContentType:
         try:
             app_label, model = s.split(".", 1)
-            return ContentType.objects.get(app_label=app_label, model=model)
+            return ContentType.objects.get(app_label=app_label, model=model.lower())
         except Exception:
-            raise ValidationError({"content_type": "Use app_label.model (ex.: sepultados_gestao.sepultado)."})
+            raise ValidationError({
+                "content_type": "Use app_label.model (ex.: sepultados_gestao.sepultado)."
+            })
 
     def _check_scope(self, ct: ContentType, obj_id: str):
         try:
@@ -1465,6 +1494,7 @@ class AnexoViewSet(mixins.ListModelMixin,
             raise PermissionDenied("Sem permissão para anexos deste registro.")
         return obj
 
+    # --- list ------------------------------------------------------------
     def get_queryset(self):
         qs = super().get_queryset()
         ct_param = self.request.query_params.get("ct") or self.request.query_params.get("content_type")
@@ -1472,29 +1502,49 @@ class AnexoViewSet(mixins.ListModelMixin,
         if not (ct_param and obj_id):
             return qs.none()
         ct = self._parse_ct(ct_param)
-        self._check_scope(ct, obj_id)  # valida escopo
+        self._check_scope(ct, obj_id)
         return qs.filter(content_type=ct, object_id=int(obj_id))
 
-    def perform_create(self, serializer):
-        ct_param = self.request.data.get("content_type") or self.request.data.get("ct")
-        obj_id = self.request.data.get("object_id")
+    # --- create (sobrescrita para normalizar antes da validação) ---------
+    def create(self, request, *args, **kwargs):
+        data = request.data.copy()
+
+        ct_param = (
+            data.get("content_type") or data.get("ct")
+            or request.query_params.get("content_type") or request.query_params.get("ct")
+        )
+        obj_id = data.get("object_id") or request.query_params.get("object_id")
+
         if not (ct_param and obj_id):
-            raise ValidationError("content_type e object_id são obrigatórios.")
+            raise ValidationError({"detail": "content_type e object_id são obrigatórios."})
+
         ct = self._parse_ct(ct_param)
-        self._check_scope(ct, obj_id)  # valida escopo
-        serializer.save(content_type=ct, object_id=int(obj_id))
+        self._check_scope(ct, obj_id)
 
-    def destroy(self, request, *args, **kwargs):
-        instance = self.get_object()
-        self._check_scope(instance.content_type, instance.object_id)
-        return super().destroy(request, *args, **kwargs)
+        # injeta PKs que o serializer espera
+        data["content_type"] = ct.pk
+        data["object_id"] = int(obj_id)
 
+        serializer = self.get_serializer(data=data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)  # manter para setar campos calculados se desejar
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
+    # ainda mantém perform_create para garantir os campos corretos no save
+    def perform_create(self, serializer):
+        # como já validamos/normalizamos, isto é só para garantir consistência
+        ct_pk = serializer.validated_data.get("content_type").pk if hasattr(serializer.validated_data.get("content_type"), "pk") else serializer.validated_data.get("content_type")
+        ct = ContentType.objects.get(pk=ct_pk)
+        obj_id = serializer.validated_data.get("object_id")
+        serializer.save(content_type=ct, object_id=obj_id)
+
+    # --- delete ----------------------------------------------------------
     def get_object(self):
-        # Busca direto por PK para não depender do get_queryset() com ct/object_id
         obj = get_object_or_404(Anexo, pk=self.kwargs["pk"])
-        # valida escopo (prefeitura) antes de devolver
         self._check_scope(obj.content_type, obj.object_id)
         return obj
+
 
 
 # sepultados_gestao/views_api.py

@@ -321,24 +321,40 @@ function AnexosWidget({ context, objectId, api, disabled }) {
   async function enviar(e) {
     e.preventDefault();
     if (!arquivo) return;
+
     try {
       setUpLoading(true);
+
       const fd = new FormData();
-      fd.append("arquivo", arquivo);
+      fd.append("arquivo", arquivo, arquivo.name);
       if (nome) fd.append("nome", nome);
-      fd.append("content_type", context);
-      fd.append("object_id", String(objectId));
-      await api.post("anexos/", fd);
+      fd.append("content_type", context);          // ex.: "sepultados_gestao.concessaocontrato"
+      fd.append("object_id", String(objectId));    // id do contrato
+
+      // Dica de debug local (veja no console):
+      // for (const [k, v] of fd.entries()) console.log(k, v);
+
+      const resp = await fetch(`${API_BASE}anexos/`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${localStorage.getItem("accessToken")}` },
+        body: fd, // NÃO definir Content-Type manualmente!
+      });
+
+      if (!resp.ok) {
+        const data = await resp.clone().json().catch(() => null);
+        console.error("upload anexo", data || resp.statusText);
+        alert(`Não foi possível enviar o anexo.${data?.detail ? " " + data.detail : ""}`);
+        return;
+      }
+
       setArquivo(null);
       setNome("");
       await listar();
-    } catch (e) {
-      console.error("upload anexo", e?.response?.data || e);
-      alert("Não foi possível enviar o anexo.");
     } finally {
       setUpLoading(false);
     }
   }
+
   async function excluir(id) {
     if (!window.confirm("Excluir este anexo?")) return;
     try {
