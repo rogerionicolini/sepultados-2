@@ -1,6 +1,5 @@
-from urllib.parse import urlencode
-
-from django.urls import reverse, NoReverseMatch
+# relatorios/api_views.py
+from django.urls import reverse
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
@@ -12,106 +11,101 @@ from sepultados_gestao.serializers import (
     ConcessaoContratoSerializer, ReceitaSerializer, TumuloSerializer
 )
 
-
-# ========================= Helpers p/ PDF URL =========================
-def _params_lists(request):
-    """Preserva múltiplos valores (doseq=True no urlencode)."""
-    return {k: v for k, v in request.query_params.lists()}
-
-def _build_pdf_url(request, name_candidates, fallback_path: str) -> str:
+# ---------------------------------------------------------------------
+# Helper para construir URL absoluta do PDF
+# ---------------------------------------------------------------------
+def _build_pdf_url(request, name_candidates, fallback_path="/"):
     """
-    Tenta reverter pelo nome da rota do PDF; se não achar, usa o caminho fallback.
-    Sempre retorna URL ABSOLUTA, com a mesma querystring aplicada.
+    Tenta resolver por 'reverse' usando os nomes em name_candidates.
+    Se não conseguir, usa o 'fallback_path'.
+    Retorna URL ABSOLUTA (com domínio/porta do backend).
     """
-    path = None
     for name in name_candidates:
         try:
-            path = reverse(name)
-            break
-        except NoReverseMatch:
-            continue
+            url = reverse(name)
+            return request.build_absolute_uri(url)
         except Exception:
-            continue
+            pass
+    return request.build_absolute_uri(fallback_path)
 
-    if not path:
-        path = fallback_path  # Ex.: "/relatorios/sepultados/pdf/"
-
-    qs = urlencode(_params_lists(request), doseq=True)
-    if qs:
-        path = f"{path}?{qs}"
-    return request.build_absolute_uri(path)
-
-
-# ============================ Listagens ==============================
+# ---------------------------------------------------------------------
+# Listagens (JSON) usadas pelos relatórios
+# ---------------------------------------------------------------------
 @api_view(['GET'])
 def relatorio_sepultados_api(request):
     prefeitura = getattr(request, "prefeitura_ativa", None)
     if prefeitura:
-        queryset = Sepultado.objects.filter(tumulo__quadra__cemiterio__prefeitura=prefeitura)
+        qs = Sepultado.objects.filter(tumulo__quadra__cemiterio__prefeitura=prefeitura)
     else:
-        queryset = Sepultado.objects.none()
-    serializer = SepultadoSerializer(queryset, many=True)
-    return Response(serializer.data)
+        qs = Sepultado.objects.none()
+    return Response(SepultadoSerializer(qs, many=True, context={"request": request}).data)
 
 @api_view(['GET'])
 def relatorio_exumacoes_api(request):
     prefeitura = getattr(request, "prefeitura_ativa", None)
     if prefeitura:
-        queryset = Exumacao.objects.filter(tumulo__quadra__cemiterio__prefeitura=prefeitura)
+        qs = Exumacao.objects.filter(tumulo__quadra__cemiterio__prefeitura=prefeitura)
     else:
-        queryset = Exumacao.objects.none()
-    serializer = ExumacaoSerializer(queryset, many=True)
-    return Response(serializer.data)
+        qs = Exumacao.objects.none()
+    return Response(ExumacaoSerializer(qs, many=True, context={"request": request}).data)
 
 @api_view(['GET'])
 def relatorio_translados_api(request):
     prefeitura = getattr(request, "prefeitura_ativa", None)
     if prefeitura:
-        queryset = Translado.objects.filter(tumulo_destino__quadra__cemiterio__prefeitura=prefeitura)
+        qs = Translado.objects.filter(
+            tumulo_destino__quadra__cemiterio__prefeitura=prefeitura
+        ) | Translado.objects.filter(
+            sepultado__tumulo__quadra__cemiterio__prefeitura=prefeitura
+        )
     else:
-        queryset = Translado.objects.none()
-    serializer = TransladoSerializer(queryset, many=True)
-    return Response(serializer.data)
+        qs = Translado.objects.none()
+    return Response(TransladoSerializer(qs, many=True, context={"request": request}).data)
 
 @api_view(['GET'])
 def relatorio_contratos_api(request):
     prefeitura = getattr(request, "prefeitura_ativa", None)
     if prefeitura:
-        queryset = ConcessaoContrato.objects.filter(tumulo__quadra__cemiterio__prefeitura=prefeitura)
+        qs = ConcessaoContrato.objects.filter(tumulo__quadra__cemiterio__prefeitura=prefeitura)
     else:
-        queryset = ConcessaoContrato.objects.none()
-    serializer = ConcessaoContratoSerializer(queryset, many=True)
-    return Response(serializer.data)
+        qs = ConcessaoContrato.objects.none()
+    return Response(ConcessaoContratoSerializer(qs, many=True, context={"request": request}).data)
 
 @api_view(['GET'])
 def relatorio_receitas_api(request):
-    prefeitura = getattr(request, "prefeitura_ativa", None)
-    if prefeitura:
-        queryset = Receita.objects.filter(prefeitura=prefeitura)
+    """
+    Lista receitas. Aceita ?prefeitura=<id> (ou ?prefeitura_id=).
+    Senão, usa request.prefeitura_ativa. Sem escopo => vazio.
+    """
+    pref_id = request.query_params.get("prefeitura") or request.query_params.get("prefeitura_id")
+    pref_ativa = getattr(request, "prefeitura_ativa", None)
+
+    if pref_id:
+        qs = Receita.objects.filter(prefeitura_id=pref_id).order_by("-id")
+    elif pref_ativa:
+        qs = Receita.objects.filter(prefeitura=pref_ativa).order_by("-id")
     else:
-        queryset = Receita.objects.none()
-    serializer = ReceitaSerializer(queryset, many=True)
-    return Response(serializer.data)
+        qs = Receita.objects.none()
+
+    return Response(ReceitaSerializer(qs, many=True, context={"request": request}).data)
 
 @api_view(['GET'])
 def relatorio_tumulos_api(request):
     prefeitura = getattr(request, "prefeitura_ativa", None)
     if prefeitura:
-        queryset = Tumulo.objects.filter(quadra__cemiterio__prefeitura=prefeitura)
+        qs = Tumulo.objects.filter(quadra__cemiterio__prefeitura=prefeitura)
     else:
-        queryset = Tumulo.objects.none()
-    serializer = TumuloSerializer(queryset, many=True)
-    return Response(serializer.data)
+        qs = Tumulo.objects.none()
+    return Response(TumuloSerializer(qs, many=True, context={"request": request}).data)
 
-
-# ====================== Endpoints de URL do PDF ======================
+# ---------------------------------------------------------------------
+# Endpoints que devolvem a URL ABSOLUTA dos PDFs
+# ---------------------------------------------------------------------
 @api_view(['GET'])
 def relatorio_sepultados_pdf_url(request):
     url = _build_pdf_url(
         request,
-        # coloque aqui os possíveis nomes da sua rota de PDF
         name_candidates=["relatorio_sepultados_pdf", "relatorios:relatorio_sepultados_pdf"],
-        # e o caminho “bruto” que você já usa no backend
         fallback_path="/relatorios/sepultados/pdf/",
     )
     return Response({"pdf_url": url})

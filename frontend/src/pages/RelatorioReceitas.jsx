@@ -4,43 +4,61 @@ import axios from "axios";
 
 const API_BASE = "http://127.0.0.1:8000/api/";
 
-// Helpers token / cemitério
+// ===== Helpers token / prefeitura =====
 const getToken = () => localStorage.getItem("accessToken") || "";
-function getCemiterioAtivoId() {
+
+function getPrefeituraAtivaIdLocal() {
   try {
-    const raw = localStorage.getItem("cemiterioAtivo");
+    const raw = localStorage.getItem("prefeituraAtiva");
     if (raw) {
       const o = JSON.parse(raw);
       if (o?.id) return Number(o.id);
     }
   } catch {}
-  const id = localStorage.getItem("cemiterioAtivoId");
+  const id = localStorage.getItem("prefeituraAtivaId");
   return id ? Number(id) : null;
 }
 
-// formatadores
+async function fetchPrefeituraLogada(api) {
+  try {
+    const { data } = await api.get("prefeitura-logada/");
+    // aceita {id, ...} ou {prefeitura: {id, ...}}
+    const pid = data?.id ?? data?.prefeitura?.id ?? null;
+    if (pid) {
+      localStorage.setItem("prefeituraAtivaId", String(pid));
+      localStorage.setItem(
+        "prefeituraAtiva",
+        JSON.stringify({ id: pid, nome: data?.nome || data?.prefeitura?.nome || "" })
+      );
+      return Number(pid);
+    }
+  } catch {}
+  return null;
+}
+
+// ===== formatadores =====
 const toISO = (d) => {
   if (!d) return "";
   const dt = new Date(d);
   return Number.isNaN(dt.getTime()) ? "" : dt.toISOString().slice(0, 10);
 };
-const fmtDate = (d) => (toISO(d) || "-");
+const fmtDate = (d) => toISO(d) || "-";
 const fmtMoney = (n) =>
   Number(n || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
-// status normalizado
+// ===== normalizadores =====
+// status: apenas 'aberto' | 'pago' (e 'todos' no filtro)
 const statusOf = (r) => {
   const s = String(r.status || r.situacao || "").toLowerCase();
-  if (s) return s;
+  if (s === "pago" || s === "aberto") return s;
+  // fallback: alguns payloads trazem booleano
   if (r.pago === true) return "pago";
-  if (r.cancelado === true) return "cancelado";
-  return "pendente";
+  return "aberto";
 };
-// forma normalizada
+
 const formaOf = (r) =>
   r.forma_pagamento || r.metodo_pagamento || r.forma || r.metodo || "-";
 
-// origem/descrição
 function origemLabel(r) {
   if (r.origem_label) return r.origem_label;
   if (r.tipo) return r.tipo;
@@ -53,12 +71,10 @@ function origemLabel(r) {
   return r.descricao || r.historico || "-";
 }
 
-// valor numérico
 const valorNum = (r) => Number(r.valor || r.total || r.valor_total || 0);
 
 export default function RelatorioReceitas() {
   const token = getToken();
-  const cemiterioId = getCemiterioAtivoId();
 
   const api = useMemo(
     () =>
@@ -77,31 +93,62 @@ export default function RelatorioReceitas() {
   // filtros
   const [dataInicio, setDataInicio] = useState("");
   const [dataFim, setDataFim] = useState("");
-  const [status, setStatus] = useState("todos"); // todos | pago | pendente | cancelado
+  const [status, setStatus] = useState("todos"); // todos | aberto | pago
   const [forma, setForma] = useState("todas");   // dinâmica a partir do dataset
   const [busca, setBusca] = useState("");
 
-  // carregar
-  async function carregar() {
-    try {
-      setLoading(true);
-      setErro("");
-      const params = cemiterioId ? { cemiterio: cemiterioId } : {};
-      const res = await api.get("receitas/", { params });
-      const arr = Array.isArray(res.data) ? res.data : res.data?.results ?? [];
-      setRows(arr);
-    } catch (e) {
-      console.error(e?.response?.data || e);
-      setErro("Erro ao carregar receitas.");
-    } finally {
-      setLoading(false);
+  // prefeitura
+  const [prefId, setPrefId] = useState(getPrefeituraAtivaIdLocal());
+
+  async function ensurePrefeituraId() {
+    if (prefId) return prefId;
+    const fetched = await fetchPrefeituraLogada(api);
+    if (fetched) {
+      setPrefId(fetched);
+      return fetched;
     }
+    return null;
+  }
+
+  async function carregar() {
+    setLoading(true);
+    setErro("");
+
+    const pid = await ensurePrefeituraId();
+    if (!pid) {
+      setRows([]);
+      setErro("Nenhuma prefeitura ativa encontrada. Faça login ou selecione uma prefeitura.");
+      setLoading(false);
+      return;
+    }
+
+    const params = { prefeitura: pid };
+    const paths = ["receitas/", "relatorios/receitas/"];
+    let arr = [];
+
+    for (const path of paths) {
+      try {
+        const res = await api.get(path, { params });
+        const data = res.data;
+        arr = Array.isArray(data) ? data : data?.results ?? [];
+        if (arr.length) break;
+      } catch {
+        // tenta a próxima rota
+      }
+    }
+
+    if (!arr.length) {
+      setErro("Nenhuma receita encontrada para a prefeitura atual.");
+    }
+
+    setRows(arr);
+    setLoading(false);
   }
 
   useEffect(() => {
     carregar();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cemiterioId]);
+  }, [prefId]);
 
   // formas dinâmicas
   const formasOpts = useMemo(() => {
@@ -143,18 +190,11 @@ export default function RelatorioReceitas() {
     });
   }, [rows, dataInicio, dataFim, status, forma, busca]);
 
-  // resumo
+  // resumo (apenas aberto/pago)
   const resumo = useMemo(() => {
-    const base = {
-      total: filtrados.length,
-      pago: 0,
-      pendente: 0,
-      cancelado: 0,
-      somaTudo: 0,
-      somaPagos: 0,
-    };
+    const base = { total: filtrados.length, aberto: 0, pago: 0, somaTudo: 0, somaPagos: 0 };
     filtrados.forEach((r) => {
-      const st = statusOf(r);
+      const st = statusOf(r); // 'aberto' | 'pago'
       base[st] += 1;
       const v = valorNum(r);
       base.somaTudo += isNaN(v) ? 0 : v;
@@ -163,39 +203,41 @@ export default function RelatorioReceitas() {
     return base;
   }, [filtrados]);
 
-  // PDF
   async function gerarPDF() {
-    const qs = new URLSearchParams();
-    if (dataInicio) qs.set("data_inicio", dataInicio);
-    if (dataFim) qs.set("data_fim", dataFim);
-    if (status && status !== "todos") qs.set("status", status);
-    if (forma && forma !== "todas") qs.set("forma", forma);
-    if (busca) qs.set("q", busca);
-
-    const tries = [
-      "/relatorios/receitas/pdf/",
-      "/relatorios/relatorio_receitas_pdf/",
-      "/relatorio/receitas/pdf/",
-      "/relatorio/relatorio_receitas_pdf/",
-    ];
-
-    for (const base of tries) {
-      const url = `${base}?${qs.toString()}`;
-      try {
-        const res = await fetch(url, { method: "GET", credentials: "include" });
-        const ct = res.headers.get("content-type") || "";
-        if (res.ok && ct.includes("pdf")) {
-          const blob = await res.blob();
-          const blobUrl = URL.createObjectURL(blob);
-          window.open(blobUrl, "_blank");
-          setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
-          return;
-        }
-      } catch {
-        /* tenta próxima rota */
-      }
+    const pid = await ensurePrefeituraId();
+    if (!pid) {
+      alert("Selecione uma prefeitura para gerar o PDF.");
+      return;
     }
-    alert("Não foi possível gerar o PDF. Verifique a URL do relatório no backend.");
+
+    const params = { prefeitura: pid };
+    if (dataInicio) params.data_inicio = dataInicio;
+    if (dataFim) params.data_fim = dataFim;
+    if (status && status !== "todos") params.status = status; // 'aberto' | 'pago'
+    if (forma && forma !== "todas") params.forma = forma;
+    if (busca) params.q = busca;
+
+    try {
+      const { data } = await api.get("relatorios/receitas/pdf-url/", { params });
+      if (data?.pdf_url) {
+        window.open(data.pdf_url, "_blank");
+        return;
+      }
+      throw new Error("Sem pdf_url");
+    } catch {
+      // fallback ABSOLUTO
+      const backendRoot = API_BASE.replace(/\/api\/?$/, ""); // http://127.0.0.1:8000
+      const qs = new URLSearchParams(params).toString();
+      const candidates = [
+        `${backendRoot}/relatorios/receitas/pdf/?${qs}`,
+        `${backendRoot}/relatorios/relatorio_receitas_pdf/?${qs}`,
+      ];
+      for (const url of candidates) {
+        const w = window.open(url, "_blank");
+        if (w) return;
+      }
+      alert("Não foi possível gerar o PDF. Verifique as rotas no backend.");
+    }
   }
 
   const dataCol = (r) => fmtDate(r.data_pagamento || r.data || r.data_receita || r.created_at);
@@ -250,9 +292,8 @@ export default function RelatorioReceitas() {
               className="w-full border border-[#bcd2a7] rounded-lg px-3 py-2 bg-white"
             >
               <option value="todos">Todos</option>
+              <option value="aberto">Aberto</option>
               <option value="pago">Pago</option>
-              <option value="pendente">Pendente</option>
-              <option value="cancelado">Cancelado</option>
             </select>
           </div>
           <div>
@@ -281,7 +322,7 @@ export default function RelatorioReceitas() {
         </div>
 
         {/* Resumo */}
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <div className="bg-white rounded-lg p-3 border border-[#e0efcf]">
             <div className="text-xs text-green-900">Total</div>
             <div className="text-xl font-semibold">{resumo.total}</div>
@@ -291,12 +332,8 @@ export default function RelatorioReceitas() {
             <div className="text-xl font-semibold">{resumo.pago}</div>
           </div>
           <div className="bg-white rounded-lg p-3 border border-[#e0efcf]">
-            <div className="text-xs text-green-900">Pendentes</div>
-            <div className="text-xl font-semibold">{resumo.pendente}</div>
-          </div>
-          <div className="bg-white rounded-lg p-3 border border-[#e0efcf]">
-            <div className="text-xs text-green-900">Canceladas</div>
-            <div className="text-xl font-semibold">{resumo.cancelado}</div>
+            <div className="text-xs text-green-900">Abertas</div>
+            <div className="text-xl font-semibold">{resumo.aberto}</div>
           </div>
           <div className="bg-white rounded-lg p-3 border border-[#e0efcf]">
             <div className="text-xs text-green-900">Somatório (pagas)</div>

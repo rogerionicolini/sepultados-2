@@ -158,39 +158,38 @@ export default function RelatorioContratos() {
     return out;
   }, [filtrados]);
 
-  // abrir PDF no backend com os filtros atuais
   async function gerarPDF() {
-    const qs = new URLSearchParams();
-    if (dataInicio) qs.set("data_inicio", dataInicio);
-    if (dataFim) qs.set("data_fim", dataFim);
-    if (forma && forma !== "todas") qs.set("forma_pagamento", forma);
+    // filtros atuais
+    const params = {};
+    if (dataInicio) params.data_inicio = dataInicio;
+    if (dataFim) params.data_fim = dataFim;
+    if (forma && forma !== "todas") params.forma_pagamento = forma;
 
-    const tries = [
-      "/relatorios/contratos/pdf/",
-      "/relatorios/relatorio_contratos_pdf/",
-      "/relatorios/contratos_concessao/pdf/",
-      "/relatorios/relatorio_contratos_concessao_pdf/",
-      "/relatorio/contratos/pdf/",
-      "/relatorio/relatorio_contratos_pdf/",
-    ];
+    // MUITO IMPORTANTE: passar o cemitério
+    if (cemiterioId) params.cemiterio = cemiterioId;
 
-    for (const base of tries) {
-      const url = `${base}?${qs.toString()}`;
-      try {
-        const res = await fetch(url, { method: "GET", credentials: "include" });
-        const ct = res.headers.get("content-type") || "";
-        if (res.ok && ct.includes("pdf")) {
-          const blob = await res.blob();
-          const blobUrl = URL.createObjectURL(blob);
-          window.open(blobUrl, "_blank");
-          setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
-          return;
-        }
-      } catch {
-        /* tenta próxima rota */
+    try {
+      // pega a URL ABSOLUTA do backend
+      const { data } = await api.get("relatorios/contratos/pdf-url/", { params });
+      if (data?.pdf_url) {
+        window.open(data.pdf_url, "_blank");
+        return;
       }
+      throw new Error("Sem pdf_url");
+    } catch (e) {
+      // fallback ABSOLUTO (nunca relativo à porta 5173)
+      const backendRoot = API_BASE.replace(/\/api\/?$/, ""); // http://127.0.0.1:8000
+      const qs = new URLSearchParams(params).toString();
+      const candidates = [
+        `${backendRoot}/relatorios/contratos/pdf/?${qs}`,
+        `${backendRoot}/relatorios/relatorio_contratos_pdf/?${qs}`,
+      ];
+      for (const url of candidates) {
+        const w = window.open(url, "_blank");
+        if (w) return;
+      }
+      alert("Não foi possível gerar o PDF. Verifique as rotas no backend.");
     }
-    alert("Não foi possível gerar o PDF. Verifique a URL do relatório no backend.");
   }
 
   const tumuloLabel = (r) =>

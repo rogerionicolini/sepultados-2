@@ -4,7 +4,7 @@ import axios from "axios";
 
 const API_BASE = "http://127.0.0.1:8000/api/";
 
-// Helpers token / cemitério
+/* ================= Helpers ================= */
 const getToken = () => localStorage.getItem("accessToken") || "";
 function getCemiterioAtivoId() {
   try {
@@ -18,37 +18,43 @@ function getCemiterioAtivoId() {
   return id ? Number(id) : null;
 }
 
-// formatadores
+const unwrap = (d) => (Array.isArray(d) ? d : d?.results ?? []);
 const toISO = (d) => {
   if (!d) return "";
   const dt = new Date(d);
   return Number.isNaN(dt.getTime()) ? "" : dt.toISOString().slice(0, 10);
 };
 const fmtDate = (d) => (toISO(d) || "-");
-const fmtMoney = (n) => Number(n || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+const fmtMoney = (n) =>
+  Number(n || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const maskCPF = (v = "") => {
   const s = v.replace(/\D/g, "");
   if (s.length <= 3) return s;
-  if (s.length <= 6) return `${s.slice(0,3)}.${s.slice(3)}`;
-  if (s.length <= 9) return `${s.slice(0,3)}.${s.slice(3,6)}.${s.slice(6)}`;
-  return `${s.slice(0,3)}.${s.slice(3,6)}.${s.slice(6,9)}-${s.slice(9,11)}`;
+  if (s.length <= 6) return `${s.slice(0, 3)}.${s.slice(3)}`;
+  if (s.length <= 9) return `${s.slice(0, 3)}.${s.slice(3, 6)}.${s.slice(6)}`;
+  return `${s.slice(0, 3)}.${s.slice(3, 6)}.${s.slice(6, 9)}-${s.slice(9, 11)}`;
 };
+
+// pega a melhor “data” disponível
+const pickDate = (r) =>
+  r.data || r.data_translado || r.data_mov || r.data_documento || r.created_at || r.updated_at || "";
 
 // label do destino
 function destinoLabel(row, tumMap) {
   const d = row.destino;
   if (d === "outro_tumulo") {
-    const tlabel =
+    const lbl =
       row.tumulo_destino?.identificador ||
       tumMap.get(String(row.tumulo_destino)) ||
       row.tumulo_destino_label ||
       "-";
-    return `Outro Túmulo: ${tlabel}`;
+    return `Outro Túmulo: ${lbl}`;
   }
   if (d === "outro_cemiterio") return `Outro Cemitério: ${row.cemiterio_nome || "-"}`;
   return "Ossário";
 }
 
+/* ================= Page ================= */
 export default function RelatorioTranslados() {
   const token = getToken();
   const cemiterioId = getCemiterioAtivoId();
@@ -62,7 +68,6 @@ export default function RelatorioTranslados() {
     [token]
   );
 
-  // dados
   const [rows, setRows] = useState([]);
   const [sepMap, setSepMap] = useState(new Map());
   const [tumMap, setTumMap] = useState(new Map());
@@ -77,44 +82,64 @@ export default function RelatorioTranslados() {
   const [busca, setBusca] = useState("");
 
   async function carregar() {
+    setLoading(true);
+    setErro("");
+
+    const params = cemiterioId ? { cemiterio: cemiterioId } : {};
+
     try {
-      setLoading(true);
-      setErro("");
-      const params = cemiterioId ? { cemiterio: cemiterioId } : {};
-      const [tRes, sRes, tmRes] = await Promise.all([
-        api.get("translados/", { params }),
+      // >>> Fonte de verdade: ViewSet principal
+      let resp = await api.get("traslados/", { params });
+
+      // Se por algum motivo esse endpoint não existir (404), tenta o de relatórios
+      if (resp.status === 404) {
+        resp = await api.get("relatorios/translados/", { params });
+      }
+
+      const tArrRaw = resp.data;
+      const tArr = Array.isArray(tArrRaw) ? tArrRaw : (tArrRaw?.results ?? []);
+      setRows(tArr);
+
+      // carrega auxiliares em paralelo (se falhar, não derruba a lista)
+      const [sRes, tmRes] = await Promise.allSettled([
         api.get("sepultados/", { params }),
         api.get("tumulos/", { params }),
       ]);
 
-      const tArr = Array.isArray(tRes.data) ? tRes.data : tRes.data?.results ?? [];
-      const sArr = Array.isArray(sRes.data) ? sRes.data : sRes.data?.results ?? [];
-      const tmArr = Array.isArray(tmRes.data) ? tmRes.data : tmRes.data?.results ?? [];
+      if (sRes.status === "fulfilled") {
+        const sArrRaw = sRes.value.data;
+        const sArr = Array.isArray(sArrRaw) ? sArrRaw : (sArrRaw?.results ?? []);
+        const sm = new Map();
+        sArr.forEach((s) => sm.set(String(s.id ?? s.pk), s.nome || s.identificador || `#${s.id ?? s.pk}`));
+        setSepMap(sm);
+      } else {
+        setSepMap(new Map());
+      }
 
-      const sm = new Map();
-      sArr.forEach((s) =>
-        sm.set(String(s.id ?? s.pk), s.nome || s.identificador || `#${s.id ?? s.pk}`)
-      );
-
-      const tm = new Map();
-      tmArr.forEach((t) => {
-        const id = t.id ?? t.pk;
-        const base = t.identificador || t.codigo || t.nome || `Túmulo ${id}`;
-        const q = t.quadra?.codigo || t.quadra?.nome || t.quadra?.id || null;
-        const linha = t.usar_linha && (t.linha || t.linha === 0) ? ` L${t.linha}` : "";
-        tm.set(String(id), q ? `Q ${q} - ${base}${linha}` : `${base}${linha}`);
-      });
-
-      setRows(tArr);
-      setSepMap(sm);
-      setTumMap(tm);
+      if (tmRes.status === "fulfilled") {
+        const tmArrRaw = tmRes.value.data;
+        const tmArr = Array.isArray(tmArrRaw) ? tmArrRaw : (tmArrRaw?.results ?? []);
+        const tm = new Map();
+        tmArr.forEach((t) => {
+          const id = t.id ?? t.pk;
+          const base = t.identificador || t.codigo || t.nome || `Túmulo ${id}`;
+          const q = t.quadra?.codigo || t.quadra?.nome || t.quadra?.id || null;
+          const linha = t.usar_linha && (t.linha || t.linha === 0) ? ` L${t.linha}` : "";
+          tm.set(String(id), q ? `Q ${q} - ${base}${linha}` : `${base}${linha}`);
+        });
+        setTumMap(tm);
+      } else {
+        setTumMap(new Map());
+      }
     } catch (e) {
-      console.error(e?.response?.data || e);
+      console.error("translados: erro ao carregar", e?.response?.data || e);
       setErro("Erro ao carregar translados.");
+      setRows([]);
     } finally {
       setLoading(false);
     }
   }
+
 
   useEffect(() => {
     carregar();
@@ -130,7 +155,8 @@ export default function RelatorioTranslados() {
     return rows.filter((r) => {
       // período
       if (ini || fim) {
-        const d = new Date(toISO(r.data) || r.data);
+        const src = pickDate(r);
+        const d = new Date(toISO(src) || src);
         if (ini && d < ini) return false;
         if (fim && d > fim) return false;
       }
@@ -141,12 +167,9 @@ export default function RelatorioTranslados() {
 
       if (!q) return true;
       const nd = (r.numero_documento || "").toString().toLowerCase();
-      const s =
-        r.sepultado?.nome ||
-        sepMap.get(String(r.sepultado)) ||
-        "";
+      const s = r.sepultado?.nome || sepMap.get(String(r.sepultado)) || "";
       const dest = destinoLabel(r, tumMap).toLowerCase();
-      const cpf = (r.cpf || "").toString().toLowerCase();
+      const cpf = (r.cpf || r.cpf_responsavel || "").toString().toLowerCase();
       const mot = (r.motivo || "").toString().toLowerCase();
       return (
         nd.includes(q) ||
@@ -158,77 +181,60 @@ export default function RelatorioTranslados() {
     });
   }, [rows, busca, dataInicio, dataFim, destino, forma, sepMap, tumMap]);
 
-  // resumo
   const resumo = useMemo(() => {
-    const out = {
-      total: filtrados.length,
-      outro_tumulo: 0,
-      outro_cemiterio: 0,
-      ossario: 0,
-      valorTotal: 0,
-    };
+    const out = { total: 0, outro_tumulo: 0, outro_cemiterio: 0, ossario: 0, valorTotal: 0 };
     filtrados.forEach((r) => {
+      out.total += 1;
       if (r.destino === "outro_tumulo") out.outro_tumulo += 1;
       else if (r.destino === "outro_cemiterio") out.outro_cemiterio += 1;
       else out.ossario += 1;
-      const v = Number(r.valor || 0);
+      const v = Number(r.valor || r.valor_total || 0);
       if (!Number.isNaN(v)) out.valorTotal += v;
     });
     return out;
   }, [filtrados]);
 
-  // abrir PDF no backend com os filtros atuais
+  /* ================= PDF ================= */
   async function gerarPDF() {
-    const qs = new URLSearchParams();
-    if (dataInicio) qs.set("data_inicio", dataInicio);
-    if (dataFim) qs.set("data_fim", dataFim);
-    if (destino && destino !== "todos") qs.set("destino", destino);
-    if (forma && forma !== "todas") qs.set("forma_pagamento", forma);
+    const params = {};
+    if (dataInicio) params.data_inicio = dataInicio;
+    if (dataFim) params.data_fim = dataFim;
+    if (destino && destino !== "todos") params.destino = destino;
+    if (forma && forma !== "todas") params.forma_pagamento = forma;
+    if (cemiterioId) params.cemiterio = cemiterioId;
 
-    const tries = [
-      "/relatorios/translados/pdf/",
-      "/relatorios/relatorio_translados_pdf/",
-      "/relatorio/translados/pdf/",
-      "/relatorio/relatorio_translados_pdf/",
-    ];
-
-    for (const base of tries) {
-      const url = `${base}?${qs.toString()}`;
-      try {
-        const res = await fetch(url, { method: "GET", credentials: "include" });
-        const ct = res.headers.get("content-type") || "";
-        if (res.ok && ct.includes("pdf")) {
-          const blob = await res.blob();
-          const blobUrl = URL.createObjectURL(blob);
-          window.open(blobUrl, "_blank");
-          setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
-          return;
-        }
-      } catch {
-        /* tenta próxima rota */
+    try {
+      const { data } = await api.get("relatorios/translados/pdf-url/", { params });
+      if (data?.pdf_url) {
+        window.open(data.pdf_url, "_blank");
+        return;
       }
+      throw new Error("Sem pdf_url");
+    } catch (e) {
+      const backendRoot = API_BASE.replace(/\/api\/?$/, ""); // http://127.0.0.1:8000
+      const qs = new URLSearchParams(params).toString();
+      const candidates = [
+        `${backendRoot}/relatorios/translados/pdf/?${qs}`,
+        `${backendRoot}/relatorios/relatorio_translados_pdf/?${qs}`,
+      ];
+      for (const url of candidates) {
+        const w = window.open(url, "_blank");
+        if (w) return;
+      }
+      alert("Não foi possível gerar o PDF. Verifique as rotas no backend.");
     }
-    alert("Não foi possível gerar o PDF. Verifique a URL do relatório no backend.");
   }
 
-  const sepLabel = (r) => r.sepultado?.nome || sepMap.get(String(r.sepultado)) || "-";
-
+  /* ================= UI ================= */
   return (
     <div className="p-6 space-y-4">
-      {/* Header */}
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold text-green-900">Relatórios • Translados</h1>
         <div className="flex gap-2">
-          <button
-            onClick={carregar}
-            className="bg-[#688f53] text-white px-4 py-2 rounded-xl shadow hover:opacity-90"
-          >
+          <button onClick={carregar} className="bg-[#688f53] text-white px-4 py-2 rounded-xl shadow hover:opacity-90">
             Atualizar
           </button>
-          <button
-            onClick={gerarPDF}
-            className="bg-green-800 text-white px-4 py-2 rounded-xl shadow hover:bg-green-700"
-          >
+          <button onClick={gerarPDF} className="bg-green-800 text-white px-4 py-2 rounded-xl shadow hover:bg-green-700">
             Gerar PDF
           </button>
         </div>
@@ -239,29 +245,18 @@ export default function RelatorioTranslados() {
         <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
           <div>
             <label className="block text-sm text-green-900 mb-1">Data início</label>
-            <input
-              type="date"
-              value={dataInicio}
-              onChange={(e) => setDataInicio(e.target.value)}
-              className="w-full border border-[#bcd2a7] rounded-lg px-3 py-2"
-            />
+            <input type="date" value={dataInicio} onChange={(e) => setDataInicio(e.target.value)}
+              className="w-full border border-[#bcd2a7] rounded-lg px-3 py-2" />
           </div>
           <div>
             <label className="block text-sm text-green-900 mb-1">Data fim</label>
-            <input
-              type="date"
-              value={dataFim}
-              onChange={(e) => setDataFim(e.target.value)}
-              className="w-full border border-[#bcd2a7] rounded-lg px-3 py-2"
-            />
+            <input type="date" value={dataFim} onChange={(e) => setDataFim(e.target.value)}
+              className="w-full border border-[#bcd2a7] rounded-lg px-3 py-2" />
           </div>
           <div>
             <label className="block text-sm text-green-900 mb-1">Destino</label>
-            <select
-              value={destino}
-              onChange={(e) => setDestino(e.target.value)}
-              className="w-full border border-[#bcd2a7] rounded-lg px-3 py-2 bg-white"
-            >
+            <select value={destino} onChange={(e) => setDestino(e.target.value)}
+              className="w-full border border-[#bcd2a7] rounded-lg px-3 py-2 bg-white">
               <option value="todos">Todos</option>
               <option value="outro_tumulo">Outro Túmulo</option>
               <option value="outro_cemiterio">Outro Cemitério</option>
@@ -270,11 +265,8 @@ export default function RelatorioTranslados() {
           </div>
           <div>
             <label className="block text-sm text-green-900 mb-1">Forma de Pagamento</label>
-            <select
-              value={forma}
-              onChange={(e) => setForma(e.target.value)}
-              className="w-full border border-[#bcd2a7] rounded-lg px-3 py-2 bg-white"
-            >
+            <select value={forma} onChange={(e) => setForma(e.target.value)}
+              className="w-full border border-[#bcd2a7] rounded-lg px-3 py-2 bg-white">
               <option value="todas">Todas</option>
               <option value="gratuito">Gratuito</option>
               <option value="avista">À Vista</option>
@@ -283,12 +275,9 @@ export default function RelatorioTranslados() {
           </div>
           <div className="md:col-span-2">
             <label className="block text-sm text-green-900 mb-1">Buscar</label>
-            <input
-              placeholder="Nº doc., sepultado, destino, CPF resp., motivo…"
-              value={busca}
-              onChange={(e) => setBusca(e.target.value)}
-              className="w-full border border-[#bcd2a7] rounded-lg px-3 py-2"
-            />
+            <input placeholder="Nº doc., sepultado, destino, CPF resp., motivo…"
+              value={busca} onChange={(e) => setBusca(e.target.value)}
+              className="w-full border border-[#bcd2a7] rounded-lg px-3 py-2" />
           </div>
         </div>
 
@@ -343,12 +332,12 @@ export default function RelatorioTranslados() {
                   return (
                     <tr key={id} className="border-t border-[#d8e9c0] hover:bg-white">
                       <td className="py-2 px-3">{r.numero_documento || "-"}</td>
-                      <td className="py-2 px-3">{fmtDate(r.data)}</td>
-                      <td className="py-2 px-3">{sepLabel(r)}</td>
+                      <td className="py-2 px-3">{fmtDate(pickDate(r))}</td>
+                      <td className="py-2 px-3">{r.sepultado?.nome || sepMap.get(String(r.sepultado)) || "-"}</td>
                       <td className="py-2 px-3">{destinoLabel(r, tumMap)}</td>
-                      <td className="py-2 px-3">{maskCPF(r.cpf || "")}</td>
+                      <td className="py-2 px-3">{maskCPF(r.cpf || r.cpf_responsavel || "")}</td>
                       <td className="py-2 px-3 capitalize">{r.forma_pagamento || "-"}</td>
-                      <td className="py-2 px-3">{fmtMoney(r.valor)}</td>
+                      <td className="py-2 px-3">{fmtMoney(r.valor || r.valor_total)}</td>
                     </tr>
                   );
                 })}

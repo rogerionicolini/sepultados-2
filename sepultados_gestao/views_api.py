@@ -1074,25 +1074,44 @@ class TransladoViewSet(ContextoRestritoQuerysetMixin, viewsets.ModelViewSet):
         return self.pdf(request, pk)
 
 
-# views_api.py
-from django.shortcuts import get_object_or_404
-from django.http import HttpResponse
-from rest_framework.decorators import action
-from .views import gerar_recibo_pdf  # <- já existe
+# views_api.py (trecho)
 
-class ReceitaViewSet(PrefeituraRestritaQuerysetMixin, viewsets.ModelViewSet):
-    queryset = Receita.objects.all()
+from rest_framework import viewsets
+from rest_framework.permissions import IsAuthenticated
+from sepultados_gestao.models import Receita
+from sepultados_gestao.serializers import ReceitaSerializer
+
+class ReceitaViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet das receitas.
+    Filtra por prefeitura via querystring (?prefeitura=) quando informada,
+    senão usa request.prefeitura_ativa. Sem escopo => vazio.
+    """
+    queryset = Receita.objects.all().select_related("prefeitura")
     serializer_class = ReceitaSerializer
-    prefeitura_field = "prefeitura"
     permission_classes = [IsAuthenticated]
 
+    def get_queryset(self):
+        qs = super().get_queryset()
+
+        req = self.request
+        pref_id = (
+            req.query_params.get("prefeitura")
+            or req.query_params.get("prefeitura_id")
+        )
+        if pref_id:
+            return qs.filter(prefeitura_id=pref_id).order_by("-id")
+
+        pref_ativa = getattr(req, "prefeitura_ativa", None)
+        if pref_ativa:
+            return qs.filter(prefeitura=pref_ativa).order_by("-id")
+
+        return qs.none()
+
+    # PDF individual (recibo)
     @action(detail=True, methods=["get"], url_path="pdf")
     def pdf(self, request, pk=None):
-        """
-        Exibe o recibo em PDF (mesma saída do admin),
-        mas autenticado via API normal.
-        """
-        # Reaproveita a view existente que já renderiza e retorna HttpResponse
+        from .views import gerar_recibo_pdf
         return gerar_recibo_pdf(request, receita_id=pk)
 
 
