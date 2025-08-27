@@ -165,38 +165,39 @@ export default function RelatorioExumacoes() {
     return out;
   }, [filtrados]);
 
-  // abrir PDF no backend com os filtros atuais
+  // dentro de RelatorioExumacoes.jsx
   async function gerarPDF() {
-    const qs = new URLSearchParams();
-    if (dataInicio) qs.set("data_inicio", dataInicio);
-    if (dataFim) qs.set("data_fim", dataFim);
-    if (forma && forma !== "todas") qs.set("forma_pagamento", forma);
+    // monta filtros atuais
+    const params = {};
+    if (dataInicio) params.data_inicio = dataInicio;
+    if (dataFim) params.data_fim = dataFim;
+    if (forma && forma !== "todas") params.forma_pagamento = forma;
+    if (cemiterioId) params.cemiterio = cemiterioId;
 
-    const tries = [
-      "/relatorios/exumacoes/pdf/",
-      "/relatorios/relatorio_exumacoes_pdf/",
-      "/relatorio/exumacoes/pdf/",
-      "/relatorio/relatorio_exumacoes_pdf/",
-    ];
-
-    for (const base of tries) {
-      const url = `${base}?${qs.toString()}`;
-      try {
-        const res = await fetch(url, { method: "GET", credentials: "include" });
-        const ct = res.headers.get("content-type") || "";
-        if (res.ok && ct.includes("pdf")) {
-          const blob = await res.blob();
-          const blobUrl = URL.createObjectURL(blob);
-          window.open(blobUrl, "_blank");
-          setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
-          return;
-        }
-      } catch {
-        /* tenta próxima rota */
+    try {
+      // pega a URL ABSOLUTA do PDF no backend (ex.: http://127.0.0.1:8000/relatorios/exumacoes/pdf/?...)
+      const { data } = await api.get("relatorios/exumacoes/pdf-url/", { params });
+      if (data?.pdf_url) {
+        window.open(data.pdf_url, "_blank");
+        return;
       }
+      throw new Error("Sem pdf_url");
+    } catch (e) {
+      // fallback com caminhos ABSOLUTOS no backend (nunca relativos ao 5173)
+      const backendRoot = API_BASE.replace(/\/api\/?$/, ""); // "http://127.0.0.1:8000"
+      const qs = new URLSearchParams(params).toString();
+      const candidates = [
+        `${backendRoot}/relatorios/exumacoes/pdf/?${qs}`,
+        `${backendRoot}/relatorios/relatorio_exumacoes_pdf/?${qs}`,
+      ];
+      for (const url of candidates) {
+        const w = window.open(url, "_blank");
+        if (w) return;
+      }
+      alert("Não foi possível gerar o PDF. Verifique as rotas no backend.");
     }
-    alert("Não foi possível gerar o PDF. Verifique a URL do relatório no backend.");
   }
+
 
   const sepLabel = (r) =>
     r.sepultado?.nome || sepMap.get(String(r.sepultado)) || "-";

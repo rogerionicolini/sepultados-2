@@ -152,40 +152,38 @@ export default function RelatorioSepultados() {
 
   // abrir PDF no backend com os filtros atuais
   async function gerarPDF() {
-    const qs = new URLSearchParams();
-    if (dataInicio) qs.set("data_inicio", dataInicio);
-    if (dataFim) qs.set("data_fim", dataFim);
-    // o view de PDF usa "transladado" (com N) — garantimos isso:
-    if (status && status !== "todos") {
-      qs.set("status", status === "transladado" ? "transladado" : status);
-    }
+    // monta os filtros atuais
+    const params = {};
+    if (dataInicio) params.data_inicio = dataInicio;
+    if (dataFim) params.data_fim = dataFim;
+    if (status && status !== "todos") params.status = status;
+    if (cemiterioId) params.cemiterio = cemiterioId;
 
-    const tries = [
-      "/relatorios/sepultados/pdf/",
-      "/relatorios/relatorio_sepultados_pdf/",
-      "/relatorio/sepultados/pdf/",
-      "/relatorio/relatorio_sepultados_pdf/",
-    ];
-
-    for (const base of tries) {
-      const url = `${base}?${qs.toString()}`;
-      try {
-        const res = await fetch(url, { method: "GET", credentials: "include" });
-        const ct = res.headers.get("content-type") || "";
-        if (res.ok && ct.includes("pdf")) {
-          // abre numa nova aba
-          const blob = await res.blob();
-          const blobUrl = URL.createObjectURL(blob);
-          window.open(blobUrl, "_blank");
-          setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
-          return;
-        }
-      } catch {
-        /* tenta próxima rota */
+    try {
+      // 1) pega a URL absoluta do backend (ex.: http://127.0.0.1:8000/relatorios/sepultados/pdf/?...)
+      const { data } = await api.get("relatorios/sepultados/pdf-url/", { params });
+      if (data?.pdf_url) {
+        window.open(data.pdf_url, "_blank");
+        return;
       }
+      throw new Error("Sem pdf_url");
+    } catch (e) {
+      // 2) Fallback: tenta rotas ABSOLUTAS no backend (nunca relativas)
+      const backendRoot = API_BASE.replace(/\/api\/?$/, ""); // "http://127.0.0.1:8000"
+      const qs = new URLSearchParams(params).toString();
+      const candidates = [
+        `${backendRoot}/relatorios/sepultados/pdf/?${qs}`,
+        `${backendRoot}/relatorios/relatorio_sepultados_pdf/?${qs}`,
+      ];
+
+      for (const url of candidates) {
+        const w = window.open(url, "_blank");
+        if (w) return;
+      }
+      alert("Não foi possível gerar o PDF. Verifique as rotas no backend.");
     }
-    alert("Não foi possível gerar o PDF. Verifique a URL do relatório no backend.");
   }
+
 
   const tumuloLabel = (s) =>
     s.tumulo?.identificador ||
