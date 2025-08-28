@@ -1945,3 +1945,62 @@ def selecionar_cemiterio_api(request):
 
     request.session["cemiterio_ativo_id"] = cid
     return Response({"ok": True, "cemiterio": cid})
+
+
+# --- BACKUP API ---
+from rest_framework.decorators import api_view, permission_classes, authentication_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.authentication import SessionAuthentication
+from rest_framework_simplejwt.authentication import JWTAuthentication
+from rest_framework.response import Response
+
+def _unwrap(func):
+    while hasattr(func, "__wrapped__"):
+        func = func.__wrapped__
+    return func
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+@authentication_classes([JWTAuthentication, SessionAuthentication])  # JWT ou sessão
+def backup_prefeitura_api(request):
+    pref_id = (
+        request.query_params.get("prefeitura")
+        or getattr(getattr(request, "prefeitura_ativa", None), "id", None)
+    )
+    if not pref_id:
+        return Response({"detail": "Defina uma prefeitura ativa antes do backup."}, status=400)
+
+    from .views_backup import backup_prefeitura_ativa as _admin_view
+    raw_view = _unwrap(_admin_view)
+
+    dj_req = request._request
+    dj_req.session["prefeitura_ativa_id"] = int(pref_id)
+
+    return raw_view(dj_req)
+
+
+
+# --- Auditorias: URL JSON para abrir o PDF ---
+from urllib.parse import urlencode
+from django.urls import reverse
+from rest_framework.decorators import api_view, permission_classes, authentication_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.authentication import SessionAuthentication
+from rest_framework_simplejwt.authentication import JWTAuthentication
+from rest_framework.response import Response
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+@authentication_classes([JWTAuthentication, SessionAuthentication])
+def auditorias_pdf_url(request):
+    """
+    Retorna {"pdf_url": "<absoluta>"} apontando para /relatorios/auditorias/pdf/
+    preservando os filtros recebidos via querystring.
+    (Tudo dentro do app sepultados_gestao.)
+    """
+    qs = request.query_params.dict()
+    url = reverse("sepultados_gestao:auditorias_pdf")  # aponta p/ urls de sepultados_gestao
+    if qs:
+        url = f"{url}?{urlencode(qs)}"
+    return Response({"pdf_url": request.build_absolute_uri(url)})
+

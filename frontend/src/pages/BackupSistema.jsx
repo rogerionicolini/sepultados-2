@@ -1,31 +1,65 @@
 // src/pages/BackupSistema.jsx
 import React, { useState } from "react";
 
-const BASE = "http://127.0.0.1:8000";
+const API_BASE = "http://127.0.0.1:8000";
+
+function getToken() {
+  return localStorage.getItem("accessToken") || "";
+}
+function getPrefeituraAtivaId() {
+  try {
+    const raw = localStorage.getItem("prefeituraAtiva");
+    if (raw) {
+      const o = JSON.parse(raw);
+      if (o?.id) return Number(o.id);
+    }
+  } catch {}
+  const id = localStorage.getItem("prefeituraAtivaId");
+  return id ? Number(id) : null;
+}
 
 export default function BackupSistema() {
   const [busy, setBusy] = useState(false);
-  const [logs, setLogs] = useState([]);
+  const [msg, setMsg] = useState("");
 
-  function log(msg, kind = "info") {
-    setLogs((l) => [{ ts: new Date(), kind, msg }, ...l]);
-  }
+  async function gerar() {
+    const token = getToken();
+    if (!token) {
+      alert("Sem token. Faça login no app primeiro.");
+      return;
+    }
+    setBusy(true);
+    setMsg("Iniciando backup...");
 
-  function baixarBackup() {
+    const prefId = getPrefeituraAtivaId();
+    const qs = new URLSearchParams({ ts: String(Date.now()) });
+    if (prefId) qs.set("prefeitura", String(prefId));
+
     try {
-      setBusy(true);
-      log("Iniciando backup...");
-
-      // ROTA CERTA do seu urls.py:
-      const url = `${BASE}/backup/prefeitura/?ts=${Date.now()}`;
-
-      // navega para a rota (o download começa pelo próprio Django)
-      window.location.assign(url);
-
-      log("Backup disparado. (Se não iniciou o download, confira se está logado no Admin e se a prefeitura ativa está definida.)", "ok");
+      const res = await fetch(`${API_BASE}/api/backup/prefeitura/?${qs}`, {
+        method: "GET",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`HTTP ${res.status} - ${text}`);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `backup_prefeitura_${prefId ?? "ativa"}_${new Date()
+        .toISOString()
+        .slice(0, 19)
+        .replace(/[:T]/g, "-")}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      setMsg("Backup gerado e download iniciado.");
     } catch (e) {
-      log(`Falha ao iniciar backup: ${e?.message || e}`, "err");
-      alert("Falha ao gerar backup. Veja os logs.");
+      setMsg(`Erro: ${e.message}`);
+      alert("Falha ao gerar backup.");
     } finally {
       setBusy(false);
     }
@@ -34,28 +68,14 @@ export default function BackupSistema() {
   return (
     <div className="p-6 space-y-4">
       <div className="bg-[#f0f8ea] rounded-xl p-5 shadow border border-[#e0efcf]">
-        <p className="text-green-900/90 mb-3">
-          Este backup reúne dados da <b>prefeitura ativa</b> e baixa um .zip.
-        </p>
         <button
-          onClick={baixarBackup}
+          onClick={gerar}
           disabled={busy}
           className="px-4 py-2 rounded-lg bg-[#224c15] text-white disabled:opacity-60"
         >
           {busy ? "Gerando..." : "Gerar Backup (ZIP)"}
         </button>
-      </div>
-
-      <div className="bg-white rounded-xl border border-[#e0efcf] p-4 shadow">
-        <div className="text-sm font-semibold text-green-900 mb-2">Mensagens</div>
-        <ul className="space-y-1 text-sm max-h-64 overflow-auto">
-          {logs.map((l, i) => (
-            <li key={i} className={l.kind === "ok" ? "text-green-800" : l.kind === "err" ? "text-red-700" : "text-gray-700"}>
-              [{new Date(l.ts).toLocaleTimeString()}] {l.msg}
-            </li>
-          ))}
-          {logs.length === 0 && <li className="text-gray-500">Nada ainda.</li>}
-        </ul>
+        <div className="mt-3 text-sm text-green-900">{msg || " "}</div>
       </div>
     </div>
   );

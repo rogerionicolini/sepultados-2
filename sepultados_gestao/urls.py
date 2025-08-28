@@ -1,6 +1,7 @@
 from django.urls import path
 from . import views
 from . import views_backup  # ✅ certifique-se de importar corretamente o novo módulo
+from . import views_reports
 
 app_name = 'sepultados_gestao'
 
@@ -30,4 +31,6 @@ urlpatterns = [
     path("backup/completo/", views_backup.backup_completo, name="backup_completo"),
     path("backup/prefeitura/", views_backup.backup_prefeitura_ativa, name="backup_prefeitura"),
     path("backup/", views_backup.backup_sistema, name="backup_sistema"),
+
+    path("relatorios/auditorias/pdf/", views_reports.auditorias_pdf, name="auditorias_pdf"),
 ]

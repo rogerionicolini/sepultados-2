@@ -417,6 +417,20 @@ class PrefeituraSerializer(serializers.ModelSerializer):
         instance.save()
         return instance
 
+    def get_brasao_url(self, obj):
+        if getattr(obj, "brasao", None) and hasattr(obj.brasao, "url"):
+            request = self.context.get("request")
+            url = obj.brasao.url
+            if request:
+                url = request.build_absolute_uri(url)
+            # cache-bust com timestamp do arquivo (se existir caminho local)
+            try:
+                mtime = int(os.path.getmtime(obj.brasao.path))
+                url = f"{url}?v={mtime}"
+            except Exception:
+                pass
+            return url
+        return None
 
 # serializers.py
 import os

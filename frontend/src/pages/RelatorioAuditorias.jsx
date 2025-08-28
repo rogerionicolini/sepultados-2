@@ -3,14 +3,9 @@ import React, { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 
 const API_BASE = "http://127.0.0.1:8000/api/";
-const token = () => localStorage.getItem("accessToken") || "";
+const getToken = () => localStorage.getItem("accessToken") || "";
 
 // helpers
-const toISO = (d) => {
-  if (!d) return "";
-  const dt = new Date(d);
-  return Number.isNaN(dt.getTime()) ? "" : dt.toISOString().slice(0, 10);
-};
 const fmtDateTime = (s) => {
   if (!s) return "-";
   const d = new Date(s);
@@ -23,18 +18,14 @@ const fmtDateTime = (s) => {
   return `${dd}/${mm}/${yyyy}, ${hh}:${mi}`;
 };
 
-// mapeia r.acao (caso backend não traga acao_label)
+// normaliza ação para PT-BR
 const acaoPT = (raw, label) => {
   if (label) return label;
   const r = String(raw || "").toLowerCase();
-  if (r === "add" || r === "adição" || r === "adicao" || r === "create" || r === "criação" || r === "criacao")
-    return "Adição";
-  if (r === "change" || r === "edição" || r === "edicao" || r === "update")
-    return "Edição";
-  if (r === "delete" || r === "exclusão" || r === "exclusao")
-    return "Exclusão";
-  if (r === "fail" || r === "falha" || r === "erro" || r === "error")
-    return "Falha";
+  if (["add", "adição", "adicao", "create", "criação", "criacao"].includes(r)) return "Adição";
+  if (["change", "edição", "edicao", "update"].includes(r)) return "Edição";
+  if (["delete", "exclusão", "exclusao"].includes(r)) return "Exclusão";
+  if (["fail", "falha", "erro", "error"].includes(r)) return "Falha";
   return raw || "-";
 };
 
@@ -43,7 +34,7 @@ export default function RelatorioAuditorias() {
     () =>
       axios.create({
         baseURL: API_BASE,
-        headers: { Authorization: `Bearer ${token()}` },
+        headers: { Authorization: `Bearer ${getToken()}` },
       }),
     []
   );
@@ -76,7 +67,7 @@ export default function RelatorioAuditorias() {
       const { data } = await api.get("auditorias/", { params });
       const arr = Array.isArray(data) ? data : data?.results || [];
       setRows(arr);
-    } catch (e) {
+    } catch {
       setErro("Não foi possível carregar as auditorias.");
     } finally {
       setLoading(false);
@@ -120,6 +111,41 @@ export default function RelatorioAuditorias() {
     return base;
   }, [rows]);
 
+  // PDF
+  async function gerarPDF() {
+    const params = {};
+    if (dataInicio) params.data_inicio = dataInicio;
+    if (dataFim) params.data_fim = dataFim;
+    if (acao && acao !== "todas") params.acao = acao;
+    if (usuario && usuario !== "todos") params.usuario = usuario;
+    if (entidade && entidade !== "todas") params.entidade = entidade;
+    if (busca) params.q = busca;
+
+    try {
+      // pede ao backend a URL ABSOLUTA do PDF com os filtros preservados
+      const { data } = await api.get("auditorias/pdf-url/", { params });
+      if (data?.pdf_url) {
+        window.open(data.pdf_url, "_blank");
+        return;
+      }
+      throw new Error("sem pdf_url");
+    } catch {
+      // fallback: tenta abrir direto as rotas de PDF/HTML
+      const backendRoot = API_BASE.replace(/\/api\/?$/, "");
+      const qs = new URLSearchParams(params).toString();
+      const tries = [
+        `${backendRoot}/relatorios/auditorias/pdf/?${qs}`,
+        `${backendRoot}/relatorio/auditorias/pdf/?${qs}`,
+        `${backendRoot}/relatorios/historicos/pdf/?${qs}`,
+      ];
+      for (const url of tries) {
+        const w = window.open(url, "_blank");
+        if (w) return;
+      }
+      alert("Não foi possível gerar o PDF. Verifique as rotas no backend.");
+    }
+  }
+
   return (
     <div className="p-6 space-y-4">
       {/* Título + ações */}
@@ -130,7 +156,7 @@ export default function RelatorioAuditorias() {
             Atualizar
           </button>
           <button
-            onClick={() => window.open("http://127.0.0.1:8000/relatorios/auditorias/pdf/", "_blank")}
+            onClick={gerarPDF}
             className="bg-green-800 text-white px-4 py-2 rounded-xl shadow hover:bg-green-700"
           >
             Gerar PDF
@@ -143,18 +169,29 @@ export default function RelatorioAuditorias() {
         <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
           <div>
             <label className="block text-sm text-green-900 mb-1">Data início</label>
-            <input type="date" value={dataInicio} onChange={(e) => setDataInicio(e.target.value)}
-              className="w-full border border-[#bcd2a7] rounded-lg px-3 py-2" />
+            <input
+              type="date"
+              value={dataInicio}
+              onChange={(e) => setDataInicio(e.target.value)}
+              className="w-full border border-[#bcd2a7] rounded-lg px-3 py-2"
+            />
           </div>
           <div>
             <label className="block text-sm text-green-900 mb-1">Data fim</label>
-            <input type="date" value={dataFim} onChange={(e) => setDataFim(e.target.value)}
-              className="w-full border border-[#bcd2a7] rounded-lg px-3 py-2" />
+            <input
+              type="date"
+              value={dataFim}
+              onChange={(e) => setDataFim(e.target.value)}
+              className="w-full border border-[#bcd2a7] rounded-lg px-3 py-2"
+            />
           </div>
           <div>
             <label className="block text-sm text-green-900 mb-1">Ação</label>
-            <select value={acao} onChange={(e) => setAcao(e.target.value)}
-              className="w-full border border-[#bcd2a7] rounded-lg px-3 py-2 bg-white">
+            <select
+              value={acao}
+              onChange={(e) => setAcao(e.target.value)}
+              className="w-full border border-[#bcd2a7] rounded-lg px-3 py-2 bg-white"
+            >
               <option value="todas">Todas</option>
               <option value="adição">Adição</option>
               <option value="edição">Edição</option>
@@ -164,27 +201,40 @@ export default function RelatorioAuditorias() {
           </div>
           <div>
             <label className="block text-sm text-green-900 mb-1">Usuário</label>
-            <select value={usuario} onChange={(e) => setUsuario(e.target.value)}
-              className="w-full border border-[#bcd2a7] rounded-lg px-3 py-2 bg-white">
+            <select
+              value={usuario}
+              onChange={(e) => setUsuario(e.target.value)}
+              className="w-full border border-[#bcd2a7] rounded-lg px-3 py-2 bg-white"
+            >
               {usuariosOpts.map(([val, label]) => (
-                <option key={val} value={val}>{label}</option>
+                <option key={val} value={val}>
+                  {label}
+                </option>
               ))}
             </select>
           </div>
           <div>
             <label className="block text-sm text-green-900 mb-1">Entidade</label>
-            <select value={entidade} onChange={(e) => setEntidade(e.target.value)}
-              className="w-full border border-[#bcd2a7] rounded-lg px-3 py-2 bg-white">
+            <select
+              value={entidade}
+              onChange={(e) => setEntidade(e.target.value)}
+              className="w-full border border-[#bcd2a7] rounded-lg px-3 py-2 bg-white"
+            >
               {entidadesOpts.map((m) => (
-                <option key={m} value={m}>{m === "todas" ? "Todas" : m}</option>
+                <option key={m} value={m}>
+                  {m === "todas" ? "Todas" : m}
+                </option>
               ))}
             </select>
           </div>
           <div>
             <label className="block text-sm text-green-900 mb-1">Buscar</label>
-            <input value={busca} onChange={(e) => setBusca(e.target.value)}
-              placeholder="Objeto, ID, usuário, IP, detalhe…"
-              className="w-full border border-[#bcd2a7] rounded-lg px-3 py-2" />
+            <input
+              value={busca}
+              onChange={(e) => setBusca(e.target.value)}
+              placeholder="Objeto, ID, usuário, detalhe…"
+              className="w-full border border-[#bcd2a7] rounded-lg px-3 py-2"
+            />
           </div>
         </div>
 
@@ -236,8 +286,10 @@ export default function RelatorioAuditorias() {
                 {rows.map((r, i) => (
                   <tr key={r.id ?? i} className="border-t border-[#d8e9c0] hover:bg-white">
                     <td className="py-2 px-3">{fmtDateTime(r.data_hora)}</td>
-                    <td className="py-2 px-3">{r.usuario_email || r.usuario_username || r.usuario_nome || "-"}</td>
-                    <td className="py-2 px-3">{acaoPT(r.acao)}</td>
+                    <td className="py-2 px-3">
+                      {r.usuario_email || r.usuario_username || r.usuario_nome || "-"}
+                    </td>
+                    <td className="py-2 px-3">{acaoPT(r.acao, r.acao_label)}</td>
                     <td className="py-2 px-3">{r.modelo || "-"}</td>
                     <td className="py-2 px-3">{r.objeto_id ?? "-"}</td>
                     <td className="py-2 px-3">{r.detalhes || "-"}</td>

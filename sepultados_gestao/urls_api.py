@@ -1,3 +1,4 @@
+# sepultados_gestao/urls_api.py
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 
@@ -26,8 +27,10 @@ from .views_api import (
     ImportQuadrasAPIView,
     ImportTumulosAPIView,
     ImportSepultadosAPIView,
-    # Seleção de cemitério (nova)
+    # Seleção cemitério
     selecionar_cemiterio_api,
+    # <-- importa a url do PDF
+    auditorias_pdf_url,
 )
 
 router = DefaultRouter()
@@ -43,6 +46,9 @@ router.register(r"tumulos", TumuloViewSet)
 router.register(r"anexos", AnexoViewSet, basename="anexo")
 
 urlpatterns = [
+    # 👉 Coloque a rota JSON que entrega o link do PDF ANTES do include(router.urls)
+    path("auditorias/pdf-url/", auditorias_pdf_url, name="auditorias-pdf-url"),
+
     path("", include(router.urls)),
 
     # Diversos
@@ -57,12 +63,10 @@ urlpatterns = [
     # Seleciona e grava o cemitério ativo na sessão
     path("selecionar-cemiterio/", selecionar_cemiterio_api, name="selecionar-cemiterio"),
 
-    # Rotas antigas (mantidas)
+    # Importações (aliases antigos/novos)
     path("importacoes/quadras/", ImportQuadrasAPIView.as_view(), name="import-quadras"),
     path("importacoes/tumulos/", ImportTumulosAPIView.as_view(), name="import-tumulos"),
     path("importacoes/sepultados/", ImportSepultadosAPIView.as_view(), name="import-sepultados"),
-
-    # Aliases que o frontend usa
     path("importar/quadras/", ImportQuadrasAPIView.as_view(), name="importar-quadras"),
     path("importar/tumulos/", ImportTumulosAPIView.as_view(), name="importar-tumulos"),
     path("importar/sepultados/", ImportSepultadosAPIView.as_view(), name="importar-sepultados"),
