@@ -369,7 +369,7 @@ export default function Receitas() {
                           className="px-3 py-1 rounded border border-blue-300 text-blue-800 bg-blue-50 hover:bg-blue-100"
                           title="Abrir recibo (PDF)"
                         >
-                          PDF
+                          Recibo
                         </button>
                         <button
                           onClick={() => abrirEditar(r, false)}

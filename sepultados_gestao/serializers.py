@@ -117,10 +117,81 @@ class ReceitaSerializer(serializers.ModelSerializer):
         model = Receita
         fields = '__all__'
 
+# sepultados_gestao/serializers.py
+from rest_framework import serializers
+from .models import RegistroAuditoria
+
+
 class RegistroAuditoriaSerializer(serializers.ModelSerializer):
+    # campos de apresentação
+    usuario_email = serializers.SerializerMethodField()
+    usuario_username = serializers.SerializerMethodField()
+    usuario_nome = serializers.SerializerMethodField()
+    acao_label = serializers.SerializerMethodField()
+    detalhes = serializers.SerializerMethodField()
+
     class Meta:
         model = RegistroAuditoria
-        fields = '__all__'
+        fields = [
+            "id",
+            "acao",            # valor cru no banco (ex.: Add/Change/Delete/Fail)
+            "acao_label",      # valor amigável em pt-BR
+            "modelo",
+            "objeto_id",
+            "data_hora",
+            "prefeitura",
+            "usuario",
+            "usuario_id",
+            "usuario_email",
+            "usuario_username",
+            "usuario_nome",
+            "detalhes",
+            "representacao",
+        ]
+
+    # --- helpers de usuário ---
+    def _user(self, obj):
+        return getattr(obj, "usuario", None)
+
+    def get_usuario_email(self, obj):
+        u = self._user(obj)
+        return getattr(u, "email", None) if u else None
+
+    def get_usuario_username(self, obj):
+        u = self._user(obj)
+        return getattr(u, "username", None) if u else None
+
+    def get_usuario_nome(self, obj):
+        u = self._user(obj)
+        if not u:
+            return None
+        try:
+            full = u.get_full_name()
+        except Exception:
+            full = ""
+        return full or u.first_name or u.username
+
+    # --- detalhes / label ---
+    def get_detalhes(self, obj):
+        # se tiver outro campo com detalhes, ajuste aqui
+        return getattr(obj, "representacao", None)
+
+    def get_acao_label(self, obj):
+        raw = (obj.acao or "").strip()
+        mapa = {
+            "Add": "Adição",
+            "Change": "Edição",
+            "Delete": "Exclusão",
+            "Fail": "Falha",
+            # caso já venha em pt:
+            "adição": "Adição",
+            "edição": "Edição",
+            "exclusão": "Exclusão",
+            "falha": "Falha",
+        }
+        return mapa.get(raw, mapa.get(raw.lower(), raw.capitalize()))
+
+
 
 class SepultadoSerializer(serializers.ModelSerializer):
     class Meta:

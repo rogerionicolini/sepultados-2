@@ -1116,12 +1116,100 @@ class ReceitaViewSet(viewsets.ModelViewSet):
 
 
 
-class RegistroAuditoriaViewSet(PrefeituraRestritaQuerysetMixin, viewsets.ModelViewSet):
+# sepultados_gestao/views_api.py
+from datetime import datetime
+from django.db.models import Q
+from rest_framework import viewsets
+from rest_framework.permissions import IsAuthenticated
+
+from .models import RegistroAuditoria
+from .serializers import RegistroAuditoriaSerializer
+from .mixins import PrefeituraRestritaQuerysetMixin
+
+
+class RegistroAuditoriaViewSet(PrefeituraRestritaQuerysetMixin, viewsets.ReadOnlyModelViewSet):
+    """
+    Relatório de auditorias (somente leitura).
+    - Filtra por prefeitura ativa.
+    - Esconde ações feitas por superusuários do backend.
+    - Filtros: data_inicio, data_fim, acao, usuario, entidade (modelo), q (busca livre).
+    """
     queryset = RegistroAuditoria.objects.all()
     serializer_class = RegistroAuditoriaSerializer
     prefeitura_field = "prefeitura"
     permission_classes = [IsAuthenticated]
 
+    def _parse_date(self, s: str):
+        try:
+            return datetime.strptime(s, "%Y-%m-%d").date()
+        except Exception:
+            return None
+
+    def get_queryset(self):
+        req = self.request
+        qs = RegistroAuditoria.objects.select_related("usuario", "prefeitura")
+
+        # escopo (prefeitura ativa)
+        pref = getattr(req, "prefeitura_ativa", None)
+        if pref and getattr(pref, "id", None):
+            qs = qs.filter(prefeitura_id=pref.id)
+
+        # ocultar ações de superusuário (admin)
+        qs = qs.exclude(usuario__is_superuser=True)
+
+        p = req.query_params
+
+        # datas (campo é data_hora)
+        di = self._parse_date(p.get("data_inicio") or "")
+        df = self._parse_date(p.get("data_fim") or "")
+        if di:
+            qs = qs.filter(data_hora__date__gte=di)
+        if df:
+            qs = qs.filter(data_hora__date__lte=df)
+
+        # ação (aceita pt/inglês/variações)
+        acao = (p.get("acao") or "").strip().lower()
+        if acao and acao not in {"todas", "todos"}:
+            normalizador = {
+                # adição
+                "adição": "Add", "adicao": "Add", "add": "Add", "criação": "Add", "criacao": "Add", "create": "Add",
+                # edição
+                "edição": "Change", "edicao": "Change", "change": "Change", "update": "Change",
+                # exclusão
+                "exclusão": "Delete", "exclusao": "Delete", "delete": "Delete", "remocao": "Delete", "remoção": "Delete",
+                # falha
+                "falha": "Fail", "fail": "Fail", "erro": "Fail", "error": "Fail",
+            }
+            acao_interna = normalizador.get(acao, acao)
+            qs = qs.filter(acao__iexact=acao_interna)
+
+        # usuário (id numérico ou username)
+        usuario = (p.get("usuario") or "").strip()
+        if usuario and usuario.lower() != "todos":
+            try:
+                qs = qs.filter(usuario_id=int(usuario))
+            except Exception:
+                qs = qs.filter(usuario__username__iexact=usuario)
+
+        # entidade/modelo
+        entidade = (p.get("entidade") or "").strip()
+        if entidade and entidade.lower() != "todas":
+            qs = qs.filter(modelo__iexact=entidade)
+
+        # busca livre
+        q = (p.get("q") or "").strip()
+        if q:
+            or_ = (
+                Q(representacao__icontains=q)
+                | Q(usuario__email__icontains=q)
+                | Q(usuario__username__icontains=q)
+            )
+            if q.isdigit():
+                or_ = or_ | Q(objeto_id=int(q))
+            qs = qs.filter(or_)
+
+        # ordenação correta
+        return qs.order_by("-data_hora", "-id")
 
 # ===========================
 # FLUXO DE CADASTRO/EMAIL
