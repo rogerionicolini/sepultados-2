@@ -342,7 +342,7 @@ export default function Sepultados() {
                                 className="px-3 py-1 rounded border border-blue-300 text-blue-800 bg-blue-50 hover:bg-blue-100"
                                 title="Abrir relatório (PDF)"
                               >
-                                Relatório
+                                Imprimir
                               </button>
                               <button
                                 onClick={() => {

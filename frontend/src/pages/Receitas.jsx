@@ -206,34 +206,34 @@ export default function Receitas() {
     window.open(`${API_BASE}${url}`, "_blank", "noopener,noreferrer");
   }
 
-  async function abrirEditar(r, pagar = false) {
+  async function abrirPdf(r) {
     try {
-      // carrega do backend (garante números exatos do admin)
-      const res = await api.get(qsWith(`${ENDPOINT}${r.id || r.pk}/`));
-      const full = res.data || r;
+      const url = qsWith(`${ENDPOINT}${r.id || r.pk}/pdf/`);
+      const res = await api.get(url, { responseType: "blob" }); // envia Authorization
 
-      setEditando(full);
-      // mantém exatamente os valores do backend (sem inventar 33.334,00)
-      const descontoStr = toPtBRString(full.desconto);
-      const pagoStr = toPtBRString(full.valor_pago);
+      const blob = new Blob([res.data], { type: "application/pdf" });
+      const blobUrl = URL.createObjectURL(blob);
 
-      // se for "Pagar", pré-preenche valor_pago = total - desconto
-      let valorPagoStr = pagoStr;
-      if (pagar) {
-        const v = toNumber(full.valor_total) - toNumber(full.desconto || 0);
-        valorPagoStr = toPtBRString(Math.max(0, v));
+      const w = window.open(blobUrl, "_blank", "noopener,noreferrer");
+      if (!w) {
+        // fallback (popup bloqueado): abre via link programático
+        const a = document.createElement("a");
+        a.href = blobUrl;
+        a.target = "_blank";
+        a.rel = "noopener";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
       }
 
-      setForm({
-        desconto: descontoStr,
-        valor_pago: valorPagoStr,
-      });
-      setModalAberto(true);
+      // libera memória depois de um tempo
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
     } catch (e) {
-      console.error("abrirEditar ERRO:", e?.response?.status, e?.response?.data || e);
-      alert("Não foi possível abrir a receita.");
+      console.error("PDF ERRO:", e?.response?.status, e?.response?.data || e);
+      alert("Não foi possível abrir o recibo (PDF).");
     }
   }
+
 
   async function salvar() {
     if (!editando) return;

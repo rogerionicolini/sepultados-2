@@ -266,7 +266,7 @@ export default function Translados() {
                                 onClick={() => abrirPDF(r)}
                                 className="px-3 py-1 rounded border border-blue-300 text-blue-800 bg-blue-50 hover:bg-blue-100"
                               >
-                                Relatório
+                                Imprimir
                               </button>
                               <button
                                 onClick={() => {
