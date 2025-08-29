@@ -24,7 +24,33 @@ const toISO = (d) => {
   const dt = new Date(d);
   return Number.isNaN(dt.getTime()) ? "" : dt.toISOString().slice(0, 10);
 };
-const fmtDate = (d) => (toISO(d) || "-");
+
+// parse seguro para comparar no filtro
+const parseDate = (v) => {
+  if (!v) return null;
+  if (typeof v === "string" && /^\d{4}-\d{2}-\d{2}/.test(v)) {
+    const [y, m, d] = v.slice(0, 10).split("-");
+    return new Date(Number(y), Number(m) - 1, Number(d));
+  }
+  const dt = new Date(v);
+  return Number.isNaN(dt.getTime()) ? null : dt;
+};
+
+// exibição em dd/mm/aaaa
+const fmtDateBR = (v) => {
+  if (!v) return "-";
+  if (typeof v === "string" && /^\d{4}-\d{2}-\d{2}/.test(v)) {
+    const [y, m, d] = v.slice(0, 10).split("-");
+    return `${d}/${m}/${y}`;
+  }
+  const dt = new Date(v);
+  if (Number.isNaN(dt.getTime())) return "-";
+  const dd = String(dt.getDate()).padStart(2, "0");
+  const mm = String(dt.getMonth() + 1).padStart(2, "0");
+  const yy = dt.getFullYear();
+  return `${dd}/${mm}/${yy}`;
+};
+
 const fmtMoney = (n) =>
   Number(n || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
@@ -106,18 +132,19 @@ export default function RelatorioContratos() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cemiterioId]);
 
-  // aplicação dos filtros no cliente
   const filtrados = useMemo(() => {
     const q = busca.trim().toLowerCase();
     const ini = dataInicio ? new Date(dataInicio) : null;
     const fim = dataFim ? new Date(dataFim) : null;
 
     return rows.filter((r) => {
+      // datas: só compara se a data do registro existir e for válida
       if (ini || fim) {
-        const d = new Date(toISO(r.data_contrato) || r.data_contrato);
-        if (ini && d < ini) return false;
-        if (fim && d > fim) return false;
+        const d = parseDate(r.data_contrato);
+        if (ini && d && d < ini) return false;
+        if (fim && d && d > fim) return false;
       }
+
       if (forma !== "todas" && r.forma_pagamento !== forma) return false;
 
       if (!q) return true;
@@ -129,6 +156,7 @@ export default function RelatorioContratos() {
         tumMap.get(String(r.tumulo)) ||
         r.tumulo_label ||
         "";
+
       return (
         num.includes(q) ||
         nome.includes(q) ||
@@ -137,6 +165,7 @@ export default function RelatorioContratos() {
       );
     });
   }, [rows, busca, dataInicio, dataFim, forma, tumMap]);
+
 
   // resumo
   const resumo = useMemo(() => {
@@ -316,7 +345,7 @@ export default function RelatorioContratos() {
                   return (
                     <tr key={id} className="border-t border-[#d8e9c0] hover:bg-white">
                       <td className="py-2 px-3">{r.numero_contrato || "-"}</td>
-                      <td className="py-2 px-3">{fmtDate(r.data_contrato)}</td>
+                      <td className="py-2 px-3">{fmtDateBR(r.data_contrato)}</td>
                       <td className="py-2 px-3">{r.nome || "-"}</td>
                       <td className="py-2 px-3">{maskDoc(r.cpf || "")}</td>
                       <td className="py-2 px-3">{tumuloLabel(r)}</td>

@@ -457,6 +457,20 @@ function AnexosWidget({ context, objectId, api, disabled }) {
     </div>
   );
 }
+// Formata para dd/mm/aaaa (aceita 'YYYY-MM-DD', 'YYYY-MM-DDTHH:MM:SS', Date, etc.)
+function toBRDate(value) {
+  if (!value) return "";
+  const s = String(value);
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/); // ISO
+  if (m) return `${m[3]}/${m[2]}/${m[1]}`;
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return s;
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const yy = d.getFullYear();
+  return `${dd}/${mm}/${yy}`;
+}
+
 
 /* ============================== Formulário =============================== */
 export default function FormularioContrato({ contratoId, onCancel, onSuccess }) {
@@ -742,7 +756,7 @@ export default function FormularioContrato({ contratoId, onCancel, onSuccess }) 
             <div className="text-green-900 font-semibold mb-2">Identificação</div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {displayReadOnly("Número do Contrato", form.numero_contrato || "-")}
-              {displayReadOnly("Data do Contrato", form.data_contrato || "-")}
+              {displayReadOnly("Data do Contrato", toBRDate(form.data_contrato) || "-")}
             </div>
           </div>
 

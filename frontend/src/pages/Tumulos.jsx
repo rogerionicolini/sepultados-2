@@ -2,10 +2,35 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import axios from "axios";
 
+
 const API_BASE = "http://127.0.0.1:8000/api/";
 const ENDPOINT = "tumulos/";
 const QUADRAS_EP = "quadras/";
 const SEPULTADOS_EP = "sepultados/"; // ajuste se necessário
+
+// Fallback seguro: se o import existir usamos; se algo vier "esquisito", formatamos aqui mesmo.
+const toBR = (value) => {
+  try {
+    if (typeof _toBR === "function") return _toBR(value);
+  } catch (_) {}
+  if (!value) return "";
+  const s = String(value);
+
+  // ISO yyyy-mm-dd
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return `${m[3].padStart(2, "0")}/${m[2]}/${m[1]}`;
+
+  // Date parseável
+  const d = new Date(s);
+  if (!isNaN(d)) {
+    const dd = String(d.getDate()).padStart(2, "0");
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const yy = d.getFullYear();
+    return `${dd}/${mm}/${yy}`;
+  }
+  return s;
+};
+
 
 // ------ helpers comuns ------
 function getCemiterioAtivo() {
@@ -86,19 +111,20 @@ function exumacaoDisplay(s) {
   const st = (exumacaoStatusFromRow(s) || "").toString();
   const dt = exumacaoDataFromRow(s);
   if (!st || st === "—") return "—";
-  return dt ? `${st} em ${dt}` : st;
+  // ✅ data BR aqui
+  return dt ? `${st} em ${toBR(dt)}` : st;
 }
 
 // -------- Translado (aceita “traslado/translado” + variações) --------
 function transladoStatusFromRow(s) {
   const b = _first(
-    s.trasladado,            // ✔ “trasladado” (S)
-    s.transladado,           // “transladado” (N)
+    s.trasladado,
+    s.transladado,
     s.transferido,
     s.is_trasladado,
     s.is_transladado,
-    s.tem_traslado,          // ✔ “traslado” (S)
-    s.tem_translado,         // “translado” (N)
+    s.tem_traslado,
+    s.tem_translado,
     s.possui_traslado,
     s.possui_translado
   );
@@ -123,8 +149,8 @@ function transladoStatusFromRow(s) {
 function transladoDataFromRow(s) {
   return (
     _first(
-      s.traslado_data,        // ✔ “traslado” (S)
-      s.translado_data,       // “translado” (N)
+      s.traslado_data,
+      s.translado_data,
       s.data_traslado,
       s.data_translado,
       s.data_do_traslado,
@@ -139,7 +165,8 @@ function transladoDisplay(s) {
   const st = (transladoStatusFromRow(s) || "").toString();
   const dt = transladoDataFromRow(s);
   if (!st || st === "—") return "—";
-  return dt ? `${st} em ${dt}` : st;
+  // ✅ data BR aqui
+  return dt ? `${st} em ${toBR(dt)}` : st;
 }
 
 /* Status consolidado do SEPULTADO */
@@ -757,7 +784,8 @@ export default function Tumulos() {
                                             {s.nome || s.nome_completo || "-"}
                                           </td>
                                           <td className="py-1 px-2">
-                                            {s.data_sepultamento || s.data || "-"}
+                                            {/* ✅ data BR aqui */}
+                                            {toBR(s.data_sepultamento || s.data || "")}
                                           </td>
                                           <td className="py-1 px-2">
                                             {statusSepultadoFromRow(s)}

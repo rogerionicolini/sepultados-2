@@ -38,11 +38,25 @@ const maskDoc = (v) => {
   return `${s.slice(0, 2)}.${s.slice(2, 5)}.${s.slice(5, 8)}/${s.slice(8, 12)}-${s.slice(12, 14)}`;
 };
 
+// >>> ÚNICA MUDANÇA: formatar dd/mm/aaaa sem imports <<<
 const fmtDate = (d) => {
   if (!d) return "-";
-  const dt = typeof d === "string" ? new Date(d) : d;
-  return Number.isNaN(dt.getTime()) ? d : dt.toISOString().slice(0, 10);
+
+  // Se vier como 'YYYY-MM-DD' (ou 'YYYY-MM-DDTHH:MM:SS...')
+  if (typeof d === "string") {
+    const m = d.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (m) return `${m[3]}/${m[2]}/${m[1]}`;
+  }
+
+  // Fallback: Date -> dd/mm/aaaa
+  const dt = d instanceof Date ? d : new Date(d);
+  if (Number.isNaN(dt?.getTime?.())) return String(d);
+  const day = String(dt.getDate()).padStart(2, "0");
+  const month = String(dt.getMonth() + 1).padStart(2, "0");
+  const year = dt.getFullYear();
+  return `${day}/${month}/${year}`;
 };
+// <<< FIM DA MUDANÇA >>>
 
 // Substitua a função rotuloTumulo atual por esta versão
 function rotuloTumulo(t, quadrasMap = new Map()) {
@@ -195,7 +209,6 @@ export default function Contratos() {
     }
   }, [search]);
 
-  /** Mostra o rótulo do túmulo (prioriza tumulo_label vindo do backend) */
   /** Mostra o rótulo do túmulo (prioriza tumulo_label vindo do backend
     e depois o tumulosMap, mesmo quando vier objeto) */
   function tumuloLabel(row) {
@@ -214,7 +227,6 @@ export default function Contratos() {
 
     return "-";
   }
-
 
   const filtrados = React.useMemo(() => {
     const q = busca.trim().toLowerCase();
@@ -278,7 +290,6 @@ export default function Contratos() {
       alert("Não foi possível gerar o PDF deste contrato.");
     }
   }
-
 
   return (
     <div className="p-6">

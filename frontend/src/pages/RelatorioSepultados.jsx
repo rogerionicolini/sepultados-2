@@ -4,6 +4,55 @@ import axios from "axios";
 
 const API_BASE = "http://127.0.0.1:8000/api/";
 
+// helpers - cole UMA VEZ no topo do arquivo
+// ==== helpers CPF (nomes únicos, sem conflito) ====
+const getDocFromRow = (row) => {
+  if (!row) return "";
+  const tryKeys = [
+    "cpf", "CPF", "documento", "doc", "numero_documento",
+    "cpf_cnpj", "cpfCnpj", "cpfcnpj",
+  ];
+  for (const k of tryKeys) {
+    if (row[k]) return row[k];
+  }
+  if (row.pessoa?.cpf) return row.pessoa.cpf;
+  if (row.falecido?.cpf) return row.falecido.cpf;
+  if (row.responsavel?.cpf) return row.responsavel.cpf;
+  return "";
+};
+
+const formatCPFBR = (val) => {
+  const d = String(val ?? "").replace(/\D/g, "");
+  return d.length === 11 ? d.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4") : (val ?? "");
+};
+
+
+const pickFirst = (...vals) =>
+  vals.find(v => v !== undefined && v !== null && String(v).trim() !== "");
+
+// pega o doc/cpf em qualquer chave possível
+const getDoc = (row) => pickFirst(
+  row?.cpf,
+  row?.CPF,
+  row?.documento,
+  row?.doc,
+  row?.numero_documento,
+  row?.cpf_cnpj,
+  row?.cpfCnpj,
+  row?.cpfcnpj,
+  row?.pessoa?.cpf,
+  row?.falecido?.cpf,
+  row?.responsavel?.cpf
+);
+
+// formata 000.000.000-00 quando tiver 11 dígitos
+const cpfMaskBR = (val) => {
+  const d = String(val ?? "").replace(/\D/g, "");
+  return d.length === 11 ? d.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4") : (val ?? "-");
+};
+
+
+
 // Helpers p/ pegar cemitério ativo e token
 const getToken = () => localStorage.getItem("accessToken") || "";
 function getCemiterioAtivoId() {
@@ -18,14 +67,46 @@ function getCemiterioAtivoId() {
   return id ? Number(id) : null;
 }
 
-// formatações simples
-const toISO = (d) => {
-  if (!d) return "";
-  const dt = new Date(d);
-  if (Number.isNaN(dt.getTime())) return "";
-  return dt.toISOString().slice(0, 10);
-};
-const fmtDate = (d) => (toISO(d) || "-");
+/* ===================== Datas (dd/mm/aaaa) ===================== */
+// Parse seguro local para "YYYY-MM-DD"
+function parseIsoLocal(ymd) {
+  if (!ymd) return null;
+  const m = String(ymd).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return null;
+  const y = Number(m[1]), mo = Number(m[2]) - 1, d = Number(m[3]);
+  const dt = new Date(y, mo, d);
+  return dt.getFullYear() === y && dt.getMonth() === mo && dt.getDate() === d ? dt : null;
+}
+
+// Converte qualquer entrada plausível em Date (preferindo parse local para ISO sem hora)
+function parseToDate(v) {
+  if (!v) return null;
+  if (v instanceof Date) return isNaN(v) ? null : v;
+  const s = String(v);
+  const isoLocal = parseIsoLocal(s);
+  if (isoLocal) return isoLocal;
+  const mIsoDT = s.match(/^\d{4}-\d{2}-\d{2}T/); // ISO com hora
+  const d = mIsoDT ? new Date(s) : new Date(s);
+  return isNaN(d) ? null : d;
+}
+
+// Apenas a parte de data (00:00 local)
+function onlyDate(d) {
+  if (!d) return null;
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
+// Formata dd/mm/aaaa
+function fmtDate(d) {
+  const dt = parseToDate(d);
+  if (!dt) return "-";
+  const dd = String(dt.getDate()).padStart(2, "0");
+  const mm = String(dt.getMonth() + 1).padStart(2, "0");
+  const yy = dt.getFullYear();
+  return `${dd}/${mm}/${yy}`;
+}
+/* ============================================================= */
+
 const maskCPF = (v = "") => {
   const s = v.replace(/\D/g, "");
   if (s.length <= 3) return s;
@@ -64,8 +145,8 @@ export default function RelatorioSepultados() {
   const [erro, setErro] = useState("");
 
   // filtros
-  const [dataInicio, setDataInicio] = useState("");
-  const [dataFim, setDataFim] = useState("");
+  const [dataInicio, setDataInicio] = useState(""); // yyyy-mm-dd (input)
+  const [dataFim, setDataFim] = useState("");       // yyyy-mm-dd (input)
   const [status, setStatus] = useState("todos"); // todos | sepultado | exumado | transladado
   const [busca, setBusca] = useState("");
 
@@ -111,13 +192,14 @@ export default function RelatorioSepultados() {
   // aplicação dos filtros no cliente
   const filtrados = useMemo(() => {
     const q = busca.trim().toLowerCase();
-    const ini = dataInicio ? new Date(dataInicio) : null;
-    const fim = dataFim ? new Date(dataFim) : null;
+    const ini = dataInicio ? onlyDate(parseIsoLocal(dataInicio)) : null;
+    const fim = dataFim ? onlyDate(parseIsoLocal(dataFim)) : null;
 
     return rows.filter((s) => {
-      // data no período
+      // data no período (usa data do sepultamento, cai para s.data se necessário)
       if (ini || fim) {
-        const ds = new Date(toISO(s.data_sepultamento) || s.data_sepultamento || s.data);
+        const ds = onlyDate(parseToDate(s.data_sepultamento || s.data));
+        if (!ds) return false;
         if (ini && ds < ini) return false;
         if (fim && ds > fim) return false;
       }
@@ -183,7 +265,6 @@ export default function RelatorioSepultados() {
       alert("Não foi possível gerar o PDF. Verifique as rotas no backend.");
     }
   }
-
 
   const tumuloLabel = (s) =>
     s.tumulo?.identificador ||
@@ -305,7 +386,7 @@ export default function RelatorioSepultados() {
                     <tr key={id} className="border-t border-[#d8e9c0] hover:bg-white">
                       <td className="py-2 px-3">{s.numero_sepultamento || "-"}</td>
                       <td className="py-2 px-3">{s.nome || "-"}</td>
-                      <td className="py-2 px-3">{maskCPF(s.cpf || s.documento || "")}</td>
+                      <td className="px-2">{formatCPFBR(getDocFromRow(s))}</td>
                       <td className="py-2 px-3">{fmtDate(s.data_falecimento)}</td>
                       <td className="py-2 px-3">{fmtDate(s.data_sepultamento || s.data)}</td>
                       <td className="py-2 px-3">{tumuloLabel(s)}</td>

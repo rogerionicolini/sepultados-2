@@ -547,6 +547,21 @@ export default function FormularioSepultado({ sepultadoId, onClose }) {
     const dd = String(d.getDate()).padStart(2, "0");
     return `${yyyy}-${mm}-${dd}`;
   }
+  // Converte datas para dd/mm/aaaa (aceita Date, ISO 2024-08-29, etc.)
+  function toDateBR(v) {
+    if (!v) return "";
+    // tenta primeiro "YYYY-MM-DD"
+    const m = String(v).match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (m) return `${m[3]}/${m[2]}/${m[1]}`;
+
+    // cai para Date()
+    const d = new Date(v);
+    if (Number.isNaN(d.getTime())) return String(v); // não quebremos se vier algo inesperado
+    const dd = String(d.getDate()).padStart(2, "0");
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const yyyy = d.getFullYear();
+    return `${dd}/${mm}/${yyyy}`;
+  }
 
   // carregar na edição
   useEffect(() => {
@@ -1147,14 +1162,14 @@ export default function FormularioSepultado({ sepultadoId, onClose }) {
                 {displayReadOnly("Exumado", form.exumado ? "Sim" : "Não")}
               </div>
               <div className="md:col-span-2">
-                {displayReadOnly("Data da exumação", form.data_exumacao || "-")}
+                {displayReadOnly("Data da exumação", toDateBR(form.data_exumacao) || "-")}
               </div>
 
               <div className="md:col-span-1">
                 {displayReadOnly("Trasladado", form.trasladado ? "Sim" : "Não")}
               </div>
               <div className="md:col-span-2">
-                {displayReadOnly("Data do translado", form.data_translado || "-")}
+                {displayReadOnly("Data do translado", toDateBR(form.data_translado) || "-")}
               </div>
             </div>
           </div>

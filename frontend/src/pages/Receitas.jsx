@@ -2,6 +2,9 @@
 import React, { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 
+// ✅ novo: exibição de datas dd/mm/aaaa
+import DateText from "../components/DateText";
+
 const API_BASE = "http://127.0.0.1:8000/api/";
 const ENDPOINT = "receitas/";
 
@@ -10,7 +13,9 @@ const ENDPOINT = "receitas/";
 // moeda -> "R$ 1.234,56"
 function moeda(v) {
   const n = toNumber(v);
-  return n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }).replace("\u00A0", " ");
+  return n
+    .toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
+    .replace("\u00A0", " ");
 }
 
 // número seguro (aceita "1.234,56", "1234.56", "R$ 1.234,56", etc.)
@@ -32,7 +37,6 @@ function toNumber(v) {
       s = s.replace(",", ".");
     } else {
       // Só ponto -> ponto é decimal (não remove)
-      // nada a fazer
     }
 
     const n = Number(s);
@@ -41,7 +45,6 @@ function toNumber(v) {
 
   return 0;
 }
-
 
 // string pt-BR "123,45" (para mostrar no input)
 function toPtBRString(n) {
@@ -77,7 +80,11 @@ function StatusPill({ status }) {
     pago: "bg-green-100 text-green-800 border-green-300",
   };
   return (
-    <span className={`px-2 py-0.5 rounded border ${map[s] || "bg-gray-100 text-gray-700 border-gray-300"}`}>
+    <span
+      className={`px-2 py-0.5 rounded border ${
+        map[s] || "bg-gray-100 text-gray-700 border-gray-300"
+      }`}
+    >
       {s || "-"}
     </span>
   );
@@ -100,7 +107,7 @@ export default function Receitas() {
   const [editando, setEditando] = useState(null);
   const [salvando, setSalvando] = useState(false);
   const [form, setForm] = useState({
-    desconto: "",    // strings pt-BR (com vírgula)
+    desconto: "", // strings pt-BR (com vírgula)
     valor_pago: "",
   });
 
@@ -137,7 +144,11 @@ export default function Receitas() {
       }
       if (id) setPrefeituraId(id);
     } catch (e) {
-      console.warn("carregarPrefeitura erro:", e?.response?.status, e?.response?.data || e);
+      console.warn(
+        "carregarPrefeitura erro:",
+        e?.response?.status,
+        e?.response?.data || e
+      );
     }
   }
 
@@ -173,7 +184,9 @@ export default function Receitas() {
     const q = busca.trim().toLowerCase();
 
     if (statusFiltro) {
-      arr = arr.filter((r) => (r.status || "").toLowerCase() === statusFiltro);
+      arr = arr.filter(
+        (r) => (r.status || "").toLowerCase() === statusFiltro
+      );
     }
     if (q) {
       arr = arr.filter((r) => {
@@ -195,16 +208,42 @@ export default function Receitas() {
   // KPIs (tudo com toNumber para não dar NaN)
   const kpis = useMemo(() => {
     const total = filtrados.length;
-    const abertas = filtrados.filter((r) => (r.status || "").toLowerCase() === "aberto").length;
-    const pagas = filtrados.filter((r) => (r.status || "").toLowerCase() === "pago").length;
-    const emAbertoValor = filtrados.reduce((acc, r) => acc + toNumber(r.valor_em_aberto), 0);
+    const abertas = filtrados.filter(
+      (r) => (r.status || "").toLowerCase() === "aberto"
+    ).length;
+    const pagas = filtrados.filter(
+      (r) => (r.status || "").toLowerCase() === "pago"
+    ).length;
+    const emAbertoValor = filtrados.reduce(
+      (acc, r) => acc + toNumber(r.valor_em_aberto),
+      0
+    );
     return { total, abertas, pagas, emAbertoValor };
   }, [filtrados]);
 
-  function abrirPdf(r) {
-    const url = qsWith(`${ENDPOINT}${r.id || r.pk}/pdf/`);
-    window.open(`${API_BASE}${url}`, "_blank", "noopener,noreferrer");
+  // -------- FIX: abrir modal Editar/Pagar ----------
+  function abrirEditar(r, modoPagar = false) {
+    setEditando(r);
+
+    // desconto atual (mostra como string pt-BR)
+    const descontoStr = toPtBRString(r.desconto || 0);
+
+    // Se for "Pagar", já preenche o valor_pago com o que falta (em aberto)
+    // Caso contrário, usa o valor pago atual.
+    const restante =
+      toNumber(r.valor_total) - toNumber(r.desconto) - toNumber(r.valor_pago);
+    const valorPagoStr = modoPagar
+      ? toPtBRString(Math.max(0, restante))
+      : toPtBRString(r.valor_pago || 0);
+
+    setForm({
+      desconto: descontoStr,
+      valor_pago: valorPagoStr,
+    });
+
+    setModalAberto(true);
   }
+  // --------------------------------------------------
 
   async function abrirPdf(r) {
     try {
@@ -233,7 +272,6 @@ export default function Receitas() {
       alert("Não foi possível abrir o recibo (PDF).");
     }
   }
-
 
   async function salvar() {
     if (!editando) return;
@@ -268,7 +306,10 @@ export default function Receitas() {
   const valorTotalEditando = toNumber(editando?.valor_total);
   const descontoEditando = moneyInputToNumber(form.desconto);
   const valorPagoEditando = moneyInputToNumber(form.valor_pago);
-  const emAbertoPreview = Math.max(0, valorTotalEditando - descontoEditando - valorPagoEditando);
+  const emAbertoPreview = Math.max(
+    0,
+    valorTotalEditando - descontoEditando - valorPagoEditando
+  );
 
   return (
     <div className="space-y-6">
@@ -288,19 +329,27 @@ export default function Receitas() {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4">
           <div className="p-3 bg-white rounded-lg border border-[#e0efcf]">
             <div className="text-xs text-gray-600">Total</div>
-            <div className="text-2xl font-semibold text-green-900">{kpis.total}</div>
+            <div className="text-2xl font-semibold text-green-900">
+              {kpis.total}
+            </div>
           </div>
           <div className="p-3 bg-white rounded-lg border border-[#e0efcf]">
             <div className="text-xs text-gray-600">Abertas</div>
-            <div className="text-2xl font-semibold text-red-700">{kpis.abertas}</div>
+            <div className="text-2xl font-semibold text-red-700">
+              {kpis.abertas}
+            </div>
           </div>
           <div className="p-3 bg-white rounded-lg border border-[#e0efcf]">
             <div className="text-xs text-gray-600">Pagas</div>
-            <div className="text-2xl font-semibold text-green-700">{kpis.pagas}</div>
+            <div className="text-2xl font-semibold text-green-700">
+              {kpis.pagas}
+            </div>
           </div>
           <div className="p-3 bg-white rounded-lg border border-[#e0efcf]">
             <div className="text-xs text-gray-600">Em aberto (R$)</div>
-            <div className="text-2xl font-semibold text-amber-700">{moeda(kpis.emAbertoValor)}</div>
+            <div className="text-2xl font-semibold text-amber-700">
+              {moeda(kpis.emAbertoValor)}
+            </div>
           </div>
         </div>
 
@@ -350,18 +399,36 @@ export default function Receitas() {
               </thead>
               <tbody className="bg-white/50">
                 {filtrados.map((r) => (
-                  <tr key={r.id || r.pk} className="border-t border-[#d8e9c0] hover:bg-white">
-                    <td className="py-2 px-3">{r.numero_documento || r.numero || "-"}</td>
-                    <td className="py-2 px-3">{r.descricao_segura || r.descricao || "-"}</td>
+                  <tr
+                    key={r.id || r.pk}
+                    className="border-t border-[#d8e9c0] hover:bg-white"
+                  >
+                    <td className="py-2 px-3">
+                      {r.numero_documento || r.numero || "-"}
+                    </td>
+                    <td className="py-2 px-3">
+                      {r.descricao_segura || r.descricao || "-"}
+                    </td>
                     <td className="py-2 px-3">{r.nome || "-"}</td>
                     <td className="py-2 px-3">{r.cpf || "-"}</td>
-                    <td className="py-2 px-3">{r.data_vencimento || "-"}</td>
+
+                    {/* ✅ data em dd/mm/aaaa */}
+                    <td className="py-2 px-3">
+                      <DateText value={r.data_vencimento} fallback="-" />
+                    </td>
+
                     <td className="py-2 px-3">
                       <StatusPill status={r.status} />
                     </td>
-                    <td className="py-2 px-3 text-right">{moeda(r.valor_total)}</td>
-                    <td className="py-2 px-3 text-right">{moeda(r.valor_pago)}</td>
-                    <td className="py-2 px-3 text-right">{moeda(r.valor_em_aberto)}</td>
+                    <td className="py-2 px-3 text-right">
+                      {moeda(r.valor_total)}
+                    </td>
+                    <td className="py-2 px-3 text-right">
+                      {moeda(r.valor_pago)}
+                    </td>
+                    <td className="py-2 px-3 text-right">
+                      {moeda(r.valor_em_aberto)}
+                    </td>
                     <td className="py-2 px-3">
                       <div className="flex gap-2">
                         <button
@@ -407,7 +474,9 @@ export default function Receitas() {
         <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
           <div className="bg-white w-full max-w-3xl rounded-2xl p-6 shadow-2xl">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-green-900">Contrato de Concessão</h3>
+              <h3 className="text-lg font-semibold text-green-900">
+                Contrato de Concessão
+              </h3>
               <button
                 onClick={() => setModalAberto(false)}
                 className="text-gray-500 hover:text-gray-700"
@@ -422,62 +491,99 @@ export default function Receitas() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <div className="text-xs text-green-900">Número</div>
-                  <div className="border rounded-lg px-3 py-2 bg-gray-50">{editando.numero_documento || editando.numero || "-"}</div>
+                  <div className="border rounded-lg px-3 py-2 bg-gray-50">
+                    {editando.numero_documento || editando.numero || "-"}
+                  </div>
                 </div>
                 <div>
-                  <div className="text-xs text-green-900">Data do pagamento</div>
-                  <div className="border rounded-lg px-3 py-2 bg-gray-50">{editando.data_pagamento || "-"}</div>
+                  <div className="text-xs text-green-900">
+                    Data do pagamento
+                  </div>
+                  <div className="border rounded-lg px-3 py-2 bg-gray-50">
+                    {/* ✅ data em dd/mm/aaaa */}
+                    <DateText value={editando.data_pagamento} fallback="-" />
+                  </div>
                 </div>
                 <div className="col-span-2">
                   <div className="text-xs text-green-900">Descrição</div>
-                  <div className="border rounded-lg px-3 py-2 bg-gray-50">{editando.descricao_segura || editando.descricao || "-"}</div>
+                  <div className="border rounded-lg px-3 py-2 bg-gray-50">
+                    {editando.descricao_segura ||
+                      editando.descricao ||
+                      "-"}
+                  </div>
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <div className="text-xs text-green-900">Nome</div>
-                  <div className="border rounded-lg px-3 py-2 bg-gray-50">{editando.nome || "-"}</div>
+                  <div className="border rounded-lg px-3 py-2 bg-gray-50">
+                    {editando.nome || "-"}
+                  </div>
                 </div>
                 <div>
                   <div className="text-xs text-green-900">CPF/CNPJ</div>
-                  <div className="border rounded-lg px-3 py-2 bg-gray-50">{editando.cpf || "-"}</div>
+                  <div className="border rounded-lg px-3 py-2 bg-gray-50">
+                    {editando.cpf || "-"}
+                  </div>
                 </div>
               </div>
 
               <div>
-                <div className="text-sm font-semibold text-green-900 mb-1">Valores</div>
+                <div className="text-sm font-semibold text-green-900 mb-1">
+                  Valores
+                </div>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                   <div>
                     <div className="text-xs text-green-900">Valor total</div>
-                    <div className="border rounded-lg px-3 py-2 bg-gray-50">{moeda(editando.valor_total)}</div>
+                    <div className="border rounded-lg px-3 py-2 bg-gray-50">
+                      {moeda(editando.valor_total)}
+                    </div>
                   </div>
 
                   <div>
-                    <div className="text-xs text-green-900">Desconto (editável)</div>
+                    <div className="text-xs text-green-900">
+                      Desconto (editável)
+                    </div>
                     <input
                       className="w-full border border-[#bcd2a7] rounded-lg px-3 py-2 outline-none"
                       inputMode="decimal"
                       placeholder="0,00"
                       value={form.desconto}
-                      onChange={(e) => setForm((f) => ({ ...f, desconto: sanitizeMoneyInput(e.target.value) }))}
+                      onChange={(e) =>
+                        setForm((f) => ({
+                          ...f,
+                          desconto: sanitizeMoneyInput(e.target.value),
+                        }))
+                      }
                     />
                   </div>
 
                   <div>
-                    <div className="text-xs text-green-900">Valor pago (editável)</div>
+                    <div className="text-xs text-green-900">
+                      Valor pago (editável)
+                    </div>
                     <input
                       className="w-full border border-[#bcd2a7] rounded-lg px-3 py-2 outline-none"
                       inputMode="decimal"
                       placeholder="0,00"
                       value={form.valor_pago}
-                      onChange={(e) => setForm((f) => ({ ...f, valor_pago: sanitizeMoneyInput(e.target.value) }))}
+                      onChange={(e) =>
+                        setForm((f) => ({
+                          ...f,
+                          valor_pago: sanitizeMoneyInput(e.target.value),
+                        }))
+                      }
                     />
                   </div>
 
                   <div>
-                    <div className="text-xs text-green-900">Valor em aberto (prévia)</div>
-                    <div className="border rounded-lg px-3 py-2 bg-gray-50">{moeda(emAbertoPreview)}</div>
+                    <div className="text-xs text-green-900">
+                      Valor em aberto (prévia)
+                    </div>
+                    <div className="border rounded-lg px-3 py-2 bg-gray-50">
+                      {moeda(emAbertoPreview)}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -485,11 +591,16 @@ export default function Receitas() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <div className="text-xs text-green-900">Vencimento</div>
-                  <div className="border rounded-lg px-3 py-2 bg-gray-50">{editando.data_vencimento || "-"}</div>
+                  <div className="border rounded-lg px-3 py-2 bg-gray-50">
+                    {/* ✅ data em dd/mm/aaaa */}
+                    <DateText value={editando.data_vencimento} fallback="-" />
+                  </div>
                 </div>
                 <div>
                   <div className="text-xs text-green-900">Status</div>
-                  <div className="border rounded-lg px-3 py-2 bg-gray-50 capitalize">{(editando.status || "-").toString().toLowerCase()}</div>
+                  <div className="border rounded-lg px-3 py-2 bg-gray-50 capitalize">
+                    {(editando.status || "-").toString().toLowerCase()}
+                  </div>
                 </div>
               </div>
             </div>

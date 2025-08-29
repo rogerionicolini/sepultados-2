@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import FormularioSepultado from "../components/FormularioSepultado";
+import { formatBR } from "@/utils/dateBR";
 
 const API_BASE = "http://localhost:8000/api/";
 const SEPULTADOS_EP = "sepultados/";
@@ -32,9 +33,8 @@ const maskCpf = (v) => {
 };
 
 const fmtDate = (d) => {
-  if (!d) return "-";
-  const dt = typeof d === "string" ? new Date(d) : d;
-  return Number.isNaN(dt.getTime()) ? d : dt.toISOString().slice(0, 10);
+  const s = formatBR(d); // dd/mm/aaaa
+  return s || "-";
 };
 
 export default function Sepultados() {

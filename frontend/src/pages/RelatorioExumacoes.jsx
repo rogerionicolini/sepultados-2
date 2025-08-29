@@ -24,7 +24,12 @@ const toISO = (d) => {
   const dt = new Date(d);
   return Number.isNaN(dt.getTime()) ? "" : dt.toISOString().slice(0, 10);
 };
-const fmtDate = (d) => (toISO(d) || "-");
+const fmtDate = (d) => {
+  const iso = toISO(d);
+  if (!iso) return "-";
+  const [y, m, dd] = iso.split("-");
+  return `${dd}/${m}/${y}`;
+};
 const fmtMoney = (n) => {
   const v = Number(n || 0);
   return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });

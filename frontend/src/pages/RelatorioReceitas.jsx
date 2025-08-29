@@ -42,7 +42,25 @@ const toISO = (d) => {
   const dt = new Date(d);
   return Number.isNaN(dt.getTime()) ? "" : dt.toISOString().slice(0, 10);
 };
-const fmtDate = (d) => toISO(d) || "-";
+
+// ⬇️ Agora exibe dd/mm/aaaa na tabela
+const fmtDate = (d) => {
+  if (!d) return "-";
+  const s = String(d);
+
+  // Se já vier como 'YYYY-MM-DD' (ou 'YYYY-MM-DDTHH:MM...')
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return `${m[3]}/${m[2]}/${m[1]}`;
+
+  // Fallback: tentar Date()
+  const dt = new Date(s);
+  if (Number.isNaN(dt.getTime())) return "-";
+  const dd = String(dt.getDate()).padStart(2, "0");
+  const mm = String(dt.getMonth() + 1).padStart(2, "0");
+  const yy = dt.getFullYear();
+  return `${dd}/${mm}/${yy}`;
+};
+
 const fmtMoney = (n) =>
   Number(n || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 

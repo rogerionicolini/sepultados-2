@@ -22,10 +22,18 @@ function getCemiterioAtivoId() {
   return id ? Number(id) : null;
 }
 
+// ✅ dd/mm/aaaa sem imports (cobre 'YYYY-MM-DD' e 'YYYY-MM-DDTHH:MM:SS...')
 const fmtDate = (d) => {
   if (!d) return "-";
-  const dt = new Date(d);
-  return Number.isNaN(dt.getTime()) ? d : dt.toISOString().slice(0, 10);
+  const s = String(d);
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/); // ISO
+  if (m) return `${m[3]}/${m[2]}/${m[1]}`;
+  const dt = new Date(s);
+  if (Number.isNaN(dt.getTime())) return s;
+  const dd = String(dt.getDate()).padStart(2, "0");
+  const mm = String(dt.getMonth() + 1).padStart(2, "0");
+  const yy = dt.getFullYear();
+  return `${dd}/${mm}/${yy}`;
 };
 
 function destinoLabel(row, tumMap) {
@@ -69,8 +77,6 @@ export default function Translados() {
     });
     return a;
   }, [token]);
-
-
 
   async function carregar() {
     try {
@@ -182,7 +188,6 @@ export default function Translados() {
     }
     alert("Não foi possível gerar o PDF.");
   }
-
 
   return (
     <div className="p-6">

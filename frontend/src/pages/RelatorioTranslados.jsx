@@ -24,7 +24,12 @@ const toISO = (d) => {
   const dt = new Date(d);
   return Number.isNaN(dt.getTime()) ? "" : dt.toISOString().slice(0, 10);
 };
-const fmtDate = (d) => (toISO(d) || "-");
+const fmtDateBR = (d) => {
+  const iso = toISO(d);
+  if (!iso) return "-";
+  const [y, m, dd] = iso.split("-");
+  return `${dd}/${m}/${y}`;
+};
 const fmtMoney = (n) =>
   Number(n || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const maskCPF = (v = "") => {
@@ -332,7 +337,7 @@ export default function RelatorioTranslados() {
                   return (
                     <tr key={id} className="border-t border-[#d8e9c0] hover:bg-white">
                       <td className="py-2 px-3">{r.numero_documento || "-"}</td>
-                      <td className="py-2 px-3">{fmtDate(pickDate(r))}</td>
+                      <td className="py-2 px-3">{fmtDateBR(pickDate(r))}</td>
                       <td className="py-2 px-3">{r.sepultado?.nome || sepMap.get(String(r.sepultado)) || "-"}</td>
                       <td className="py-2 px-3">{destinoLabel(r, tumMap)}</td>
                       <td className="py-2 px-3">{maskCPF(r.cpf || r.cpf_responsavel || "")}</td>
