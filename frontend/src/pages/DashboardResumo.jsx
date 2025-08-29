@@ -140,7 +140,8 @@ export default function DashboardResumo() {
 
       <div>
         <h2 className="text-lg font-bold text-green-900 mb-3">Mapa do Cemitério</h2>
-        <MapaCemiterio />
+        {/* força remontagem ao trocar de cemitério */}
+        <MapaCemiterio key={cemAtivo?.id || "mapa-default"} />
       </div>
     </>
   );
