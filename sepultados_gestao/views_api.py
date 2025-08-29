@@ -2016,9 +2016,8 @@ def auditorias_pdf_url(request):
     return Response({"pdf_url": request.build_absolute_uri(url)})
 
 
-# --- IMPORTS (pode manter mesmo que já existam no arquivo) ---
 from datetime import date
-from django.db.models import Q, Sum, Value, IntegerField
+from django.db.models import Q, Sum, Count, Value, IntegerField
 from django.db.models.functions import Coalesce
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
@@ -2032,19 +2031,12 @@ from .models import Tumulo, Sepultado, ConcessaoContrato
 def dashboard_resumo_api(request):
     """
     GET /api/dashboard/resumo/?cemiterio=<id>
-    (fallback: ?prefeitura=<id> ou seleção da sessão)
-
-    Regras:
-      - total_sepultados: pessoas com túmulo neste cemitério (inclui ossário, exumados que ainda têm vínculo).
-      - total_tumulos_livres: CONTAGEM de túmulos com status livre/disponível.
-      - total_vagas: CAPACIDADE total = soma(capacidade) dos túmulos do cemitério.
-      - contratos_ativos: contratos vinculados a túmulos deste cemitério (sem checar vigência por falta de campos).
-      - ocupação: por PESSOAS (sepultados) versus capacidade total.
+    (ou ?prefeitura=<id>; ou pega da sessão se existir)
     """
     cem_id = request.query_params.get("cemiterio")
     pref_id = request.query_params.get("prefeitura")
 
-    # fallback pela sessão (se existir middleware que injeta estes atributos)
+    # Fallback: sessão
     if not cem_id and not pref_id:
         cem = getattr(request, "cemiterio_ativo", None)
         pref = getattr(request, "prefeitura_ativa", None)
@@ -2057,51 +2049,56 @@ def dashboard_resumo_api(request):
             status=400,
         )
 
-    # ---------- Túmulos (capacidade/ocupação) ----------
+    # ---------- TÚMULOS ----------
     tumulos = Tumulo.objects.all()
     if cem_id:
         tumulos = tumulos.filter(cemiterio_id=int(cem_id))
     else:
         tumulos = tumulos.filter(cemiterio__prefeitura_id=int(pref_id))
 
-    # CAPACIDADE total = soma das capacidades
+    # Capacidade total (vagas)
     vagas_totais = tumulos.aggregate(
         total=Coalesce(Sum("capacidade"), Value(0, output_field=IntegerField()))
     )["total"]
 
-    # CONTAGEM de túmulos livres (status)
-    livres_tumulos = tumulos.filter(
-        Q(status__iexact="livre")
-        | Q(status__iexact="disponivel")
-        | Q(status__iexact="disponível")
-        | Q(status__iexact="vazio")
-    ).count()
+    # ---------- SEPULTADOS ----------
+    # Todos os sepultados que já estiveram/estão em um túmulo do conjunto
+    sep_all = Sepultado.objects.filter(tumulo__in=tumulos)
+    total_sepultados = sep_all.count()  # <-- inclui exumados e transladados
 
-    # ---------- Sepultados (pessoas) ----------
-    sepultados = Sepultado.objects.all()
-    if cem_id:
-        sepultados = sepultados.filter(tumulo__cemiterio_id=int(cem_id))
-    else:
-        sepultados = sepultados.filter(tumulo__cemiterio__prefeitura_id=int(pref_id))
-    total_sepultados = sepultados.count()
+    # Apenas os que AINDA OCUPAM vaga (sem exumação e sem translado, e não marcados como exumado/trasladado)
+    sep_atuais = (
+        sep_all.filter(data_exumacao__isnull=True, data_translado__isnull=True)
+        .exclude(exumado=True)
+        .exclude(trasladado=True)
+    )
 
-    # Ocupação por PESSOAS versus capacidade
-    vagas_ocupadas = min(total_sepultados, vagas_totais)
+    # Ocupação por túmulo (quantos ocupantes atuais por tumulo_id)
+    occ_map = dict(
+        sep_atuais.values("tumulo_id").annotate(ct=Count("id")).values_list("tumulo_id", "ct")
+    )
+
+    # Túmulos livres = pelo menos 1 vaga disponível pela capacidade real
+    livres_tumulos = 0
+    for t_id, cap in tumulos.values_list("id", "capacidade"):
+        if cap - occ_map.get(t_id, 0) > 0:
+            livres_tumulos += 1
+
+    # Ocupação/vagas (por pessoa)
+    ocupantes_atuais = sep_atuais.count()
+    vagas_ocupadas = min(ocupantes_atuais, vagas_totais)
     vagas_livres = max(vagas_totais - vagas_ocupadas, 0)
     percentual = round((vagas_ocupadas / vagas_totais * 100) if vagas_totais else 0, 1)
 
-    # ---------- Contratos ----------
-    contratos = ConcessaoContrato.objects.all()
-    if cem_id:
-        contratos = contratos.filter(tumulo__cemiterio_id=int(cem_id))
-    else:
-        contratos = contratos.filter(tumulo__cemiterio__prefeitura_id=int(pref_id))
-    contratos_ativos = contratos.distinct().count()
+    # ---------- CONTRATOS ----------
+    contratos = ConcessaoContrato.objects.filter(tumulo__in=tumulos).distinct()
+    contratos_ativos = contratos.count()
 
+    # ---------- RESPOSTA ----------
     data = {
-        "total_sepultados": total_sepultados,
-        "total_tumulos_livres": livres_tumulos,   # contagem de TÚMULOS livres
-        "total_vagas": vagas_totais,              # soma das capacidades
+        "total_sepultados": total_sepultados,       # TODOS (ativos + exumados + transladados)
+        "total_tumulos_livres": livres_tumulos,     # túmulos com pelo menos 1 vaga disponível
+        "total_vagas": vagas_totais,                # soma da capacidade
         "contratos_ativos": contratos_ativos,
         "ocupacao": {
             "percentual": percentual,
@@ -2111,3 +2108,4 @@ def dashboard_resumo_api(request):
         },
     }
     return Response(data)
+

@@ -193,10 +193,25 @@ class RegistroAuditoriaSerializer(serializers.ModelSerializer):
 
 
 
+# sepultados_gestao/serializers.py
+from rest_framework import serializers
+from sepultados_gestao.models import Sepultado
+
 class SepultadoSerializer(serializers.ModelSerializer):
+    # Se o seu modelo já tem o campo cpf, manter essa linha continua ok:
+    # ela apenas garante fallback para bases antigas onde o dado está em "documento".
+    cpf = serializers.SerializerMethodField(read_only=True)
+
     class Meta:
         model = Sepultado
-        fields = '__all__'
+        # IMPORTANTE: não liste só alguns campos aqui, senão o front perde colunas.
+        fields = '__all__'   # mantém tudo o que o front já usa
+
+    def get_cpf(self, obj):
+        # 1º tenta CPF do falecido; 2º, do responsável; 3º, algum "documento"
+        return getattr(obj, "cpf_sepultado", None) or getattr(obj, "cpf", None) or getattr(obj, "documento", None)
+
+
 
 class TransladoSerializer(serializers.ModelSerializer):
     class Meta:
