@@ -33,6 +33,7 @@ from .views_api import (
     auditorias_pdf_url,
     # ✅ BACKUP (API)
     backup_prefeitura_api,
+    dashboard_resumo_api,
 )
 
 router = DefaultRouter()
@@ -79,4 +80,5 @@ urlpatterns = [
 
     # CSRF helper
     path("csrf/", csrf_get, name="api_csrf"),
+    path("dashboard/resumo/", dashboard_resumo_api, name="dashboard-resumo"),
 ]

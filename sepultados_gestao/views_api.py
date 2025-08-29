@@ -2014,3 +2014,100 @@ def auditorias_pdf_url(request):
     if qstr:
         url = f"{url}?{qstr}"
     return Response({"pdf_url": request.build_absolute_uri(url)})
+
+
+# --- IMPORTS (pode manter mesmo que já existam no arquivo) ---
+from datetime import date
+from django.db.models import Q, Sum, Value, IntegerField
+from django.db.models.functions import Coalesce
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+
+from .models import Tumulo, Sepultado, ConcessaoContrato
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def dashboard_resumo_api(request):
+    """
+    GET /api/dashboard/resumo/?cemiterio=<id>
+    (fallback: ?prefeitura=<id> ou seleção da sessão)
+
+    Regras:
+      - total_sepultados: pessoas com túmulo neste cemitério (inclui ossário, exumados que ainda têm vínculo).
+      - total_tumulos_livres: CONTAGEM de túmulos com status livre/disponível.
+      - total_vagas: CAPACIDADE total = soma(capacidade) dos túmulos do cemitério.
+      - contratos_ativos: contratos vinculados a túmulos deste cemitério (sem checar vigência por falta de campos).
+      - ocupação: por PESSOAS (sepultados) versus capacidade total.
+    """
+    cem_id = request.query_params.get("cemiterio")
+    pref_id = request.query_params.get("prefeitura")
+
+    # fallback pela sessão (se existir middleware que injeta estes atributos)
+    if not cem_id and not pref_id:
+        cem = getattr(request, "cemiterio_ativo", None)
+        pref = getattr(request, "prefeitura_ativa", None)
+        cem_id = getattr(cem, "id", None) if cem else None
+        pref_id = getattr(pref, "id", None) if pref else None
+
+    if not cem_id and not pref_id:
+        return Response(
+            {"detail": "Informe ?cemiterio=<id> ou ?prefeitura=<id> (ou selecione no sistema)."},
+            status=400,
+        )
+
+    # ---------- Túmulos (capacidade/ocupação) ----------
+    tumulos = Tumulo.objects.all()
+    if cem_id:
+        tumulos = tumulos.filter(cemiterio_id=int(cem_id))
+    else:
+        tumulos = tumulos.filter(cemiterio__prefeitura_id=int(pref_id))
+
+    # CAPACIDADE total = soma das capacidades
+    vagas_totais = tumulos.aggregate(
+        total=Coalesce(Sum("capacidade"), Value(0, output_field=IntegerField()))
+    )["total"]
+
+    # CONTAGEM de túmulos livres (status)
+    livres_tumulos = tumulos.filter(
+        Q(status__iexact="livre")
+        | Q(status__iexact="disponivel")
+        | Q(status__iexact="disponível")
+        | Q(status__iexact="vazio")
+    ).count()
+
+    # ---------- Sepultados (pessoas) ----------
+    sepultados = Sepultado.objects.all()
+    if cem_id:
+        sepultados = sepultados.filter(tumulo__cemiterio_id=int(cem_id))
+    else:
+        sepultados = sepultados.filter(tumulo__cemiterio__prefeitura_id=int(pref_id))
+    total_sepultados = sepultados.count()
+
+    # Ocupação por PESSOAS versus capacidade
+    vagas_ocupadas = min(total_sepultados, vagas_totais)
+    vagas_livres = max(vagas_totais - vagas_ocupadas, 0)
+    percentual = round((vagas_ocupadas / vagas_totais * 100) if vagas_totais else 0, 1)
+
+    # ---------- Contratos ----------
+    contratos = ConcessaoContrato.objects.all()
+    if cem_id:
+        contratos = contratos.filter(tumulo__cemiterio_id=int(cem_id))
+    else:
+        contratos = contratos.filter(tumulo__cemiterio__prefeitura_id=int(pref_id))
+    contratos_ativos = contratos.distinct().count()
+
+    data = {
+        "total_sepultados": total_sepultados,
+        "total_tumulos_livres": livres_tumulos,   # contagem de TÚMULOS livres
+        "total_vagas": vagas_totais,              # soma das capacidades
+        "contratos_ativos": contratos_ativos,
+        "ocupacao": {
+            "percentual": percentual,
+            "vagas_totais": vagas_totais,
+            "vagas_ocupadas": vagas_ocupadas,
+            "vagas_livres": vagas_livres,
+        },
+    }
+    return Response(data)
