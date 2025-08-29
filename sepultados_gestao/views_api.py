@@ -1981,7 +1981,6 @@ def backup_prefeitura_api(request):
 
 
 # --- Auditorias: URL JSON para abrir o PDF ---
-from urllib.parse import urlencode
 from django.urls import reverse
 from rest_framework.decorators import api_view, permission_classes, authentication_classes
 from rest_framework.permissions import IsAuthenticated
@@ -1995,12 +1994,23 @@ from rest_framework.response import Response
 def auditorias_pdf_url(request):
     """
     Retorna {"pdf_url": "<absoluta>"} apontando para /relatorios/auditorias/pdf/
-    preservando os filtros recebidos via querystring.
-    (Tudo dentro do app sepultados_gestao.)
+    preservando todos os filtros. Se não vier 'prefeitura' na query,
+    tenta deduzir do contexto do usuário/sessão e injeta.
     """
-    qs = request.query_params.dict()
-    url = reverse("sepultados_gestao:auditorias_pdf")  # aponta p/ urls de sepultados_gestao
-    if qs:
-        url = f"{url}?{urlencode(qs)}"
-    return Response({"pdf_url": request.build_absolute_uri(url)})
+    qs = request.GET.copy()
 
+    # já veio? então só preserva
+    if "prefeitura" not in qs and "prefeitura_id" not in qs:
+        pref_id = (
+            getattr(getattr(request, "prefeitura_ativa", None), "id", None)
+            or getattr(request.user, "prefeitura_id", None)
+            or getattr(getattr(request.user, "prefeitura", None), "id", None)
+        )
+        if pref_id:
+            qs["prefeitura"] = pref_id
+
+    url = reverse("sepultados_gestao:auditorias_pdf")
+    qstr = qs.urlencode()
+    if qstr:
+        url = f"{url}?{qstr}"
+    return Response({"pdf_url": request.build_absolute_uri(url)})

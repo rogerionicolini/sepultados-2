@@ -29,8 +29,10 @@ from .views_api import (
     ImportSepultadosAPIView,
     # Seleção cemitério
     selecionar_cemiterio_api,
-    # <-- importa a url do PDF
+    # PDF auditorias (retorna URL)
     auditorias_pdf_url,
+    # ✅ BACKUP (API)
+    backup_prefeitura_api,
 )
 
 router = DefaultRouter()
@@ -46,12 +48,16 @@ router.register(r"tumulos", TumuloViewSet)
 router.register(r"anexos", AnexoViewSet, basename="anexo")
 
 urlpatterns = [
-    # 👉 Coloque a rota JSON que entrega o link do PDF ANTES do include(router.urls)
+    # rotas “soltas” antes do router
     path("auditorias/pdf-url/", auditorias_pdf_url, name="auditorias-pdf-url"),
 
+    # ✅ NOVO: backup por prefeitura (não depende do backend estar logado)
+    path("backup/prefeitura/", backup_prefeitura_api, name="backup-prefeitura"),
+
+    # viewsets
     path("", include(router.urls)),
 
-    # Diversos
+    # diversos
     path("registrar-prefeitura/", RegistrarPrefeituraAPIView.as_view(), name="registrar-prefeitura"),
     path("planos/", ListaPlanosAPIView.as_view(), name="listar-planos"),
     path("licenca/<int:prefeitura_id>/", licenca_da_prefeitura, name="licenca-da-prefeitura"),
@@ -60,10 +66,10 @@ urlpatterns = [
     path("prefeitura-logada/", PrefeituraLogadaAPIView.as_view(), name="prefeitura-logada"),
     path("cemiterio-logado/", CemiterioLogadoAPIView.as_view(), name="cemiterio-logado"),
 
-    # Seleciona e grava o cemitério ativo na sessão
+    # selecionar cemitério (grava em sessão)
     path("selecionar-cemiterio/", selecionar_cemiterio_api, name="selecionar-cemiterio"),
 
-    # Importações (aliases antigos/novos)
+    # importações
     path("importacoes/quadras/", ImportQuadrasAPIView.as_view(), name="import-quadras"),
     path("importacoes/tumulos/", ImportTumulosAPIView.as_view(), name="import-tumulos"),
     path("importacoes/sepultados/", ImportSepultadosAPIView.as_view(), name="import-sepultados"),

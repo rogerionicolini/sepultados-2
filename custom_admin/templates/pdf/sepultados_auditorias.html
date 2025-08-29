@@ -1,169 +1,101 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-<meta charset="utf-8">
-<title>Relatório de Auditorias</title>
+  <meta charset="utf-8" />
+  <title>{{ org_titulo }}</title>
+  <style>
+    /* margem maior para garantir que o cabeçalho apareça */
+    @page { size: A4 landscape; margin: 20mm 14mm 14mm 14mm; }
 
-<style>
-  /* ----- Página: A4 em paisagem, margem segura (sem moldura) ----- */
-  @page {
-    size: A4 landscape;
-    margin: 1.5cm;
-  }
+    body { font-family: Arial, Helvetica, sans-serif; font-size: 11px; color: #222; }
 
-  html, body { margin: 0; padding: 0; }
-  body { font-family: Arial, Helvetica, sans-serif; color: #000; }
+    /* CABEÇALHO */
+    .header { display: table; width: 100%; margin: -6mm 0 8px 0; } /* sobe um pouco */
+    .logo   { display: table-cell; width: 85px; vertical-align: top; }
+    .logo img { max-width: 75px; }
+    .hinfo  { display: table-cell; vertical-align: top; padding-left: 10px; }
+    .hinfo .nome { font-weight: bold; font-size: 14px; margin-bottom: 3px; }
+    .hinfo div { line-height: 1.3; }
 
-  /* ----- Cabeçalho (igual ao padrão) ----- */
-  .cabecalho { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 6px; }
-  .logo img   { max-height: 75px; }
-  .dados      { font-size: 11pt; line-height: 1.35; }
+    .titulo { text-align: center; font-weight: bold; font-size: 14px; margin: 6px 0 10px; }
 
-  /* ----- Título verde central ----- */
-  .titulo { text-align: center; margin: 6px 0 8px; }
-  .titulo span { background: #e3efcc; border: 1px solid #000; padding: 4px 10px; display: inline-block; }
-
-  /* ----- Tabela de resumo (caixinhas) ----- */
-  table.resumo { width: 100%; border-collapse: collapse; margin: 8px 0 10px; font-size: 10pt; }
-  .resumo th, .resumo td { border: 1px solid #000; padding: 3px 6px; white-space: nowrap; text-align: center; }
-  .resumo thead th { background: #e3efcc; }
-
-  /* ----- Tabela principal ----- */
-  table.tabela { width: 100%; border-collapse: collapse; font-size: 9.6pt; }
-  .tabela th, .tabela td { border: 1px solid #000; padding: 4px 6px; vertical-align: top; }
-  .tabela thead th { background: #e3efcc; }
-
-  /* Repetir cabeçalho em cada página e evitar cortes esquisitos */
-  thead { display: table-header-group; }
-  tfoot { display: table-row-group; }
-  tr    { page-break-inside: avoid; }
-
-  /* Larguras pensadas pra paisagem */
-  .col-data { width: 14%; }
-  .col-user { width: 21%; }
-  .col-acao { width: 9%;  text-transform: capitalize; }
-  .col-ent  { width: 14%; }
-  .col-obj  { width: 7%;  text-align: center; }
-  .col-det  { width: 35%; overflow-wrap: anywhere; word-break: break-word; }
-
-  .muted { color: #444; font-style: italic; }
-</style>
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border: 1px solid #b7caa2; padding: 4px 5px; vertical-align: top; }
+    th { background: #e7f0d6; font-weight: bold; }
+    .wrap { word-break: break-word; }
+    .muted { color: #777; }
+    .summary { margin-bottom: 8px; }
+    .summary th { font-size: 10px; text-transform: uppercase; }
+  </style>
 </head>
 <body>
-
-<!-- ===== Cabeçalho padrão (brasão + dados) ===== -->
-<div class="cabecalho">
-  <div class="logo">
-    {% if brasao_url %}
-      <img src="{{ brasao_url }}" alt="Brasão da Prefeitura">
-    {% elif brasao_path %}
-      <img src="{{ brasao_path }}" alt="Brasão da Prefeitura">
-    {% endif %}
+  <!-- *** CABEÇALHO *** -->
+  <div class="header">
+    <div class="logo">
+      {% if brasao_uri %}<img src="{{ brasao_uri }}" alt="Brasão">{% endif %}
+    </div>
+    <div class="hinfo">
+      {% if org_nome %}<div class="nome">{{ org_nome }}</div>{% endif %}
+      {% if org_end_l1 %}<div>{{ org_end_l1 }}</div>{% endif %}
+      {% if org_end_l2 %}<div>{{ org_end_l2 }}</div>{% endif %}
+      {% if org_cep %}<div>CEP {{ org_cep }}</div>{% endif %}
+    </div>
   </div>
 
-  <div class="dados">
-    <strong>Prefeitura Municipal de {{ prefeitura.nome }}</strong><br>
-    {% if prefeitura.logradouro %}
-      {{ prefeitura.logradouro }}{% if prefeitura.endereco_numero %}, {{ prefeitura.endereco_numero }}{% endif %}<br>
-    {% endif %}
-    {% if prefeitura.endereco_bairro %}{{ prefeitura.endereco_bairro }} – {% endif %}
-    {% if prefeitura.endereco_cidade %}{{ prefeitura.endereco_cidade }}{% endif %}
-    {% if prefeitura.endereco_estado %} – {{ prefeitura.endereco_estado }}{% endif %}<br>
-    {% if prefeitura.endereco_cep %}CEP {{ prefeitura.endereco_cep }}{% endif %}
-  </div>
-</div>
+  <div class="titulo">{{ org_titulo }}</div>
 
-<div class="titulo"><span>Relatório de Auditorias</span></div>
+  <!-- RESUMO / FILTROS -->
+  <table class="summary">
+    <thead>
+      <tr>
+        <th>Total</th><th>Criações</th><th>Atualizações</th><th>Exclusões</th><th>Falhas</th>
+        <th>Datas</th><th>Ação</th><th>Entidade</th><th>Usuário</th><th>Busca</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>{{ total }}</td>
+        <td>{{ criacoes }}</td>
+        <td>{{ atualizacoes }}</td>
+        <td>{{ exclusoes }}</td>
+        <td>{{ falhas }}</td>
+        <td>{% if data_inicio %}{{ data_inicio|date:"d/m/Y" }}{% else %}todas{% endif %} — {% if data_fim %}{{ data_fim|date:"d/m/Y" }}{% else %}todas{% endif %}</td>
+        <td>{{ acao_filtro|default:"todas" }}</td>
+        <td>{{ entidade_filtro|default:"todas" }}</td>
+        <td>{{ usuario_filtro|default:"todos" }}</td>
+        <td>{{ busca|default:"-" }}</td>
+      </tr>
+    </tbody>
+  </table>
 
-<!-- ===== Resumo / Filtros ===== -->
-<table class="resumo">
-  <thead>
-    <tr>
-      <th>Total</th>
-      <th>Criações</th>
-      <th>Atualizações</th>
-      <th>Exclusões</th>
-      <th>Falhas</th>
-      <th>Datas</th>
-      <th>Ação</th>
-      <th>Entidade</th>
-      <th>Usuário</th>
-      <th>Busca</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td>{{ total|default:"0" }}</td>
-      <td>{{ add|default:"0" }}</td>
-      <td>{{ change|default:"0" }}</td>
-      <td>{{ delete|default:"0" }}</td>
-      <td>{{ fail|default:"0" }}</td>
-      <td>
-        {% if data_inicio %}{{ data_inicio|date:"d/m/Y" }}{% else %}todas{% endif %}
-         — {% if data_fim %}{{ data_fim|date:"d/m/Y" }}{% else %}todas{% endif %}
-      </td>
-      <td>{{ acao|default:"todas" }}</td>
-      <td>{{ entidade|default:"todas" }}</td>
-      <td>
-        {% if usuario_email %}{{ usuario_email }}
-        {% elif usuario_username %}{{ usuario_username }}
-        {% elif usuario_nome %}{{ usuario_nome }}
-        {% else %}todos{% endif %}
-      </td>
-      <td>{{ busca|default:"" }}</td>
-    </tr>
-  </tbody>
-</table>
-
-<!-- ===== Tabela de registros ===== -->
-<table class="tabela">
-  <thead>
-    <tr>
-      <th class="col-data">Data/Hora</th>
-      <th class="col-user">Usuário</th>
-      <th class="col-acao">Ação</th>
-      <th class="col-ent">Entidade</th>
-      <th class="col-obj">Objeto</th>
-      <th class="col-det">Detalhes</th>
-    </tr>
-  </thead>
-  <tbody>
-  {% for r in linhas %}
-    <tr>
-      <td class="col-data">{{ r.data_hora|date:"d/m/Y, H:i" }}</td>
-
-      <td class="col-user">
-        {% if r.usuario_email %}{{ r.usuario_email }}
-        {% elif r.usuario_username %}{{ r.usuario_username }}
-        {% elif r.usuario_nome %}{{ r.usuario_nome }}
-        {% else %}-{% endif %}
-      </td>
-
-      <td class="col-acao">
-        {# usa label se vier do backend; senão traduz o raw #}
-        {% if r.acao_label %}{{ r.acao_label }}
-        {% else %}
-          {% with a=r.acao|lower %}
-            {% if a in "add,adição,adicao,create,criação,criacao" %}Adição
-            {% elif a in "change,edição,edicao,update" %}Edição
-            {% elif a in "delete,exclusão,exclusao" %}Exclusão
-            {% elif a in "fail,falha,erro,error" %}Falha
-            {% else %}{{ r.acao }}{% endif %}
-          {% endwith %}
-        {% endif %}
-      </td>
-
-      <td class="col-ent">{{ r.modelo|default:"-" }}</td>
-      <td class="col-obj">{{ r.objeto_id|default:"-" }}</td>
-      <td class="col-det">{{ r.detalhes|default:"-" }}</td>
-    </tr>
-  {% empty %}
-    <tr>
-      <td colspan="6" class="muted">Nenhum registro com os filtros atuais.</td>
-    </tr>
-  {% endfor %}
-  </tbody>
-</table>
-
+  <!-- TABELA -->
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 12%;">Data/Hora</th>
+        <th style="width: 18%;">Usuário</th>
+        <th style="width: 8%;">Ação</th>
+        <th style="width: 12%;">Entidade</th>
+        <th style="width: 6%;">Objeto</th>
+        <th>Detalhes</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in linhas %}
+        <tr>
+          <td>{{ r.data_hora|date:"d/m/Y, H:i" }}</td>
+          <td>{{ r.usuario }}</td>
+          <td>{{ r.acao }}</td>
+          <td>{{ r.modelo }}</td>
+          <td>{{ r.objeto_id }}</td>
+          <td class="wrap">{{ r.detalhes }}</td>
+        </tr>
+      {% empty %}
+        <tr>
+          <td colspan="6" class="muted" style="text-align:center;">Nenhum registro com os filtros atuais.</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
 </body>
 </html>
