@@ -12,7 +12,7 @@ import {
   ChevronRight,
 } from "lucide-react";
 
-import { Outlet, useNavigate } from "react-router-dom";
+import { Outlet, useNavigate, useLocation } from "react-router-dom";
 import UserHeader from "../components/UserHeader";
 import CemeterySelector from "../components/CemeterySelector";
 
@@ -28,6 +28,16 @@ function Dashboard() {
   const [sepultadosOpen, setSepultadosOpen] = useState(false);
   const [relatoriosOpen, setRelatoriosOpen] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // Helper: se já estamos no path, navega com um query param para forçar "refresh"
+  const go = (path) => {
+    if (location.pathname.startsWith(path)) {
+      navigate(`${path}?r=${Date.now()}`, { replace: false });
+    } else {
+      navigate(path);
+    }
+  };
 
   return (
     <div className="flex min-h-screen bg-white">
@@ -37,7 +47,7 @@ function Dashboard() {
           <img src="/logo.png" alt="Logo" className="h-14" />
         </div>
         <nav className="flex flex-col gap-1">
-          <div onClick={() => navigate("/")}>
+          <div onClick={() => go("/")}>
             <SidebarItem icon={LayoutDashboard} label="Dashboard" />
           </div>
 
@@ -45,7 +55,7 @@ function Dashboard() {
             <div
               onClick={() => {
                 setCemiterioOpen((v) => !v);
-                navigate("/cemiterios");
+                go("/cemiterios");
               }}
               className="flex items-center gap-3 px-4 py-3 hover:bg-[#d8e9c0] rounded-xl cursor-pointer transition"
             >
@@ -59,10 +69,10 @@ function Dashboard() {
             </div>
             {cemiterioOpen && (
               <div className="ml-8 mt-1 flex flex-col gap-1">
-                <div onClick={() => navigate("/quadras")}>
+                <div onClick={() => go("/quadras")}>
                   <SidebarItem icon={FolderKanban} label="Quadras" />
                 </div>
-                <div onClick={() => navigate("/tumulos")}>
+                <div onClick={() => go("/tumulos")}>
                   <SidebarItem icon={FolderKanban} label="Túmulos" />
                 </div>
               </div>
@@ -72,7 +82,7 @@ function Dashboard() {
           <div>
             <div
               onClick={() => {
-                navigate("/sepultados");
+                go("/sepultados");
                 setSepultadosOpen((v) => !v);
               }}
               className="flex items-center gap-3 px-4 py-3 hover:bg-[#d8e9c0] rounded-xl cursor-pointer transition"
@@ -87,13 +97,13 @@ function Dashboard() {
             </div>
             {sepultadosOpen && (
               <div className="ml-8 mt-1 flex flex-col gap-1">
-                <div onClick={() => navigate("/contratos")}>
+                <div onClick={() => go("/contratos")}>
                   <SidebarItem icon={ScrollText} label="Contratos de Concessão" />
                 </div>
-                <div onClick={() => navigate("/exumacoes")}>
+                <div onClick={() => go("/exumacoes")}>
                   <SidebarItem icon={ClipboardList} label="Exumações" />
                 </div>
-                <div onClick={() => navigate("/traslados")}>
+                <div onClick={() => go("/traslados")}>
                   <SidebarItem icon={ClipboardList} label="Translados" />
                 </div>
               </div>
@@ -115,32 +125,32 @@ function Dashboard() {
             </div>
             {relatoriosOpen && (
               <div className="ml-8 mt-1 flex flex-col gap-1">
-                <div onClick={() => navigate("/relatorio/sepultados")}>
+                <div onClick={() => go("/relatorio/sepultados")}>
                   <SidebarItem icon={FileBarChart} label="Sepultados" />
                 </div>
-                <div onClick={() => navigate("/relatorio/exumacoes")}>
+                <div onClick={() => go("/relatorio/exumacoes")}>
                   <SidebarItem icon={FileBarChart} label="Exumações" />
                 </div>
-                <div onClick={() => navigate("/relatorio/traslados")}>
+                <div onClick={() => go("/relatorio/traslados")}>
                   <SidebarItem icon={FileBarChart} label="Translados" />
                 </div>
-                <div onClick={() => navigate("/relatorio/contratos")}>
+                <div onClick={() => go("/relatorio/contratos")}>
                   <SidebarItem icon={FileBarChart} label="Contratos" />
                 </div>
-                <div onClick={() => navigate("/relatorio/receitas")}>
+                <div onClick={() => go("/relatorio/receitas")}>
                   <SidebarItem icon={FileBarChart} label="Receitas" />
                 </div>
-                <div onClick={() => navigate("/relatorio/tumulos")}>
+                <div onClick={() => go("/relatorio/tumulos")}>
                   <SidebarItem icon={FileBarChart} label="Túmulos" />
                 </div>
-                <div onClick={() => navigate("/relatorio/auditorias")}>
+                <div onClick={() => go("/relatorio/auditorias")}>
                   <SidebarItem icon={FileBarChart} label="Histórico de Ações" />
                 </div>
               </div>
             )}
           </div>
 
-          <div onClick={() => navigate("/receitas")}>
+          <div onClick={() => go("/receitas")}>
             <SidebarItem icon={FileText} label="Receitas" />
           </div>
         </nav>
@@ -157,8 +167,10 @@ function Dashboard() {
           </div>
           <UserHeader />
         </header>
+
+        {/* chaveia pelo pathname + search para remontar quando só o ?r muda */}
         <main className="flex-1 bg-white p-8 rounded-tl-3xl">
-          <Outlet />
+          <Outlet key={location.pathname + location.search} />
         </main>
       </div>
     </div>

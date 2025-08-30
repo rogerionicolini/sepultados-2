@@ -1,5 +1,17 @@
-import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
+
+const Item = ({ label, to, onGo, active }) => (
+  <button
+    type="button"
+    onClick={() => onGo(to)}
+    className={`w-full text-left block px-2 py-2 rounded transition ${
+      active ? "bg-[#d8e9c0] text-[#224c15]" : "hover:bg-[#d8e9c0]"
+    }`}
+  >
+    {label}
+  </button>
+);
 
 const Navbar = () => {
   const location = useLocation();
@@ -9,45 +21,55 @@ const Navbar = () => {
   useEffect(() => {
     const token = localStorage.getItem("token");
     const hiddenRoutes = ["/", "/login", "/recuperar-senha", "/redefinir-senha"];
-    if (!token || hiddenRoutes.includes(location.pathname)) {
-      setShowNavbar(false);
-    } else {
-      setShowNavbar(true);
-    }
+    setShowNavbar(Boolean(token) && !hiddenRoutes.includes(location.pathname));
   }, [location]);
 
   if (!showNavbar) return null;
+
+  // Navegação que força “refresh” quando clicamos na mesma rota
+  const go = (path) => {
+    if (location.pathname === path) {
+      // mesmo caminho -> força remontagem do Outlet via state.refresh
+      navigate(path, { replace: true, state: { refresh: Date.now() } });
+    } else {
+      navigate(path);
+    }
+  };
+
+  const items = [
+    { label: "Dashboard", to: "/dashboard" }, // se sua home do painel é /, use "/"
+    { label: "Cemitérios", to: "/cemiterios" },
+    { label: "Quadras", to: "/quadras" },
+    { label: "Túmulos", to: "/tumulos" },
+    { label: "Sepultados", to: "/sepultados" },
+    { label: "Contratos", to: "/contratos" },
+    { label: "Exumações", to: "/exumacoes" },
+    { label: "Translados", to: "/traslados" },
+    { label: "Receitas", to: "/receitas" },
+    { label: "Auditoria", to: "/relatorio/auditorias" },
+    { label: "Importar Quadras", to: "/importacoes" }, // ajuste se tiver páginas separadas
+    { label: "Relatório de Sepultados", to: "/relatorio/sepultados" },
+    { label: "Relatório de Exumações", to: "/relatorio/exumacoes" },
+    { label: "Relatório de Traslados", to: "/relatorio/traslados" },
+    { label: "Relatório de Contratos", to: "/relatorio/contratos" },
+    { label: "Relatório de Receitas", to: "/relatorio/receitas" },
+    { label: "Relatório de Túmulos", to: "/relatorio/tumulos" },
+  ];
 
   return (
     <nav className="w-60 bg-[#224c15] text-white h-screen fixed left-0 top-0 overflow-y-auto p-4">
       <h2 className="text-lg font-bold mb-4">Sepultados.com</h2>
       <ul className="space-y-1">
-        <li>
-          <span
-            onClick={() => navigate("/")}
-            className="block px-2 py-2 rounded hover:bg-[#d8e9c0] transition cursor-pointer"
-          >
-            Dashboard
-          </span>
-        </li>
-        <li><Link to="/cemiterios" className="block px-2 py-2 rounded hover:bg-[#d8e9c0] transition">Cemitérios</Link></li>
-        <li><Link to="/quadras" className="block px-2 py-2 rounded hover:bg-[#d8e9c0] transition">Quadras</Link></li>
-        <li><Link to="/tumulos" className="block px-2 py-2 rounded hover:bg-[#d8e9c0] transition">Túmulos</Link></li>
-        <li><Link to="/sepultados" className="block px-2 py-2 rounded hover:bg-[#d8e9c0] transition">Sepultados</Link></li>
-        <li><Link to="/contratos" className="block px-2 py-2 rounded hover:bg-[#d8e9c0] transition">Contratos</Link></li>
-        <li><Link to="/exumacoes" className="block px-2 py-2 rounded hover:bg-[#d8e9c0] transition">Exumações</Link></li>
-        <li><Link to="/traslados" className="block px-2 py-2 rounded hover:bg-[#d8e9c0] transition">Translados</Link></li>
-        <li><Link to="/receitas" className="block px-2 py-2 rounded hover:bg-[#d8e9c0] transition">Receitas</Link></li>
-        <li><Link to="/auditoria" className="block px-2 py-2 rounded hover:bg-[#d8e9c0] transition">Auditoria</Link></li>
-        <li><Link to="/importar-quadras" className="block px-2 py-2 rounded hover:bg-[#d8e9c0] transition">Importar Quadras</Link></li>
-        <li><Link to="/importar-tumulos" className="block px-2 py-2 rounded hover:bg-[#d8e9c0] transition">Importar Túmulos</Link></li>
-        <li><Link to="/importar-sepultados" className="block px-2 py-2 rounded hover:bg-[#d8e9c0] transition">Importar Sepultados</Link></li>
-        <li><Link to="/relatorio-sepultados" className="block px-2 py-2 rounded hover:bg-[#d8e9c0] transition">Relatório de Sepultados</Link></li>
-        <li><Link to="/relatorio-exumacoes" className="block px-2 py-2 rounded hover:bg-[#d8e9c0] transition">Relatório de Exumações</Link></li>
-        <li><Link to="/relatorio-traslados" className="block px-2 py-2 rounded hover:bg-[#d8e9c0] transition">Relatório de Traslados</Link></li>
-        <li><Link to="/relatorio-contratos" className="block px-2 py-2 rounded hover:bg-[#d8e9c0] transition">Relatório de Contratos</Link></li>
-        <li><Link to="/relatorio-receitas" className="block px-2 py-2 rounded hover:bg-[#d8e9c0] transition">Relatório de Receitas</Link></li>
-        <li><Link to="/relatorio-tumulos" className="block px-2 py-2 rounded hover:bg-[#d8e9c0] transition">Relatório de Túmulos</Link></li>
+        {items.map((it) => (
+          <li key={it.to}>
+            <Item
+              label={it.label}
+              to={it.to}
+              onGo={go}
+              active={location.pathname === it.to}
+            />
+          </li>
+        ))}
       </ul>
     </nav>
   );
