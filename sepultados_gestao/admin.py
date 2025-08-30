@@ -144,6 +144,9 @@ from django.contrib import admin, messages
 from .models import Cemiterio, Quadra
 from .forms import QuadraForm
 from .mixins import PrefeituraObrigatoriaAdminMixin
+from django.db import models
+from django.contrib.admin.widgets import AdminTextareaWidget
+
 
 
 @admin.register(Cemiterio)
@@ -151,7 +154,9 @@ class CemiterioAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
     list_display = ("nome", "cidade", "estado", "telefone", "tempo_minimo_exumacao")
     search_fields = ("nome", "cidade")
     list_filter = ("estado",)
-
+    formfield_overrides = {
+        models.JSONField: {"widget": AdminTextareaWidget(attrs={"rows": 10, "cols": 120})}
+    }
     def get_fields(self, request, obj=None):
         return [
             "nome",
@@ -159,7 +164,8 @@ class CemiterioAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
             "telefone",
             "cidade",
             "estado",
-            "tempo_minimo_exumacao"
+            "tempo_minimo_exumacao",
+            "limites_mapa"
         ]
 
     def get_queryset(self, request):

@@ -149,6 +149,7 @@ class Cemiterio(models.Model):
         verbose_name="Tempo mínimo para exumação (em meses)",
         help_text="Tempo mínimo exigido entre sepultamentos no mesmo túmulo (em meses)"
     )
+    limites_mapa = models.JSONField(null=True, blank=True)
     # dentro de Cemiterio
     SITUACAO_CHOICES = [
         ('ativo', 'Ativo'),
@@ -195,6 +196,8 @@ from .utils import validar_prefeitura_obrigatoria
 class Quadra(models.Model):
     codigo = models.CharField(max_length=20)
     cemiterio = models.ForeignKey(Cemiterio, on_delete=models.CASCADE)
+    poligono_mapa = models.JSONField(default=list, blank=True)   # [{lat,lng},...]
+    grid_params = models.JSONField(default=dict, blank=True)     # opcional p/ próxima etapa
 
     @cached_property
     def prefeitura(self):
@@ -265,6 +268,7 @@ class Tumulo(models.Model):
         verbose_name="Capacidade de sepultamentos",
         help_text="Número máximo de sepultamentos simultâneos neste túmulo."
     )
+    localizacao = models.JSONField(null=True, blank=True)
 
     @cached_property
     def prefeitura(self):

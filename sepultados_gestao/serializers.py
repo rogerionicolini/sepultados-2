@@ -479,3 +479,13 @@ class AnexoSerializer(serializers.ModelSerializer):
             except Exception:
                 data["nome"] = ""
         return data
+
+
+from rest_framework import serializers
+from .models import Quadra
+
+class QuadraMapaSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Quadra
+        fields = ["id", "nome", "cemiterio", "poligono_mapa", "grid_params"]
+        read_only_fields = ["cemiterio"]

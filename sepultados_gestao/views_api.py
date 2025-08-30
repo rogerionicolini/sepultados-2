@@ -126,22 +126,36 @@ class ContextoRestritoQuerysetMixin:
         return qs.none()
 
 
-# ===========================
-# VIEWSETS PRINCIPAIS
-# ===========================
+# imports no topo do arquivo
+from rest_framework import viewsets
+from rest_framework.permissions import IsAuthenticated, AllowAny
+
 class CemiterioViewSet(PrefeituraRestritaQuerysetMixin, viewsets.ModelViewSet):
     queryset = Cemiterio.objects.all()
     serializer_class = CemiterioSerializer
     prefeitura_field = "prefeitura"
     permission_classes = [IsAuthenticated]
 
+    # <- apenas o retrieve (GET /api/cemiterios/<id>/) fica público; o resto continua exigindo login
+    def get_permissions(self):
+        if getattr(self, "action", None) == "retrieve":
+            return [AllowAny()]
+        return [IsAuthenticated()]
+
+    # <- para retrieve, não aplicamos a restrição de prefeitura_ativa, senão dá 404 mesmo público
     def get_queryset(self):
-        qs = super().get_queryset()
-        if not qs.exists():
+        if getattr(self, "action", None) == "retrieve":
+            # DRF ainda aplica o filtro por pk na hora de buscar o objeto
+            return Cemiterio.objects.all()
+
+        if getattr(self, "action", None) == "list":
+            # se quiser listar por prefeitura via querystring (sem sessão)
             pref_id = self.request.query_params.get("prefeitura")
             if pref_id:
                 return Cemiterio.objects.filter(prefeitura_id=pref_id)
-        return qs
+
+        # para criar/alterar/excluir (ou list sem prefeitura), segue a regra do mixin (usuário logado)
+        return super().get_queryset()
 
     def perform_create(self, serializer):
         pref = getattr(self.request, "prefeitura_ativa", None)
@@ -152,12 +166,29 @@ class CemiterioViewSet(PrefeituraRestritaQuerysetMixin, viewsets.ModelViewSet):
         serializer.save(prefeitura=pref)
 
 
+
+from rest_framework import viewsets
+from rest_framework.permissions import IsAuthenticated
+
 class QuadraViewSet(ContextoRestritoQuerysetMixin, viewsets.ModelViewSet):
     queryset = Quadra.objects.all()
     serializer_class = QuadraSerializer
     cemiterio_field = "cemiterio"
     prefeitura_field = "cemiterio__prefeitura"
     permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        cid = self.request.query_params.get("cemiterio")
+        if cid:
+            qs = qs.filter(cemiterio_id=cid)
+        return qs
+
+    def perform_create(self, serializer):
+        cid = self.request.data.get("cemiterio") or self.request.query_params.get("cemiterio")
+        serializer.save(cemiterio_id=cid)
+
+
 
 
 # --- INÍCIO: trecho para colar no views_api.py ---
@@ -2123,3 +2154,7 @@ def dashboard_resumo_api(request):
         },
     }
     return Response(data)
+
+from rest_framework.viewsets import ModelViewSet
+
+
