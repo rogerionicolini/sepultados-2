@@ -237,6 +237,7 @@ class Tumulo(models.Model):
         ('perpetua', 'Perpétua'),
         ('sepultura', 'Sepultura'),
         ('jazigo', 'Jazigo'),
+        ('gaveta', 'Gaveta'),
         ('outro', 'Outro'),
     ]
 
@@ -924,8 +925,8 @@ class Translado(models.Model):
     DESTINOS = [
         ('outro_tumulo', 'Outro Túmulo'),
         ('outro_cemiterio', 'Outro Cemitério'),
-        ('ossario', 'Ossário'),
     ]
+    
     destino = models.CharField(max_length=20, choices=DESTINOS)
     tumulo_destino = models.ForeignKey("Tumulo", on_delete=models.SET_NULL, null=True, blank=True)
     cemiterio_nome = models.CharField("Cemitério", max_length=255, blank=True, null=True)

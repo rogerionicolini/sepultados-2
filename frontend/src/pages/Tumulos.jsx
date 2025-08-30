@@ -52,6 +52,7 @@ const TIPOS = [
   { value: "perpetua", label: "Perpétua" },
   { value: "sepultura", label: "Sepultura" },
   { value: "jazigo", label: "Jazigo" },
+  { value: "gaveta", label: "Gaveta" },
   { value: "outro", label: "Outro" },
 ];
 

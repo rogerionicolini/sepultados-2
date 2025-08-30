@@ -711,7 +711,6 @@ export default function FormularioTranslado({ transladoId, onCancel, onSuccess }
                 >
                   <option value="outro_tumulo">Outro Túmulo</option>
                   <option value="outro_cemiterio">Outro Cemitério</option>
-                  <option value="ossario">Ossário</option>
                 </select>
                 {err("destino") && <p className="mt-1 text-xs text-red-600">{err("destino")}</p>}
               </div>

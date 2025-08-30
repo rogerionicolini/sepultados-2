@@ -2032,6 +2032,10 @@ def dashboard_resumo_api(request):
     """
     GET /api/dashboard/resumo/?cemiterio=<id>
     (ou ?prefeitura=<id>; ou pega da sessão se existir)
+
+    Regras aqui:
+      - total_sepultados: conta TODOS (inclusive os do Ossário).
+      - total_vagas / total_tumulos_livres / ocupação: **ignorando** túmulos identificados como "Ossário".
     """
     cem_id = request.query_params.get("cemiterio")
     pref_id = request.query_params.get("prefeitura")
@@ -2056,15 +2060,21 @@ def dashboard_resumo_api(request):
     else:
         tumulos = tumulos.filter(cemiterio__prefeitura_id=int(pref_id))
 
-    # Capacidade total (vagas)
-    vagas_totais = tumulos.aggregate(
+    # Definição do filtro para o Ossário (identificador "Ossário" ou "Ossario", ignorando caixa/acentuação)
+    OSSARIO_Q = Q(identificador__iregex=r'^\s*oss[aá]rio\s*$')
+
+    # Conjunto de túmulos que NÃO são Ossário (usado para vagas/ocupação)
+    tumulos_sem_ossario = tumulos.exclude(OSSARIO_Q)
+
+    # Capacidade total (vagas) — **sem Ossário**
+    vagas_totais = tumulos_sem_ossario.aggregate(
         total=Coalesce(Sum("capacidade"), Value(0, output_field=IntegerField()))
     )["total"]
 
     # ---------- SEPULTADOS ----------
-    # Todos os sepultados que já estiveram/estão em um túmulo do conjunto
+    # Todos os sepultados vinculados a algum túmulo do conjunto (INCLUI Ossário)
     sep_all = Sepultado.objects.filter(tumulo__in=tumulos)
-    total_sepultados = sep_all.count()  # <-- inclui exumados e transladados
+    total_sepultados = sep_all.count()
 
     # Apenas os que AINDA OCUPAM vaga (sem exumação e sem translado, e não marcados como exumado/trasladado)
     sep_atuais = (
@@ -2072,33 +2082,38 @@ def dashboard_resumo_api(request):
         .exclude(exumado=True)
         .exclude(trasladado=True)
     )
+    # Para a conta de vagas/ocupação, **ignore Ossário**
+    sep_atuais_sem_ossario = sep_atuais.filter(tumulo__in=tumulos_sem_ossario)
 
-    # Ocupação por túmulo (quantos ocupantes atuais por tumulo_id)
+    # Ocupação por túmulo (quantos ocupantes atuais por tumulo_id) — **sem Ossário**
     occ_map = dict(
-        sep_atuais.values("tumulo_id").annotate(ct=Count("id")).values_list("tumulo_id", "ct")
+        sep_atuais_sem_ossario.values("tumulo_id")
+        .annotate(ct=Count("id"))
+        .values_list("tumulo_id", "ct")
     )
 
-    # Túmulos livres = pelo menos 1 vaga disponível pela capacidade real
+    # Túmulos livres = pelo menos 1 vaga disponível pela capacidade real — **sem Ossário**
     livres_tumulos = 0
-    for t_id, cap in tumulos.values_list("id", "capacidade"):
+    for t_id, cap in tumulos_sem_ossario.values_list("id", "capacidade"):
         if cap - occ_map.get(t_id, 0) > 0:
             livres_tumulos += 1
 
-    # Ocupação/vagas (por pessoa)
-    ocupantes_atuais = sep_atuais.count()
+    # Ocupação/vagas (por pessoa) — **sem Ossário**
+    ocupantes_atuais = sep_atuais_sem_ossario.count()
     vagas_ocupadas = min(ocupantes_atuais, vagas_totais)
     vagas_livres = max(vagas_totais - vagas_ocupadas, 0)
     percentual = round((vagas_ocupadas / vagas_totais * 100) if vagas_totais else 0, 1)
 
     # ---------- CONTRATOS ----------
+    # (mantive com todos os túmulos; se quiser ignorar ossário aqui também, troque para tumulos_sem_ossario)
     contratos = ConcessaoContrato.objects.filter(tumulo__in=tumulos).distinct()
     contratos_ativos = contratos.count()
 
     # ---------- RESPOSTA ----------
     data = {
-        "total_sepultados": total_sepultados,       # TODOS (ativos + exumados + transladados)
-        "total_tumulos_livres": livres_tumulos,     # túmulos com pelo menos 1 vaga disponível
-        "total_vagas": vagas_totais,                # soma da capacidade
+        "total_sepultados": total_sepultados,       # TODOS, inclusive Ossário
+        "total_tumulos_livres": livres_tumulos,     # sem Ossário
+        "total_vagas": vagas_totais,                # sem Ossário
         "contratos_ativos": contratos_ativos,
         "ocupacao": {
             "percentual": percentual,
@@ -2108,4 +2123,3 @@ def dashboard_resumo_api(request):
         },
     }
     return Response(data)
-
