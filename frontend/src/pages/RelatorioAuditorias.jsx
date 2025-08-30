@@ -18,16 +18,16 @@ const fmtDateTime = (s) => {
   return `${dd}/${mm}/${yyyy}, ${hh}:${mi}`;
 };
 
-// normaliza ação para PT-BR
-const acaoPT = (raw, label) => {
-  if (label) return label;
-  const r = String(raw || "").toLowerCase();
+// normaliza ação para PT-BR (não usa mais o label cru)
+const acaoPT = (value) => {
+  const r = String(value || "").toLowerCase();
   if (["add", "adição", "adicao", "create", "criação", "criacao"].includes(r)) return "Adição";
   if (["change", "edição", "edicao", "update"].includes(r)) return "Edição";
   if (["delete", "exclusão", "exclusao"].includes(r)) return "Exclusão";
   if (["fail", "falha", "erro", "error"].includes(r)) return "Falha";
-  return raw || "-";
+  return value || "-";
 };
+
 
 export default function RelatorioAuditorias() {
   const api = useMemo(
@@ -159,7 +159,7 @@ export default function RelatorioAuditorias() {
             onClick={gerarPDF}
             className="bg-green-800 text-white px-4 py-2 rounded-xl shadow hover:bg-green-700"
           >
-            Gerar PDF
+            Imprimir
           </button>
         </div>
       </div>
