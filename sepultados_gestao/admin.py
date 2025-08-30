@@ -725,11 +725,27 @@ class ConcessaoContratoAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
     tumulo_exibicao.short_description = "Túmulo"
 
     def get_queryset(self, request):
-        qs = super().get_queryset(request)
-        if request.user.is_superuser:
-            return qs
+        qs = super().get_queryset(request).select_related(
+            "tumulo", "tumulo__cemiterio", "tumulo__quadra", "tumulo__quadra__cemiterio"
+        )
+
+               # prefeitura ativa (igual ao que você já fazia)
         prefeitura_id = request.session.get("prefeitura_ativa_id")
-        return qs.filter(prefeitura_id=prefeitura_id)
+        if prefeitura_id:
+            qs = qs.filter(prefeitura_id=prefeitura_id)
+
+        # NOVO: filtrar também pelo cemitério ativo (middleware ou sessão)
+        cem = getattr(request, "cemiterio_ativo", None)
+        cem_id = getattr(cem, "id", None) or request.session.get("cemiterio_ativo_id")
+
+        if cem_id:
+            qs = qs.filter(
+                Q(tumulo__cemiterio_id=cem_id) |          # FK direta
+                Q(tumulo__quadra__cemiterio_id=cem_id)    # via quadra -> cemitério
+            )
+        # se não houver cemitério selecionado, mantém o que já filtrou por prefeitura
+
+        return qs
 
     def get_form(self, request, obj=None, **kwargs):
         form_class = super().get_form(request, obj, **kwargs)
@@ -798,6 +814,20 @@ class ConcessaoContratoAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
         return format_html('<a href="{}" target="_blank">📄 PDF</a>', url)
     link_pdf.short_description = "Contrato"
 
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        if db_field.name == "tumulo":
+            cem = getattr(request, "cemiterio_ativo", None)
+            cem_id = getattr(cem, "id", None) or request.session.get("cemiterio_ativo_id")
+
+            if cem_id:
+                kwargs["queryset"] = Tumulo.objects.filter(
+                    Q(cemiterio_id=cem_id) | Q(quadra__cemiterio_id=cem_id)
+                ).select_related("cemiterio", "quadra", "quadra__cemiterio")
+            else:
+                kwargs["queryset"] = Tumulo.objects.none()
+
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)
+
 
     class Media:
         js = ('custom_admin/js/contrato.js',)
@@ -848,9 +878,56 @@ class ExumacaoAdmin(admin.ModelAdmin):
 
 
     def get_queryset(self, request):
-        qs = super().get_queryset(request)
+        qs = super().get_queryset(request).select_related(
+            "sepultado", "tumulo",
+            "tumulo__quadra", "tumulo__cemiterio",
+            "sepultado__tumulo", "sepultado__tumulo__quadra", "sepultado__tumulo__cemiterio",
+        )
+
+        # filtra por prefeitura (como você já fazia)
         prefeitura_id = request.session.get("prefeitura_ativa_id")
-        return qs.filter(prefeitura_id=prefeitura_id) if prefeitura_id else qs.none()
+        if prefeitura_id:
+            qs = qs.filter(prefeitura_id=prefeitura_id)
+
+        # NOVO: filtra também pelo cemitério ativo (middleware ou sessão)
+        cem = getattr(request, "cemiterio_ativo", None)
+        cem_id = getattr(cem, "id", None) or request.session.get("cemiterio_ativo_id")
+
+        if cem_id:
+            qs = qs.filter(
+                Q(tumulo__cemiterio_id=cem_id) |
+                Q(tumulo__quadra__cemiterio_id=cem_id) |
+                Q(sepultado__tumulo__cemiterio_id=cem_id) |
+                Q(sepultado__tumulo__quadra__cemiterio_id=cem_id)
+            )
+        else:
+            # sem cemitério selecionado: não exibe nada para evitar mistura
+            qs = qs.none()
+
+        return qs
+
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        cem = getattr(request, "cemiterio_ativo", None)
+        cem_id = getattr(cem, "id", None) or request.session.get("cemiterio_ativo_id")
+
+        if db_field.name == "tumulo":
+            if cem_id:
+                kwargs["queryset"] = Tumulo.objects.filter(
+                    Q(cemiterio_id=cem_id) | Q(quadra__cemiterio_id=cem_id)
+                ).select_related("cemiterio", "quadra", "quadra__cemiterio")
+            else:
+                kwargs["queryset"] = Tumulo.objects.none()
+
+        if db_field.name == "sepultado":
+            if cem_id:
+                kwargs["queryset"] = Sepultado.objects.filter(
+                    Q(tumulo__cemiterio_id=cem_id) | Q(tumulo__quadra__cemiterio_id=cem_id)
+                ).select_related("tumulo", "tumulo__cemiterio", "tumulo__quadra", "tumulo__quadra__cemiterio")
+            else:
+                kwargs["queryset"] = Sepultado.objects.none()
+
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)
+
 
     def get_nome_sepultado(self, obj):
         return obj.sepultado.nome if obj.sepultado else "-"
@@ -960,11 +1037,59 @@ class TransladoAdmin(admin.ModelAdmin):
     )
 
     def get_queryset(self, request):
-        qs = super().get_queryset(request)
+        qs = super().get_queryset(request).select_related(
+            "sepultado",
+            "sepultado__tumulo", "sepultado__tumulo__quadra", "sepultado__tumulo__cemiterio",
+            "tumulo_destino", "tumulo_destino__quadra", "tumulo_destino__cemiterio",
+        )
+
+        # prefeitura ativa (você já usava util)
         pref = obter_prefeitura_ativa_do_request(request)
         if pref:
-            return qs.filter(sepultado__tumulo__quadra__cemiterio__prefeitura=pref)
-        return qs.none()
+            qs = qs.filter(
+                Q(sepultado__tumulo__quadra__cemiterio__prefeitura=pref) |
+                Q(tumulo_destino__quadra__cemiterio__prefeitura=pref)
+            )
+
+        # NOVO: cemitério ativo (middleware ou sessão)
+        cem = getattr(request, "cemiterio_ativo", None)
+        cem_id = getattr(cem, "id", None) or request.session.get("cemiterio_ativo_id")
+
+        if cem_id:
+            qs = qs.filter(
+                Q(sepultado__tumulo__cemiterio_id=cem_id) |
+                Q(sepultado__tumulo__quadra__cemiterio_id=cem_id) |
+                Q(tumulo_destino__cemiterio_id=cem_id) |
+                Q(tumulo_destino__quadra__cemiterio_id=cem_id)
+            )
+        else:
+            # sem cemitério selecionado, não lista (evita mistura)
+            qs = qs.none()
+
+        return qs
+
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        cem = getattr(request, "cemiterio_ativo", None)
+        cem_id = getattr(cem, "id", None) or request.session.get("cemiterio_ativo_id")
+
+        if db_field.name == "sepultado":
+            if cem_id:
+                kwargs["queryset"] = Sepultado.objects.filter(
+                    Q(tumulo__cemiterio_id=cem_id) | Q(tumulo__quadra__cemiterio_id=cem_id)
+                ).select_related("tumulo", "tumulo__quadra", "tumulo__cemiterio")
+            else:
+                kwargs["queryset"] = Sepultado.objects.none()
+
+        if db_field.name == "tumulo_destino":
+            if cem_id:
+                kwargs["queryset"] = Tumulo.objects.filter(
+                    Q(cemiterio_id=cem_id) | Q(quadra__cemiterio_id=cem_id)
+                ).select_related("cemiterio", "quadra", "quadra__cemiterio")
+            else:
+                kwargs["queryset"] = Tumulo.objects.none()
+
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)
+
 
     def delete_model(self, request, obj):
         if obj.receitas.exists():

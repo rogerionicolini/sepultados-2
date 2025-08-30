@@ -121,7 +121,7 @@ export default function DashboardResumo() {
             <p className="text-2xl font-bold">{loading ? "…" : c.value}</p>
           </div>
         ))}
-        <div className="bg-[#f0f8ea] p-6 rounded-xl shadow text-green-900 flex items-center justify-center text-center">
+        <div className="bg-[#f0f8ea] p-2 rounded-xl shadow text-green-900 flex items-center justify-center text-center">
           {loading ? (
             <p className="text-sm">Carregando…</p>
           ) : (
