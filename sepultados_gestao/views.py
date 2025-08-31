@@ -325,64 +325,148 @@ def gerar_pdf_sepultados_tumulo(request, pk):
     return response
 
 
+# -- INÍCIO: helpers (pode colar este mesmo bloco aqui também) --
+import json, re
+import pandas as pd
+from django.db import transaction
+from django.contrib.admin.views.decorators import staff_member_required
 from django.contrib import messages
 from django.shortcuts import render
-from django.contrib.admin.views.decorators import staff_member_required
 from sepultados_gestao.models import Quadra
-import pandas as pd
+
+FLOAT_RE = re.compile(r"[-+]?\d+(?:\.\d+)?")
+POLY_COLUMNS = ("poligono_mapa", "limites", "polygon", "wkt", "latlng", "lat_lng")
+
+def _parse_pairs(s: str):
+    s = str(s).replace("|", ";").replace("/", ";").replace("\n", ";")
+    parts = [p.strip() for p in s.split(";") if p.strip()]
+    pts = []
+    for p in parts:
+        nums = FLOAT_RE.findall(p)
+        if len(nums) >= 2:
+            lat = float(nums[0]); lng = float(nums[1])
+            pts.append({"lat": lat, "lng": lng})
+    return pts
+
+def _parse_wkt(s: str):
+    inside = s.strip()
+    if inside.upper().startswith("POLYGON"):
+        inside = inside[inside.find("((")+2: inside.rfind("))")]
+    pairs = [p.strip() for p in inside.split(",") if p.strip()]
+    pts = []
+    for p in pairs:
+        nums = FLOAT_RE.findall(p)
+        if len(nums) >= 2:
+            lng = float(nums[0]); lat = float(nums[1])
+            pts.append({"lat": lat, "lng": lng})
+    return pts
+
+def parse_polygon_cell(cell):
+    if cell is None or (isinstance(cell, float) and pd.isna(cell)):
+        return []
+    if isinstance(cell, list):
+        if cell and isinstance(cell[0], dict) and "lat" in cell[0] and "lng" in cell[0]:
+            return [{"lat": float(p["lat"]), "lng": float(p["lng"])} for p in cell]
+        if cell and isinstance(cell[0], (list, tuple)) and len(cell[0]) >= 2:
+            return [{"lat": float(p[0]), "lng": float(p[1])} for p in cell]
+    s = str(cell).strip()
+    if not s:
+        return []
+    if s.startswith("[") or s.startswith("{"):
+        try:
+            j = json.loads(s)
+            return parse_polygon_cell(j)
+        except Exception:
+            pass
+    if s.upper().startswith("POLYGON"):
+        try:
+            return _parse_wkt(s)
+        except Exception:
+            pass
+    try:
+        return _parse_pairs(s)
+    except Exception:
+        return []
+
+def read_df(uploaded_file):
+    name = uploaded_file.name.lower()
+    if name.endswith(".csv"):
+        df = pd.read_csv(uploaded_file)
+    elif name.endswith(".xls") or name.endswith(".xlsx"):
+        df = pd.read_excel(uploaded_file)
+    else:
+        raise ValueError("Formato de arquivo não suportado. Use CSV/XLS/XLSX.")
+    df.columns = [str(c).strip().lower() for c in df.columns]
+    return df
+
+def process_quadras_df(df, cemiterio_id: int):
+    total, atualizados, erros = 0, 0, []
+    for idx, row in df.iterrows():
+        try:
+            codigo = str(row.get("codigo") or "").strip()
+            if not codigo:
+                continue
+            pol_cell = None
+            for k in POLY_COLUMNS:
+                if k in df.columns:
+                    pol_cell = row.get(k)
+                    if pol_cell is not None and not (isinstance(pol_cell, float) and pd.isna(pol_cell)):
+                        break
+            poligono = parse_polygon_cell(pol_cell) if pol_cell is not None else []
+            grid = {}
+            if "grid_cols" in df.columns and pd.notna(row.get("grid_cols")):
+                grid["cols"] = int(float(row.get("grid_cols")))
+            if "grid_rows" in df.columns and pd.notna(row.get("grid_rows")):
+                grid["rows"] = int(float(row.get("grid_rows")))
+            if "grid_angulo" in df.columns and pd.notna(row.get("grid_angulo")):
+                grid["angulo"] = float(row.get("grid_angulo"))
+            defaults = {}
+            if poligono:
+                defaults["poligono_mapa"] = poligono
+            if grid:
+                defaults["grid_params"] = grid
+            with transaction.atomic():
+                obj, created = Quadra.objects.update_or_create(
+                    cemiterio_id=cemiterio_id,
+                    codigo=codigo,
+                    defaults=defaults or {},
+                )
+            total += 1
+            if not created and defaults:
+                atualizados += 1
+        except Exception as e:
+            erros.append(f"Linha {idx + 2}: {e}")
+    return total, atualizados, erros
+# -- FIM: helpers --
 
 @staff_member_required
 def importar_quadras(request):
-    if not request.session.get("prefeitura_ativa_id") or not request.session.get("cemiterio_ativo_id"):
-        messages.error(request, "Você precisa selecionar uma prefeitura e um cemitério antes de importar.")
+    cem_id = request.session.get("cemiterio_ativo_id")
+    if not request.session.get("prefeitura_ativa_id") or not cem_id:
+        messages.error(request, "Selecione prefeitura e cemitério antes de importar.")
         return render(request, "admin/importar_base.html", {
-            "title": "Importar Quadras",
-            "form_content": "",
+            "titulo_pagina": "Importar Quadras",
+            "link_planilha": "/media/planilhas/Planilha de Quadras.xlsx",
         })
 
-    total = 0
     if request.method == "POST" and request.FILES.get("arquivo"):
-        arquivo = request.FILES["arquivo"]
-        extensao = arquivo.name.split(".")[-1].lower()
-
         try:
-            if extensao == "csv":
-                df = pd.read_csv(arquivo)
-            elif extensao in ["xls", "xlsx"]:
-                df = pd.read_excel(arquivo)
-            else:
-                messages.error(request, "Formato de arquivo não suportado.")
-                return render(request, "admin/importar_base.html", {
-                    "title": "Importar Quadras",
-                    "form_content": "",
-                })
-        except Exception as e:
-            messages.error(request, f"Erro ao ler o arquivo: {str(e)}")
+            df = read_df(request.FILES["arquivo"])
+            total, atualizados, erros = process_quadras_df(df, int(cem_id))
+            if erros:
+                messages.warning(request, f"Importação concluída com avisos. {len(erros)} linha(s) com erro.")
+            messages.success(request, f"{total} quadra(s) importada(s). {atualizados} atualizada(s).")
             return render(request, "admin/importar_base.html", {
-                "title": "Importar Quadras",
-                "form_content": "",
+                "titulo_pagina": "Importar Quadras",
+                "link_planilha": "/media/planilhas/Planilha de Quadras.xlsx",
+                "mensagens_extra": erros,
             })
-
-        for _, linha in df.iterrows():
-            try:
-                codigo = str(linha[0]).strip()
-                if not codigo:
-                    continue
-
-                Quadra.objects.create(
-                    codigo=codigo,
-                    cemiterio_id=request.session["cemiterio_ativo_id"]
-                )
-                total += 1
-            except Exception as e:
-                print(f"[DEBUG] Erro ao importar linha: {linha}\nMotivo: {e}")
-                continue
-
-        messages.success(request, f"{total} quadra(s) importada(s) com sucesso.")
+        except Exception as e:
+            messages.error(request, f"Erro ao importar: {e}")
 
     return render(request, "admin/importar_base.html", {
         "titulo_pagina": "Importar Quadras",
-        "link_planilha": "/media/planilhas/Planilha de Quadras.xlsx"
+        "link_planilha": "/media/planilhas/Planilha de Quadras.xlsx",
     })
 
 

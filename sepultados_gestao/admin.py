@@ -203,64 +203,144 @@ class CemiterioAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
                 obj.delete()
 
 
+# sepultados_gestao/admin.py  (trecho referente a QUADRA)
+
 from django.contrib import admin, messages
+from django.utils.html import format_html
 from .models import Quadra
 from .forms import QuadraForm
 from .mixins import PrefeituraObrigatoriaAdminMixin
+from sepultados_gestao.models import RegistroAuditoria  # sua auditoria
 
+# --- Filtro "Tem polígono?" na lista ---
+class TemPoligonoFilter(admin.SimpleListFilter):
+    title = "Tem polígono"
+    parameter_name = "tem_poligono"
+
+    def lookups(self, request, model_admin):
+        return (("sim", "Sim"), ("nao", "Não"))
+
+    def queryset(self, request, queryset):
+        val = self.value()
+        if val == "sim":
+            return queryset.exclude(poligono_mapa=[])
+        if val == "nao":
+            return queryset.filter(poligono_mapa=[])
+        return queryset
 
 
 class QuadraAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
     form = QuadraForm
-    list_display = ("codigo", "cemiterio")
-    list_filter = ("cemiterio",)
+
+    # Lista (pode manter o "cemiterio" visível apenas aqui)
+    list_display = ("codigo", "cemiterio", "poligono_ok", "pontos", "grid_info")
+    list_filter = ("cemiterio", TemPoligonoFilter)
     search_fields = ("codigo", "cemiterio__nome")
 
+    # Campos exibidos NO FORM (cemitério propositalmente fora)
+    fieldsets = (
+        (None, {"fields": ("codigo", "poligono_mapa", "grid_params")}),
+    )
+
+    # ========== Colunas auxiliares ==========
+    def poligono_ok(self, obj):
+        tem = bool(obj.poligono_mapa)
+        return format_html(
+            '<span style="font-weight:600; color:{}">{}</span>',
+            '#1f9d55' if tem else '#cc1f1a',
+            '✅' if tem else '❌'
+        )
+    poligono_ok.short_description = "Polígono?"
+
+    def pontos(self, obj):
+        return len(obj.poligono_mapa or [])
+    pontos.short_description = "Pontos"
+
+    def grid_info(self, obj):
+        g = obj.grid_params or {}
+        if not g:
+            return "—"
+        cols = g.get("cols", "–")
+        rows = g.get("rows", "–")
+        ang  = g.get("angulo", 0)
+        return f"{cols}×{rows} @ {ang}°"
+    grid_info.short_description = "Grid"
+
+    # ========== Form sem o campo "cemiterio" ==========
     def get_form(self, request, obj=None, **kwargs):
-        class CustomForm(self.form):
+        base_form = super().get_form(request, obj, **kwargs)
+
+        class CustomForm(base_form):
             def __init__(self_inner, *args, **kwargs_inner):
-                kwargs_inner['request'] = request
+                kwargs_inner["request"] = request
                 super().__init__(*args, **kwargs_inner)
 
-                # Oculta o campo cemitério do formulário
-                if 'cemiterio' in self_inner.fields:
-                    self_inner.fields['cemiterio'].required = False
-                    self_inner.fields['cemiterio'].widget.attrs['hidden'] = True
+                # garante que o campo NÃO apareça no form
+                self_inner.fields.pop("cemiterio", None)
 
-            def add_error(self_inner, field, error):
-                if field and field not in self_inner.fields:
-                    field = None
-                super().add_error(field, error)
+                # dica no campo polígono
+                if "poligono_mapa" in self_inner.fields:
+                    self_inner.fields["poligono_mapa"].help_text = (
+                        "No import use apenas UMA coluna de polígono "
+                        "(poligono_mapa/limites/polygon/wkt). "
+                        "No admin, edite como JSON: "
+                        '[{\"lat\": -23.48, \"lng\": -51.78}, …]'
+                    )
+        return CustomForm
 
-        kwargs['form'] = CustomForm
-        return super().get_form(request, obj, **kwargs)
-
-    from django.contrib import messages
-    from sepultados_gestao.models import RegistroAuditoria
-
+    # ========== Regras por cemitério ativo ==========
     def save_model(self, request, obj, form, change):
-        # Define a prefeitura com base na sessão
-        obj.prefeitura = request.prefeitura_ativa
-
-        # Define o cemitério com base na sessão
+        # força o cemitério pelo contexto da sessão
         cemiterio_id = request.session.get("cemiterio_ativo_id")
         if not cemiterio_id:
-            messages.error(request, "Selecione um cemitério antes de cadastrar a quadra.")
+            messages.error(request, "Selecione um cemitério antes de salvar a quadra.")
             return
-
         obj.cemiterio_id = cemiterio_id
+
+        # opcional: associar prefeitura para auditoria/consistência
+        obj.prefeitura = getattr(request, "prefeitura_ativa", None)
 
         super().save_model(request, obj, form, change)
 
-        # ✅ Auditoria salva diretamente e corretamente
+        # Auditoria
         RegistroAuditoria.objects.create(
             usuario=request.user,
-            acao='change' if change else 'add',
+            acao=("change" if change else "add"),
             modelo=obj.__class__.__name__,
             objeto_id=str(obj.pk),
             representacao=str(obj),
-            prefeitura = get_prefeitura_ativa()
+            prefeitura=getattr(request, "prefeitura_ativa", None),
         )
+
+    def delete_model(self, request, obj):
+        if obj.tumulo_set.exists():
+            self.message_user(
+                request,
+                "Não é possível excluir esta quadra. Existem túmulos vinculados.",
+                level=messages.ERROR
+            )
+            return
+
+        RegistroAuditoria.objects.create(
+            usuario=request.user,
+            acao="delete",
+            modelo=self.model.__name__,
+            objeto_id=str(obj.pk),
+            representacao=str(obj),
+            prefeitura=getattr(request, "prefeitura_ativa", None),
+        )
+        super().delete_model(request, obj)
+
+    def delete_queryset(self, request, queryset):
+        for obj in queryset:
+            if obj.tumulo_set.exists():
+                self.message_user(
+                    request,
+                    f"Quadra {obj} não pôde ser excluída: há túmulos vinculados.",
+                    level=messages.ERROR
+                )
+            else:
+                obj.delete()
 
     def get_queryset(self, request):
         qs = super().get_queryset(request)
@@ -270,43 +350,10 @@ class QuadraAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
         return qs.none()
 
     def get_model_perms(self, request):
+        # se não tiver cemitério ativo, esconde o menu Quadras
         if not request.session.get("cemiterio_ativo_id"):
             return {}
         return super().get_model_perms(request)
-
-
-    def delete_model(self, request, obj):
-        if obj.tumulo_set.exists():
-            self.message_user(request, "Não é possível excluir esta quadra. Existem túmulos vinculados.", level=messages.ERROR)
-            return
-
-        modelo = self.model.__name__
-        usuario = get_current_user()
-        prefeitura = get_prefeitura_ativa()
-
-        if not usuario or not usuario.is_authenticated or not prefeitura:
-            self.message_user(request, "Não foi possível registrar a auditoria por falta de contexto.", level=messages.WARNING)
-            return super().delete_model(request, obj)
-
-        RegistroAuditoria.objects.create(
-            usuario=usuario,
-            acao="delete",
-            modelo=modelo,
-            objeto_id=str(obj.pk),
-            representacao=str(obj),
-            prefeitura=prefeitura
-        )
-
-        super().delete_model(request, obj)
-
-
-
-    def delete_queryset(self, request, queryset):
-        for obj in queryset:
-            if obj.tumulo_set.exists():
-                self.message_user(request, f"Quadra {obj} não pôde ser excluída: há túmulos vinculados.", level=messages.ERROR)
-            else:
-                obj.delete()
 
 
 from django.contrib import admin

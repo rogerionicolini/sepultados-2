@@ -167,15 +167,21 @@ class CemiterioViewSet(PrefeituraRestritaQuerysetMixin, viewsets.ModelViewSet):
 
 
 
+# views_api.py
 from rest_framework import viewsets
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 
 class QuadraViewSet(ContextoRestritoQuerysetMixin, viewsets.ModelViewSet):
     queryset = Quadra.objects.all()
     serializer_class = QuadraSerializer
     cemiterio_field = "cemiterio"
     prefeitura_field = "cemiterio__prefeitura"
-    permission_classes = [IsAuthenticated]
+
+    # 🔓 Leitura pública; gravação exige login
+    def get_permissions(self):
+        if self.request.method in ("GET", "HEAD", "OPTIONS"):
+            return [AllowAny()]
+        return [IsAuthenticated()]
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -187,6 +193,7 @@ class QuadraViewSet(ContextoRestritoQuerysetMixin, viewsets.ModelViewSet):
     def perform_create(self, serializer):
         cid = self.request.data.get("cemiterio") or self.request.query_params.get("cemiterio")
         serializer.save(cemiterio_id=cid)
+
 
 
 
@@ -1733,33 +1740,179 @@ class BaseImportAPIView(APIView):
         raise ValueError("Formato de arquivo não suportado. Use .csv, .xls ou .xlsx.")
 
 
-class ImportQuadrasAPIView(BaseImportAPIView):
-    """ Espera coluna: codigo """
+# --- cole em views_api.py (substituindo a sua ImportQuadrasAPIView) ---
+import json
+import re
+import pandas as pd
+from django.db import transaction
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
+from .models import Quadra
+
+class ImportQuadrasAPIView(APIView):
+    """
+    Importa Quadras para o cemitério ativo/da querystring.
+
+    Colunas aceitas na planilha (cabeçalho em minúsculas):
+      - codigo                (obrigatória)
+      - UMA das colunas de polígono (opcional):
+          poligono_mapa | limites | polygon | wkt | latlng | lat_lng
+      - grid_cols, grid_rows, grid_angulo (opcionais)
+
+    Formatos aceitos do polígono:
+      1) String: "lat,lng; lat,lng; ..."   (ex.: -23.43,-51.93; -23.44,-51.92)
+      2) JSON:   [{"lat": -23.43, "lng": -51.93}, ...]  ou  [[-23.43, -51.93], ...]
+      3) WKT:    POLYGON((lng lat, lng lat, ...))  (WKT usa LON,LAT)
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    _FLOAT_RE = re.compile(r"[-+]?\d+(?:\.\d+)?")
+    _POLY_COLUMNS = ("poligono_mapa", "limites", "polygon", "wkt", "latlng", "lat_lng")
+
+    # ---------- helpers ----------
+    @staticmethod
+    def _read_df(uploaded_file):
+        name = uploaded_file.name.lower()
+        if name.endswith(".csv"):
+            df = pd.read_csv(uploaded_file)
+        elif name.endswith(".xls") or name.endswith(".xlsx"):
+            df = pd.read_excel(uploaded_file)
+        else:
+            raise ValueError("Formato de arquivo não suportado. Use CSV/XLS/XLSX.")
+        df.columns = [str(c).strip().lower() for c in df.columns]
+        return df
+
+    def _parse_pairs(self, s: str):
+        s = str(s).replace("|", ";").replace("/", ";").replace("\n", ";")
+        parts = [p.strip() for p in s.split(";") if p.strip()]
+        pts = []
+        for p in parts:
+            nums = self._FLOAT_RE.findall(p)
+            if len(nums) >= 2:
+                lat = float(nums[0]); lng = float(nums[1])
+                pts.append({"lat": lat, "lng": lng})
+        return pts
+
+    def _parse_wkt(self, s: str):
+        txt = s.strip()
+        if txt.upper().startswith("POLYGON"):
+            txt = txt[txt.find("((")+2 : txt.rfind("))")]
+        pairs = [p.strip() for p in txt.split(",") if p.strip()]
+        pts = []
+        for p in pairs:
+            nums = self._FLOAT_RE.findall(p)
+            if len(nums) >= 2:
+                lng = float(nums[0]); lat = float(nums[1])  # WKT é LON,LAT
+                pts.append({"lat": lat, "lng": lng})
+        return pts
+
+    def _parse_polygon_cell(self, cell):
+        """Retorna list[{'lat','lng'}] ou []. Aceita string, JSON, WKT."""
+        if cell is None or (isinstance(cell, float) and pd.isna(cell)):
+            return []
+
+        # já é lista carregada?
+        if isinstance(cell, list):
+            if cell and isinstance(cell[0], dict) and "lat" in cell[0] and "lng" in cell[0]:
+                return [{"lat": float(p["lat"]), "lng": float(p["lng"])} for p in cell]
+            if cell and isinstance(cell[0], (list, tuple)) and len(cell[0]) >= 2:
+                return [{"lat": float(p[0]), "lng": float(p[1])} for p in cell]
+
+        s = str(cell).strip()
+        if not s:
+            return []
+
+        # JSON
+        if s.startswith("[") or s.startswith("{"):
+            try:
+                j = json.loads(s)
+                return self._parse_polygon_cell(j)
+            except Exception:
+                pass
+
+        # WKT
+        if s.upper().startswith("POLYGON"):
+            try:
+                return self._parse_wkt(s)
+            except Exception:
+                pass
+
+        # pares "lat,lng; ..."
+        try:
+            return self._parse_pairs(s)
+        except Exception:
+            return []
+
+    def _process_df(self, df, cemiterio_id: int):
+        total, atualizados, erros = 0, 0, []
+        for idx, row in df.iterrows():
+            try:
+                codigo = str(row.get("codigo") or "").strip()
+                if not codigo:
+                    continue
+
+                # primeira coluna de polígono encontrada e não vazia
+                pol_cell = None
+                for k in self._POLY_COLUMNS:
+                    if k in df.columns:
+                        pol_cell = row.get(k)
+                        if pol_cell is not None and not (isinstance(pol_cell, float) and pd.isna(pol_cell)):
+                            break
+
+                poligono = self._parse_polygon_cell(pol_cell) if pol_cell is not None else []
+
+                grid = {}
+                if "grid_cols" in df.columns and pd.notna(row.get("grid_cols")):
+                    grid["cols"] = int(float(row.get("grid_cols")))
+                if "grid_rows" in df.columns and pd.notna(row.get("grid_rows")):
+                    grid["rows"] = int(float(row.get("grid_rows")))
+                if "grid_angulo" in df.columns and pd.notna(row.get("grid_angulo")):
+                    grid["angulo"] = float(row.get("grid_angulo"))
+
+                defaults = {}
+                if poligono:
+                    defaults["poligono_mapa"] = poligono
+                if grid:
+                    defaults["grid_params"] = grid
+
+                with transaction.atomic():
+                    obj, created = Quadra.objects.update_or_create(
+                        cemiterio_id=cemiterio_id,
+                        codigo=codigo,
+                        defaults=defaults or {},
+                    )
+
+                total += 1
+                if not created and defaults:
+                    atualizados += 1
+
+            except Exception as e:
+                erros.append(f"Linha {idx + 2}: {e}")
+        return total, atualizados, erros
+
+    # ---------- POST ----------
     def post(self, request):
         if "arquivo" not in request.FILES:
             return Response({"detail": "Envie o arquivo em 'arquivo'."}, status=400)
 
-        cemiterio_id = self._get_cemiterio_id(request)
+        cemiterio_id = (
+            request.query_params.get("cemiterio")
+            or request.session.get("cemiterio_ativo_id")
+            or request.session.get("cemiterio_ativo")
+        )
         if not cemiterio_id:
             return Response({"detail": "Defina o cemitério (?cemiterio=) ou selecione no sistema."}, status=400)
 
         try:
-            df = self._read_dataframe(request.FILES["arquivo"])
+            df = self._read_df(request.FILES["arquivo"])
+            total, atualizados, erros = self._process_df(df, int(cemiterio_id))
+            return Response({"importados": total, "atualizados": atualizados, "erros": erros}, status=200)
         except Exception as e:
-            return Response({"detail": f"Erro ao ler planilha: {e}"}, status=400)
+            return Response({"detail": f"Erro ao importar: {e}"}, status=400)
+# --- fim da classe ---
 
-        total, erros = 0, []
-        for idx, linha in df.iterrows():
-            try:
-                codigo = str(linha.get("codigo") or linha.get(0) or "").strip()
-                if not codigo:
-                    continue
-                Quadra.objects.create(codigo=codigo, cemiterio_id=cemiterio_id)
-                total += 1
-            except Exception as e:
-                erros.append(f"Linha {idx+2}: {e}")
-
-        return Response({"importados": total, "erros": erros}, status=200)
 
 
 class ImportTumulosAPIView(BaseImportAPIView):
