@@ -14,7 +14,7 @@ function normalizeStatus(raw) {
     .trim()
     .toLowerCase()
     .normalize("NFD")
-    .replace(/\p{Diacritic}/gu, ""); // tira acento
+    .replace(/\p{Diacritic}/gu, "");
   if (s.includes("ocup")) return "ocupado";
   if (s.includes("reserv")) return "reservado";
   if (s.includes("disp")) return "disponivel";
@@ -36,6 +36,65 @@ function StatusPill({ status }) {
   );
 }
 
+/* ------------- PARSER DE COORDENADAS (opcional) -------------
+   Aceita:
+   - JSON: [{"lat":-23.4,"lng":-51.9}, ...]  ou  [[-23.4,-51.9], ...]
+   - Texto: "lat,lng; lat,lng; ..." (separador ;, |, / ou quebra-linha)
+*/
+const floatRe = /[-+]?\d+(?:\.\d+)?/g;
+
+function parseCoords(txt) {
+  if (!txt || !txt.trim()) return null; // null => não enviar no PATCH
+  const s = txt.trim();
+
+  // JSON?
+  if (s.startsWith("[") || s.startsWith("{")) {
+    try {
+      const j = JSON.parse(s);
+      if (Array.isArray(j) && j.length) {
+        if (typeof j[0] === "object" && "lat" in j[0] && "lng" in j[0]) {
+          return j.map((p) => ({ lat: Number(p.lat), lng: Number(p.lng) }));
+        }
+        if (Array.isArray(j[0]) && j[0].length >= 2) {
+          return j.map((p) => ({ lat: Number(p[0]), lng: Number(p[1]) }));
+        }
+      }
+    } catch {
+      /* cai no parser texto */
+    }
+  }
+
+  // Texto "lat,lng; lat,lng ..."
+  const norm = s.replace(/\|/g, ";").replace(/\//g, ";").replace(/\n/g, ";");
+  const parts = norm.split(";").map((p) => p.trim()).filter(Boolean);
+  const pts = [];
+  for (const p of parts) {
+    const m = p.match(floatRe);
+    if (m && m.length >= 2) {
+      const lat = Number(m[0]);
+      const lng = Number(m[1]);
+      if (Number.isFinite(lat) && Number.isFinite(lng)) {
+        pts.push({ lat, lng });
+      }
+    }
+  }
+  if (!pts.length) return null; // nada válido -> não enviar
+  return pts;
+}
+
+function stringifyCoords(arr) {
+  if (!Array.isArray(arr) || !arr.length) return "";
+  try {
+    if (typeof arr[0] === "object" && "lat" in arr[0] && "lng" in arr[0]) {
+      return arr.map((p) => `${p.lat}, ${p.lng}`).join("; ");
+    }
+    if (Array.isArray(arr[0])) {
+      return arr.map((p) => `${p[0]}, ${p[1]}`).join("; ");
+    }
+  } catch {}
+  return "";
+}
+
 export default function Quadras() {
   const [prefeituraId, setPrefeituraId] = useState(null);
   const [cemAtivo, setCemAtivo] = useState(getCemiterioAtivo());
@@ -50,11 +109,15 @@ export default function Quadras() {
   const [loadingTumulos, setLoadingTumulos] = useState({});
   const [tumulosByQuadra, setTumulosByQuadra] = useState({});
 
-  // modal (se estiver usando criação/edição)
+  // modal
   const [modalOpen, setModalOpen] = useState(false);
   const [editando, setEditando] = useState(null);
   const [salvando, setSalvando] = useState(false);
-  const [form, setForm] = useState({ codigo: "" });
+  const [form, setForm] = useState({
+    codigo: "",
+    coordsText: "", // novo (opcional)
+    angulo: "",     // novo (opcional)
+  });
 
   const token = localStorage.getItem("accessToken");
   const api = axios.create({
@@ -81,7 +144,6 @@ export default function Quadras() {
   };
 
   const listarTumulosDaQuadra = async (quadraId) => {
-    // IMPORTANTE: filtra por quadra + cemitério
     const url = qsWith(TUMULOS_EP, { quadra: quadraId, cemiterio: cemAtivo?.id });
     const res = await api.get(url);
     const data = res.data;
@@ -93,8 +155,9 @@ export default function Quadras() {
       headers: { "Content-Type": "application/json" },
     });
 
+  // ⚠️ trocado para PATCH para não forçar campos opcionais
   const atualizar = (id, payload) =>
-    api.put(qsWith(`${QUADRAS_EP}${id}/`, { cemiterio: cemAtivo?.id }), payload, {
+    api.patch(qsWith(`${QUADRAS_EP}${id}/`, { cemiterio: cemAtivo?.id }), payload, {
       headers: { "Content-Type": "application/json" },
     });
 
@@ -130,7 +193,6 @@ export default function Quadras() {
       setErro("");
       const data = await listarQuadras();
       setItens(data);
-      // ao trocar de cemitério, limpa expansões e caches
       setExpanded({});
       setTumulosByQuadra({});
     } catch (e) {
@@ -142,7 +204,6 @@ export default function Quadras() {
     }
   }
 
-  // ouvir troca do cemitério (broadcast do selector/utils)
   useEffect(() => {
     const onChanged = (e) => setCemAtivo(e?.detail || getCemiterioAtivo());
     const onStorage = () => setCemAtivo(getCemiterioAtivo());
@@ -175,14 +236,21 @@ export default function Quadras() {
   // ------- UI actions -------
   function abrirCriar() {
     setEditando(null);
-    setForm({ codigo: "" });
+    setForm({ codigo: "", coordsText: "", angulo: "" });
     setErro("");
     setModalOpen(true);
   }
 
   function abrirEditar(item) {
     setEditando(item);
-    setForm({ codigo: item.codigo || item.nome || "" });
+    setForm({
+      codigo: item.codigo || item.nome || "",
+      coordsText: stringifyCoords(item.poligono_mapa) || "",
+      angulo:
+        item?.grid_params?.angulo === 0 || item?.grid_params?.angulo
+          ? String(item.grid_params.angulo)
+          : "",
+    });
     setErro("");
     setModalOpen(true);
   }
@@ -197,15 +265,46 @@ export default function Quadras() {
         return;
       }
 
+      // sempre enviar código + cemitério
       const payload = {
         codigo: (form.codigo || "").trim(),
         cemiterio: Number(cemAtivo.id),
       };
       if (!payload.codigo) return setErro("Informe o código da quadra.");
 
+      // --- coordenadas ---
+      const rawCoords = String(form.coordsText ?? "");
+      const trimmed = rawCoords.trim();
+      if (trimmed === "") {
+        // usuário quer APAGAR o polígono
+        payload.poligono_mapa = [];
+      } else {
+        // tentar converter texto/JSON em [{lat,lng}, ...]
+        const parsed = parseCoords(rawCoords);
+        if (parsed) payload.poligono_mapa = parsed;
+        // se parsed === null, não envia -> mantém o que já existe
+      }
+
+      // --- ângulo ---
+      const rawAng = String(form.angulo ?? "").trim();
+      if (rawAng === "") {
+        // usuário quer APAGAR o ângulo
+        payload.grid_params = { angulo: null };
+      } else {
+        const n = Number(rawAng.replace(",", "."));
+        if (Number.isFinite(n)) {
+          payload.grid_params = { angulo: n };
+        }
+        // se não for número válido, não envia -> mantém
+      }
+
       const id = editando?.id ?? editando?.pk;
-      if (id) await atualizar(id, payload);
-      else await criar(payload);
+      if (id) {
+        // usar PATCH para atualizar só o que foi enviado
+        await atualizar(id, payload);
+      } else {
+        await criar(payload);
+      }
 
       setModalOpen(false);
       await carregar();
@@ -220,6 +319,7 @@ export default function Quadras() {
       setSalvando(false);
     }
   }
+
 
   async function excluir(id) {
     if (!window.confirm("Excluir esta quadra?")) return;
@@ -369,7 +469,6 @@ export default function Quadras() {
                                           t.status_label;
                                         const status =
                                           normalizeStatus(backendStatus) ??
-                                          // fallback antigo (evitar inconsistência, só se backend não enviar nada)
                                           (t.reservado
                                             ? "reservado"
                                             : Number(t.sepultados_total || 0) > 0
@@ -418,7 +517,7 @@ export default function Quadras() {
         {erro && itens.length > 0 && <div className="text-red-600 mt-3">{erro}</div>}
       </div>
 
-      {/* Modal criar/editar (opcional) */}
+      {/* Modal criar/editar */}
       {modalOpen && (
         <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
           <div className="bg-white w-full max-w-md rounded-2xl p-6 shadow-2xl">
@@ -443,6 +542,37 @@ export default function Quadras() {
                   value={form.codigo}
                   onChange={(e) => setForm({ ...form, codigo: e.target.value })}
                   placeholder="Ex.: QD-01"
+                />
+              </div>
+
+              {/* NOVO: Coordenadas (opcional) */}
+              <div>
+                <label className="block text-sm text-green-900 mb-1">
+                  Coordenadas (lat,lng) — polígono (opcional)
+                </label>
+                <textarea
+                  className="w-full border border-[#bcd2a7] rounded-lg px-3 py-2 outline-none font-mono text-xs"
+                  rows={6}
+                  value={form.coordsText}
+                  onChange={(e) => setForm({ ...form, coordsText: e.target.value })}
+                  placeholder='Ex.: -23.43, -51.93; -23.44, -51.92; ...  ou  [{"lat":-23.43,"lng":-51.93}]'
+                />
+              </div>
+
+              {/* NOVO: Ângulo (opcional) */}
+              <div>
+                <label className="block text-sm text-green-900 mb-1">
+                  Ângulo dos Túmulos (0–360) — opcional
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  max="360"
+                  step="0.1"
+                  className="w-40 border border-[#bcd2a7] rounded-lg px-3 py-2 outline-none"
+                  value={form.angulo}
+                  onChange={(e) => setForm({ ...form, angulo: e.target.value })}
+                  placeholder="Ex.: 250"
                 />
               </div>
             </div>

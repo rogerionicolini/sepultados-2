@@ -130,10 +130,9 @@ class QuadraForm(forms.ModelForm):
 
     class Meta:
         model = Quadra
-        fields = "__all__"  # não escondemos nada, apenas ajustamos widgets
+        fields = "__all__"
         widgets = {
-            "grid_params": HiddenInput(),   # fica oculto; preenchido pelo form
-            # "poligono_mapa":  (deixe como está; mostramos para transparência)
+            "grid_params": HiddenInput(),  # oculto; o form preenche/limpa
         }
 
     # ---------- Helpers ----------
@@ -169,7 +168,7 @@ class QuadraForm(forms.ModelForm):
         if 'cemiterio' in self.fields:
             self.fields['cemiterio'].widget = HiddenInput()
 
-        # ----- Pré-preenche ANGULO a partir de grid_params -----
+        # Pré-preenche ANGULO a partir de grid_params
         gp = getattr(self.instance, "grid_params", None)
         data = {}
         if gp:
@@ -178,15 +177,17 @@ class QuadraForm(forms.ModelForm):
             except Exception:
                 data = {}
         if self.fields["angulo"].initial is None:
-            self.fields["angulo"].initial = int(data.get("angulo", 0))
+            try:
+                self.fields["angulo"].initial = int(data.get("angulo", 0))
+            except Exception:
+                self.fields["angulo"].initial = 0
 
-        # ----- Pré-preenche COORDENADAS a partir do poligono_mapa -----
+        # Pré-preenche COORDENADAS a partir do poligono_mapa
         pm = getattr(self.instance, "poligono_mapa", None)
         try:
             lista = pm if isinstance(pm, list) else (json.loads(pm) if pm else [])
         except Exception:
             lista = []
-        # Mostra como linhas "lat, lng"
         if lista and not self.initial.get("coordenadas"):
             linhas = []
             for p in lista:
@@ -196,7 +197,6 @@ class QuadraForm(forms.ModelForm):
                     pass
             self.initial["coordenadas"] = "\n".join(linhas)
 
-        # Dica extra no polígono cru
         if "poligono_mapa" in self.fields and not self.fields["poligono_mapa"].help_text:
             self.fields["poligono_mapa"].help_text = (
                 "Se preferir, edite o JSON bruto aqui (lista de objetos {'lat','lng'}). "
@@ -206,7 +206,7 @@ class QuadraForm(forms.ModelForm):
     def clean(self):
         cleaned_data = super().clean()
 
-        # ==== sua lógica original: cemitério ativo ====
+        # Garante cemitério via sessão
         cemiterio_id = self.request.session.get("cemiterio_ativo_id")
         if not cemiterio_id:
             raise ValidationError("Selecione um cemitério antes de cadastrar a quadra.")
@@ -214,60 +214,61 @@ class QuadraForm(forms.ModelForm):
             self.instance.cemiterio = Cemiterio.objects.get(id=cemiterio_id)
         except Cemiterio.DoesNotExist:
             raise ValidationError("Cemitério selecionado não encontrado.")
-        # =================================================
 
-        # ----- Valida/normaliza ângulo -----
-        ang = cleaned_data.get("angulo")
-        if ang is None:
-            ang = 0
-        try:
-            ang = int(ang)
-        except (TypeError, ValueError):
-            raise ValidationError({"angulo": "Valor inválido."})
-        if not 0 <= ang <= 360:
-            raise ValidationError({"angulo": "O ângulo deve estar entre 0 e 360."})
-
-        # Atualiza/mescla grid_params
-        try:
-            current_gp = {}
-            gp = getattr(self.instance, "grid_params", None)
-            if gp:
-                current_gp = gp if isinstance(gp, dict) else json.loads(gp)
-        except Exception:
-            current_gp = {}
-        current_gp["angulo"] = ang
-        self._grid_params_dict = current_gp  # para o save()
-
-        # ----- Converte 'coordenadas' para poligono_mapa se fornecido -----
-        coords_txt = cleaned_data.get("coordenadas")
-        if coords_txt:
-            pontos = self._parse_coordenadas(coords_txt)
-            self._poligono_lista = pontos  # para o save()
+        # ----- ÂNGULO -----
+        ang_raw = cleaned_data.get("angulo", None)
+        if ang_raw in (None, ""):
+            # usuário quer remover ângulo => grid_params será None no save()
+            self._grid_params_dict = None
         else:
-            self._poligono_lista = None  # mantém o que vier de poligono_mapa
+            try:
+                ang = int(ang_raw)
+            except (TypeError, ValueError):
+                raise ValidationError({"angulo": "Valor inválido."})
+            if not 0 <= ang <= 360:
+                raise ValidationError({"angulo": "O ângulo deve estar entre 0 e 360."})
+            self._grid_params_dict = {"angulo": ang}
+
+        # ----- COORDENADAS -> poligono_mapa -----
+        coords_txt = (cleaned_data.get("coordenadas") or "").strip()
+        field_was_sent = "coordenadas" in (self.data or {})
+        if coords_txt:
+            self._poligono_lista = self._parse_coordenadas(coords_txt)  # substitui
+        elif field_was_sent:
+            # veio vazio explicitamente => limpar
+            self._poligono_lista = []    # transformo em None no save()
+        else:
+            # não veio no POST => mantém
+            self._poligono_lista = None
 
         return cleaned_data
 
     def save(self, commit=True):
         instance = super().save(commit=False)
 
-        # grid_params -> JSONField ou TextField
-        gp_data = getattr(self, "_grid_params_dict", {"angulo": int(self.cleaned_data.get("angulo") or 0)})
+        # grid_params
+        gp_data = getattr(self, "_grid_params_dict", None)
         gp_field = instance._meta.get_field("grid_params")
         try:
             is_json_gp = gp_field.get_internal_type() == "JSONField"
         except Exception:
             is_json_gp = False
-        instance.grid_params = gp_data if is_json_gp else json.dumps(gp_data, ensure_ascii=False)
+        if gp_data is None:
+            instance.grid_params = None
+        else:
+            instance.grid_params = gp_data if is_json_gp else json.dumps(gp_data, ensure_ascii=False)
 
-        # poligono_mapa (se 'coordenadas' foi preenchido, ele tem prioridade)
+        # poligono_mapa
         if getattr(self, "_poligono_lista", None) is not None:
             pm_field = instance._meta.get_field("poligono_mapa")
             try:
                 is_json_pm = pm_field.get_internal_type() == "JSONField"
             except Exception:
                 is_json_pm = False
-            instance.poligono_mapa = self._poligono_lista if is_json_pm else json.dumps(self._poligono_lista, ensure_ascii=False)
+            to_set = None if self._poligono_lista == [] else self._poligono_lista
+            instance.poligono_mapa = (
+                to_set if is_json_pm else json.dumps(to_set, ensure_ascii=False)
+            )
 
         if commit:
             instance.save()

@@ -189,15 +189,15 @@ class Cemiterio(models.Model):
 from django.db import models
 from django.core.exceptions import ValidationError
 from django.utils.functional import cached_property
-from .models import Cemiterio  # ajuste conforme estrutura real
-from .utils import validar_prefeitura_obrigatoria
-
+from .models import Cemiterio  # ajuste se seu import for diferente
 
 class Quadra(models.Model):
     codigo = models.CharField(max_length=20)
     cemiterio = models.ForeignKey(Cemiterio, on_delete=models.CASCADE)
-    poligono_mapa = models.JSONField(default=list, blank=True)   # [{lat,lng},...]
-    grid_params = models.JSONField(default=dict, blank=True)     # opcional p/ próxima etapa
+
+    # agora aceitam None (null) para permitir limpar via admin/API
+    poligono_mapa = models.JSONField(null=True, blank=True, default=None)  # [{lat,lng}, ...]
+    grid_params   = models.JSONField(null=True, blank=True, default=None)  # ex.: {"angulo": 250}
 
     @cached_property
     def prefeitura(self):
@@ -215,12 +215,12 @@ class Quadra(models.Model):
             raise ValidationError("Não é possível excluir esta quadra. Existem túmulos vinculados.")
         super().delete(*args, **kwargs)
 
-
     def __str__(self):
         return self.codigo
 
     class Meta:
         app_label = "sepultados_gestao"
+
 
 
 from decimal import Decimal

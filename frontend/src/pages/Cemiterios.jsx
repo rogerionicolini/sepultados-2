@@ -5,6 +5,46 @@ import axios from "axios";
 const API_BASE = "http://127.0.0.1:8000/api/";
 const ENDPOINT = "cemiterios/";
 
+/** -------- helpers de normalização do polígono ---------- */
+function stringifyPolygon(pol) {
+  try {
+    if (!pol) return "";
+    return JSON.stringify(pol, null, 2);
+  } catch {
+    return "";
+  }
+}
+function parsePolygonInput(txt) {
+  if (!txt || !txt.trim()) return null;
+
+  // tenta JSON puro
+  try {
+    const j = JSON.parse(txt);
+    if (Array.isArray(j)) return j;
+  } catch {
+    // segue para tentativa de "lat,lng" por linha
+  }
+
+  // alternativa: uma por linha: -23.4,-51.9
+  const lines = txt
+    .split(/\r?\n/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (lines.length) {
+    const pts = [];
+    for (const line of lines) {
+      const m = line.match(
+        /^\s*([-+]?\d+(?:\.\d+)?)\s*,\s*([-+]?\d+(?:\.\d+)?)\s*$/
+      );
+      if (!m) return null; // formato inválido => deixa para erro no salvar
+      pts.push([Number(m[1]), Number(m[2])]);
+    }
+    return pts;
+  }
+
+  return null;
+}
+
 export default function Cemiterios() {
   const [itens, setItens] = useState([]);
   const [busca, setBusca] = useState("");
@@ -24,6 +64,7 @@ export default function Cemiterios() {
     cidade: "",
     estado: "",
     tempo_minimo_exumacao: "",
+    limites_mapa_txt: "", // <<< novo: texto do polígono
   });
 
   const token = localStorage.getItem("accessToken");
@@ -52,17 +93,13 @@ export default function Cemiterios() {
 
   const atualizar = (id, payload) =>
     api.put(
-      prefeituraId
-        ? `${ENDPOINT}${id}/?prefeitura=${prefeituraId}`
-        : `${ENDPOINT}${id}/`,
+      prefeituraId ? `${ENDPOINT}${id}/?prefeitura=${prefeituraId}` : `${ENDPOINT}${id}/`,
       payload
     );
 
   const deletar = (id) =>
     api.delete(
-      prefeituraId
-        ? `${ENDPOINT}${id}/?prefeitura=${prefeituraId}`
-        : `${ENDPOINT}${id}/`
+      prefeituraId ? `${ENDPOINT}${id}/?prefeitura=${prefeituraId}` : `${ENDPOINT}${id}/`
     );
 
   async function carregar() {
@@ -121,6 +158,7 @@ export default function Cemiterios() {
       cidade: "",
       estado: "",
       tempo_minimo_exumacao: "",
+      limites_mapa_txt: "",
     });
     setErro("");
     setModalOpen(true);
@@ -135,6 +173,7 @@ export default function Cemiterios() {
       cidade: item.cidade ?? "",
       estado: item.estado ?? "",
       tempo_minimo_exumacao: item.tempo_minimo_exumacao ?? "",
+      limites_mapa_txt: stringifyPolygon(item.limites_mapa), // <<< preenche bonito
     });
     setErro("");
     setModalOpen(true);
@@ -159,9 +198,23 @@ export default function Cemiterios() {
       // importante pro filtro do ViewSet
       if (prefeituraId) payload.prefeitura = prefeituraId;
 
+      // validações mínimas
       if (!payload.nome) return setErro("Informe o nome.");
       if (!payload.cidade) return setErro("Informe a cidade.");
       if (!payload.estado) return setErro("Informe o estado (UF).");
+
+      // trata limites do mapa (opcional)
+      if (form.limites_mapa_txt && form.limites_mapa_txt.trim()) {
+        const pol = parsePolygonInput(form.limites_mapa_txt.trim());
+        if (!pol) {
+          return setErro(
+            "Limites do mapa inválidos. Use JSON ([{lat,lng},...]/[[-23.4,-51.9],...]) ou 'lat,lng' uma coordenada por linha."
+          );
+        }
+        payload.limites_mapa = pol;
+      } else {
+        payload.limites_mapa = null;
+      }
 
       const id = editando?.id ?? editando?.pk;
       if (id) {
@@ -197,7 +250,7 @@ export default function Cemiterios() {
 
   return (
     <div className="space-y-6">
-      {/* Header com busca à esquerda e ações à direita (mesmo padrão dos Usuários) */}
+      {/* Header com busca à esquerda e ações à direita */}
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-bold text-green-900">Cemitérios</h2>
 
@@ -257,7 +310,6 @@ export default function Cemiterios() {
                       <td className="py-2 px-3">{c.telefone || "-"}</td>
                       <td className="py-2 px-3">
                         <div className="flex gap-2">
-                          {/* mesmo padrão dos botões da lista de Usuários */}
                           <button
                             onClick={() => abrirEditar(c)}
                             className="px-3 py-1 rounded bg-[#f2b705] text-white hover:opacity-90"
@@ -367,6 +419,28 @@ export default function Cemiterios() {
                   value={form.tempo_minimo_exumacao}
                   onChange={(e) =>
                     setForm({ ...form, tempo_minimo_exumacao: e.target.value })
+                  }
+                />
+              </div>
+
+              {/* --------- NOVO: limites do mapa --------- */}
+              <div className="md:col-span-2">
+                <label className="block text-sm text-green-900 mb-1">
+                  Limites do mapa (opcional)
+                </label>
+                <textarea
+                  rows={6}
+                  className="w-full border border-[#bcd2a7] rounded-lg px-3 py-2 font-mono text-xs outline-none"
+                  placeholder={`Exemplos válidos:
+[{"lat": -23.43, "lng": -51.93}, {"lat": -23.44, "lng": -51.94}]
+ou
+[[-23.43, -51.93], [-23.44, -51.94]]
+ou ainda uma coordenada por linha:
+-23.43,-51.93
+-23.44,-51.94`}
+                  value={form.limites_mapa_txt}
+                  onChange={(e) =>
+                    setForm({ ...form, limites_mapa_txt: e.target.value })
                   }
                 />
               </div>

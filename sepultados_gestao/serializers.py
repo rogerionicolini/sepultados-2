@@ -503,7 +503,34 @@ from rest_framework import serializers
 from .models import Quadra
 
 class QuadraMapaSerializer(serializers.ModelSerializer):
+    poligono_mapa = serializers.JSONField(required=False, allow_null=True)
+    grid_params   = serializers.JSONField(required=False, allow_null=True)
+
     class Meta:
         model = Quadra
+        # use "nome" ou "codigo" conforme seu uso atual do endpoint
         fields = ["id", "nome", "cemiterio", "poligono_mapa", "grid_params"]
         read_only_fields = ["cemiterio"]
+
+    def _norm(self, v, empty_to_none=True):
+        if v in (None, "",):
+            return None
+        if empty_to_none and (v == [] or v == {}):
+            return None
+        return v
+
+    def create(self, validated_data):
+        if "poligono_mapa" in validated_data:
+            validated_data["poligono_mapa"] = self._norm(validated_data.get("poligono_mapa"))
+        if "grid_params" in validated_data:
+            validated_data["grid_params"] = self._norm(validated_data.get("grid_params"))
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        if "poligono_mapa" in validated_data:
+            instance.poligono_mapa = self._norm(validated_data.get("poligono_mapa"))
+            validated_data.pop("poligono_mapa", None)
+        if "grid_params" in validated_data:
+            instance.grid_params = self._norm(validated_data.get("grid_params"))
+            validated_data.pop("grid_params", None)
+        return super().update(instance, validated_data)
