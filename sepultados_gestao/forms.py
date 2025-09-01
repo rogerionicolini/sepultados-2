@@ -402,7 +402,12 @@ class TumuloForm(forms.ModelForm):
     coordenada = forms.CharField(
         label="Coordenada (lat, lng)",
         required=False,
-        help_text="Ex.: -23.458582390430013, -52.03785445717775"
+        widget=forms.TextInput(attrs={
+            "class": "vTextField",
+            "size": 60,                 # ~60 caracteres visíveis
+            "style": "width: 42ch;"     # ~42 caracteres; ajuste se quiser
+        }),
+        help_text="Ex.: -23.458582390430013, -52.03785445717775",
     )
 
     class Meta:

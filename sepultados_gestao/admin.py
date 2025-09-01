@@ -141,12 +141,14 @@ class PrefeituraAdmin(admin.ModelAdmin):
         }
 
 from django.contrib import admin, messages
+from django import forms
+from django.db import models
+from django.contrib.admin.widgets import AdminTextareaWidget
+import json, re
+
 from .models import Cemiterio, Quadra
 from .forms import QuadraForm
 from .mixins import PrefeituraObrigatoriaAdminMixin
-from django.db import models
-from django.contrib.admin.widgets import AdminTextareaWidget
-
 
 
 @admin.register(Cemiterio)
@@ -157,6 +159,7 @@ class CemiterioAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
     formfield_overrides = {
         models.JSONField: {"widget": AdminTextareaWidget(attrs={"rows": 10, "cols": 120})}
     }
+
     def get_fields(self, request, obj=None):
         return [
             "nome",
@@ -165,7 +168,7 @@ class CemiterioAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
             "cidade",
             "estado",
             "tempo_minimo_exumacao",
-            "limites_mapa"
+            "limites_mapa",
         ]
 
     def get_queryset(self, request):
@@ -181,27 +184,105 @@ class CemiterioAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
         class CustomForm(form):
             def __init__(self_inner, *args, **kwargs_inner):
                 super().__init__(*args, **kwargs_inner)
-                self_inner.instance.prefeitura = request.prefeitura_ativa  # força atribuição no form
+                # força prefeitura no form (seu comportamento atual)
+                self_inner.instance.prefeitura = request.prefeitura_ativa
 
         return CustomForm
 
+    # ----- transforma 'limites_mapa' em textarea de TEXTO (sem validação JSON) -----
+    def formfield_for_dbfield(self, db_field, request, **kwargs):
+        if db_field.name == "limites_mapa":
+            return forms.CharField(
+                required=False,
+                widget=AdminTextareaWidget(attrs={"rows": 10, "cols": 120}),
+                label="Limites mapa",
+                help_text=(
+                    "Cole coordenadas como no Google: -23.4573461330, -52.0380335852 "
+                    "(uma por linha ou várias na mesma linha). "
+                    "Também aceita JSON: [{'lat': -23.45, 'lng': -51.9}, ...] ou [[-23.45, -51.9], ...]."
+                ),
+            )
+        return super().formfield_for_dbfield(db_field, request, **kwargs)
+
+    # ----- parser: texto/JSON -> lista de {lat,lng} -----
+    @staticmethod
+    def _parse_limites_input(raw: str):
+        if raw is None:
+            return None
+        txt = raw.strip()
+        if not txt:
+            return []
+
+        # 1) tenta JSON
+        try:
+            data = json.loads(txt)
+            if isinstance(data, list):
+                pts = []
+                for p in data:
+                    if isinstance(p, dict) and "lat" in p and "lng" in p:
+                        lat = float(p["lat"]); lng = float(p["lng"])
+                    elif isinstance(p, (list, tuple)) and len(p) == 2:
+                        lat = float(p[0]); lng = float(p[1])
+                    else:
+                        continue
+                    if not (-90 <= lat <= 90) or not (-180 <= lng <= 180):
+                        raise ValueError("Lat/Lng fora do intervalo.")
+                    pts.append({"lat": lat, "lng": lng})
+                if len(pts) >= 3:
+                    return pts
+        except Exception:
+            pass
+
+        # 2) texto livre: -23.45, -51.90 ...
+        nums = re.findall(r'[-+]?\d+(?:\.\d+)?', txt)
+        if len(nums) % 2 != 0:
+            raise ValueError("Quantidade ímpar de números. Forneça pares (lat, lng).")
+        pts = []
+        for i in range(0, len(nums), 2):
+            lat = float(nums[i]); lng = float(nums[i+1])
+            if not (-90 <= lat <= 90) or not (-180 <= lng <= 180):
+                raise ValueError("Lat/Lng fora do intervalo.")
+            pts.append({"lat": lat, "lng": lng})
+        if len(pts) < 3:
+            raise ValueError("Forneça pelo menos 3 pares (polígono).")
+        return pts
+
     def save_model(self, request, obj, form, change):
-        obj.prefeitura = request.prefeitura_ativa  # garante que sempre vai ter prefeitura
+        obj.prefeitura = request.prefeitura_ativa  # mantém sua regra
+
+        raw = form.cleaned_data.get("limites_mapa")
+        if isinstance(raw, str):
+            try:
+                pontos = self._parse_limites_input(raw)
+                obj.limites_mapa = pontos  # lista de {lat,lng} (ou [] para limpar)
+            except ValueError as e:
+                messages.error(request, f"Limites inválidos: {e}")
+                return
+        elif isinstance(raw, list):
+            obj.limites_mapa = raw  # já veio como lista
+
         super().save_model(request, obj, form, change)
 
     def delete_model(self, request, obj):
         if obj.quadra_set.exists():
-            self.message_user(request, "Não é possível excluir este cemitério. Existem quadras vinculadas.", level=messages.ERROR)
+            self.message_user(
+                request,
+                "Não é possível excluir este cemitério. Existem quadras vinculadas.",
+                level=messages.ERROR
+            )
             return
         super().delete_model(request, obj)
 
     def delete_queryset(self, request, queryset):
         for obj in queryset:
             if obj.quadra_set.exists():
-                self.message_user(request, f"Cemitério {obj} não pôde ser excluído: há quadras vinculadas.", level=messages.ERROR)
+                self.message_user(
+                    request,
+                    f"Cemitério {obj} não pôde ser excluído: há quadras vinculadas.",
+                    level=messages.ERROR
+                )
             else:
                 obj.delete()
-
 
 # sepultados_gestao/admin.py  (trecho referente a QUADRA)
 
@@ -536,7 +617,7 @@ class TumuloAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
                             <th style='text-align: left; padding: 8px 10px; border-bottom: 2px solid #006600;'>Exumação</th>
                         </tr>
                     </thead>
-                    <tbody>
+                    <tbody> 
                         {linhas}
                     </tbody>
                 </table>
