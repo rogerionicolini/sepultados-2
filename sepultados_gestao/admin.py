@@ -444,7 +444,6 @@ from datetime import date
 from dateutil.relativedelta import relativedelta
 from django.urls import reverse
 
-# 👇 ADICIONE estes dois imports
 from django.db import models
 from django.contrib.admin.widgets import AdminTextareaWidget
 
@@ -462,20 +461,25 @@ class TumuloAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
 
     list_display = (
         "tipo_estrutura", "identificador", "quadra",
-        "status_com_cor", "usar_linha", "linha", "reservado", "link_pdf"
+        "status_com_cor", "usar_linha", "linha", "reservado",
+        "dimensoes",
+        "angulo_col",   # <<< NOVO: mostra ângulo do túmulo (ou herda quadra)
+        "link_pdf",
     )
     list_filter = ("status", "quadra", "usar_linha", "reservado")
     readonly_fields = ("status", "painel_sepultados")
 
-    # 👇 Inclui o campo localizacao no formulário
+    # 👇 Inclui medidas, ângulo e coordenada no formulário
     fields = (
         "tipo_estrutura", "identificador", "capacidade", "quadra",
         "usar_linha", "linha",
-        "coordenada",          # <— AQUI
+        "angulo_graus",                # <<< NOVO
+        "comprimento_m", "largura_m",  # medidas individuais
+        "coordenada",                  # campo livre para digitar lat,lng
         "reservado", "motivo_reserva", "status", "painel_sepultados"
     )
 
-    # 👇 Deixa o JSONField confortável para edição
+    # 👇 Deixa o JSONField confortável para edição (se usar localizacao em algum lugar)
     formfield_overrides = {
         models.JSONField: {"widget": AdminTextareaWidget(attrs={"rows": 10, "cols": 120})}
     }
@@ -484,6 +488,29 @@ class TumuloAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
         url = reverse('sepultados_gestao:gerar_pdf_sepultados_tumulo', args=[obj.pk])
         return format_html('<a href="{}" target="_blank">📄 PDF</a>', url)
     link_pdf.short_description = "Lista de Sepultados (PDF)"
+
+    # Coluna: tamanho
+    def dimensoes(self, obj):
+        def fmt(v):
+            try:
+                return f"{float(v):.2f}".replace(".", ",")
+            except Exception:
+                return str(v)
+        c = obj.comprimento_m or getattr(obj, "PADRAO_COMPRIMENTO_M", 2.00)
+        l = obj.largura_m or getattr(obj, "PADRAO_LARGURA_M", 1.00)
+        return f"{fmt(c)} × {fmt(l)} m"
+    dimensoes.short_description = "Tamanho (m)"
+
+    # Coluna: ângulo do túmulo (se vazio, herda da quadra)
+    def angulo_col(self, obj):
+        if obj.angulo_graus is None:
+            return format_html('<span title="Herdando ângulo da quadra">—</span>')
+        try:
+            v = float(obj.angulo_graus)
+            return f"{v:.2f}°".replace(".", ",")
+        except Exception:
+            return f"{obj.angulo_graus}°"
+    angulo_col.short_description = "Ângulo (°)"
 
     def get_queryset(self, request):
         qs = super().get_queryset(request)
@@ -517,7 +544,7 @@ class TumuloAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
                 kwargs2['request'] = request
                 super().__init__(*args, **kwargs2)
 
-                # 👇 Ajuda de preenchimento no campo localizacao
+                # Ajuda para o JSONField, caso apareça
                 if "localizacao" in self2.fields:
                     self2.fields["localizacao"].help_text = mark_safe(
                         "<b>Formatos aceitos</b>:<br>"
@@ -525,6 +552,20 @@ class TumuloAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
                         "• POLÍGONO: [{\"lat\": -23.4, \"lng\": -51.9}, {\"lat\": -23.41, \"lng\": -51.91}, ...]<br>"
                         "• Alternativo: [[-23.4, -51.9], [-23.41, -51.91], ...] ou {\"centro\": {\"lat\":..., \"lng\":...}}<br>"
                         "<small>Use vírgula como separador decimal (padrão JSON).</small>"
+                    )
+
+                # Ajuda para o campo livre "coordenada" (lat,lng)
+                if "coordenada" in self2.fields:
+                    self2.fields["coordenada"].help_text = mark_safe(
+                        "Formato: <code>-23.40000, -51.90000</code> "
+                        "(latitude, longitude). O sistema salvará em <b>localizacao</b>."
+                    )
+
+                # Ajuda para o ângulo do túmulo
+                if "angulo_graus" in self2.fields:
+                    self2.fields["angulo_graus"].help_text = mark_safe(
+                        "Ângulo do retângulo deste túmulo (em graus). "
+                        "Deixe em branco para <b>herdar o ângulo da quadra</b>."
                     )
 
         return FormComRequest
@@ -630,7 +671,7 @@ class TumuloAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
         if obj.quadra and not obj.cemiterio_id:
             obj.cemiterio_id = obj.quadra.cemiterio_id
 
-        # pega a coordenada digitada no campo "coordenada"
+        # pega a coordenada digitada no campo "coordenada" (form) ou POST
         coord_txt = (form.cleaned_data.get("coordenada")
                      if form and hasattr(form, "cleaned_data") else None) \
                     or request.POST.get("coordenada", "")
@@ -647,7 +688,6 @@ class TumuloAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
 
         # salva normalmente
         super().save_model(request, obj, form, change)
-
 
 
 from django.contrib import admin

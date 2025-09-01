@@ -223,12 +223,27 @@ class Quadra(models.Model):
         app_label = "sepultados_gestao"
 
 
+from decimal import Decimal
+
 from django.db import models
 from django.core.exceptions import ValidationError
+from django.core.validators import MinValueValidator, MaxValueValidator
 from django.utils.functional import cached_property
+
 from .utils import validar_prefeitura_obrigatoria
 
+
 class Tumulo(models.Model):
+    """
+    Ângulo efetivo no mapa:
+      - se este túmulo tiver 'angulo_graus' -> usar esse;
+      - caso contrário -> usar o ângulo da QUADRA.
+    Tamanho do retângulo: por TÚMULO (largura/comprimento), com padrão 2,00 x 1,00 m.
+    """
+    # Padrões para quando não houver medida específica informada
+    PADRAO_COMPRIMENTO_M = Decimal("2.00")
+    PADRAO_LARGURA_M = Decimal("1.00")
+
     STATUS_CHOICES = (
         ('disponivel', 'Disponível'),
         ('ocupado', 'Ocupado'),
@@ -268,7 +283,36 @@ class Tumulo(models.Model):
         verbose_name="Capacidade de sepultamentos",
         help_text="Número máximo de sepultamentos simultâneos neste túmulo."
     )
+
+    # Coordenadas/geo
     localizacao = models.JSONField(null=True, blank=True)
+
+    # --- NOVO: ângulo opcional do túmulo (em graus). Se vazio, herda da quadra no frontend ---
+    angulo_graus = models.DecimalField(
+        "Ângulo do túmulo (°)",
+        max_digits=6, decimal_places=2,
+        null=True, blank=True,
+        validators=[MinValueValidator(Decimal("-360.00")), MaxValueValidator(Decimal("360.00"))],
+        help_text="Deixe em branco para herdar o ângulo da quadra.",
+    )
+
+    # --- Medidas individuais do túmulo (usadas no desenho do mapa) ---
+    comprimento_m = models.DecimalField(
+        "Comprimento (m)",
+        max_digits=4,
+        decimal_places=2,
+        default=PADRAO_COMPRIMENTO_M,
+        validators=[MinValueValidator(Decimal("0.10"))],
+        help_text="Comprimento do túmulo em metros. Padrão: 2,00 m.",
+    )
+    largura_m = models.DecimalField(
+        "Largura (m)",
+        max_digits=4,
+        decimal_places=2,
+        default=PADRAO_LARGURA_M,
+        validators=[MinValueValidator(Decimal("0.10"))],
+        help_text="Largura do túmulo em metros. Padrão: 1,00 m.",
+    )
 
     @cached_property
     def prefeitura(self):
@@ -291,6 +335,26 @@ class Tumulo(models.Model):
             if quadra.cemiterio_id != self.cemiterio_id:
                 raise ValidationError({'quadra': 'A quadra selecionada não pertence ao cemitério informado.'})
 
+        # Medidas precisam ser positivas (validators já cuidam, mas deixamos mensagem clara)
+        if self.comprimento_m and self.comprimento_m <= 0:
+            raise ValidationError({'comprimento_m': 'Informe um comprimento maior que zero.'})
+        if self.largura_m and self.largura_m <= 0:
+            raise ValidationError({'largura_m': 'Informe uma largura maior que zero.'})
+
+    # Helpers úteis para o frontend/serializer
+    @property
+    def comprimento_utilizado_m(self) -> Decimal:
+        return self.comprimento_m or self.PADRAO_COMPRIMENTO_M
+
+    @property
+    def largura_utilizada_m(self) -> Decimal:
+        return self.largura_m or self.PADRAO_LARGURA_M
+
+    @property
+    def angulo_utilizado_graus(self):
+        """Se existir ângulo do túmulo, retorna esse valor; senão None (frontend usará o da quadra)."""
+        return self.angulo_graus
+
     def calcular_status_dinamico(self):
         from .models import Sepultado
 
@@ -309,52 +373,39 @@ class Tumulo(models.Model):
         return 'ocupado' if sepultados_ativos >= self.capacidade else 'disponivel'
 
     def save(self, *args, **kwargs):
-        # valida como já fazia
         self.full_clean()
-
-        # salva as mudanças do próprio túmulo (reservado, motivo, capacidade etc.)
         super().save(*args, **kwargs)
 
-        # SEMPRE recalcula o status com base no estado atual do BD
-        new_status = self.calcular_status_dinamico()
-
-        # evita update desnecessário e evita recursão
-        if new_status != self.status:
-            type(self).objects.filter(pk=self.pk).update(status=new_status)
-            self.status = new_status  # mantém em memória coerente
-
-
-    def __str__(self):
-        partes = []
-
-        # identificador pode ser texto; só zero-pad se for puramente numérico
-        if self.identificador is not None:
-            ident = str(self.identificador)
-            if ident.isdigit():
-                partes.append(f"{int(ident):02d}")   # 2 dígitos com zero à esquerda
-            else:
-                partes.append(ident)                 # mantém como veio
-
-        if self.usar_linha and self.linha is not None:
-            partes.append(f"L {self.linha:02d}")     # aqui é número, pode usar :02d
-
-        if self.quadra:
-            partes.append(str(self.quadra))          # ex.: "Quadra 01"
-
-        return " ".join(partes) or f"Túmulo {self.pk}"
-
-    def atualizar_status(self):
-        """Use este helper quando algo externo ao túmulo mudar (p.ex. criar/exumar/trasladar)."""
         new_status = self.calcular_status_dinamico()
         if new_status != self.status:
             type(self).objects.filter(pk=self.pk).update(status=new_status)
             self.status = new_status
 
+    def __str__(self):
+        partes = []
+        if self.identificador is not None:
+            ident = str(self.identificador)
+            if ident.isdigit():
+                partes.append(f"{int(ident):02d}")
+            else:
+                partes.append(ident)
+        if self.usar_linha and self.linha is not None:
+            partes.append(f"L {self.linha:02d}")
+        if self.quadra:
+            partes.append(str(self.quadra))
+        return " ".join(partes) or f"Túmulo {self.pk}"
+
+    def atualizar_status(self):
+        new_status = self.calcular_status_dinamico()
+        if new_status != self.status:
+            type(self).objects.filter(pk=self.pk).update(status=new_status)
+            self.status = new_status
 
     class Meta:
         verbose_name = "Túmulo"
         verbose_name_plural = "Túmulos"
         app_label = "sepultados_gestao"
+
 
 from django.db import models
 from django.core.exceptions import ValidationError

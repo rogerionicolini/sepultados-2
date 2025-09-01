@@ -392,11 +392,14 @@ class LicencaForm(forms.ModelForm):
     def set_user(self, user):
         self.current_user = user
 
+from decimal import Decimal, InvalidOperation
+
 from django import forms
 from django.core.exceptions import ValidationError
 from django.forms import HiddenInput
 import json, re
 from .models import Tumulo, Quadra
+
 
 class TumuloForm(forms.ModelForm):
     coordenada = forms.CharField(
@@ -404,8 +407,8 @@ class TumuloForm(forms.ModelForm):
         required=False,
         widget=forms.TextInput(attrs={
             "class": "vTextField",
-            "size": 60,                 # ~60 caracteres visíveis
-            "style": "width: 42ch;"     # ~42 caracteres; ajuste se quiser
+            "size": 60,
+            "style": "width: 42ch;"
         }),
         help_text="Ex.: -23.458582390430013, -52.03785445717775",
     )
@@ -418,6 +421,7 @@ class TumuloForm(forms.ModelForm):
             "cemiterio": HiddenInput(),
         }
 
+    # ----------------- helpers -----------------
     @staticmethod
     def _parse_lat_lng(txt: str):
         if not txt or not txt.strip():
@@ -457,6 +461,7 @@ class TumuloForm(forms.ModelForm):
                 return {"lat": sum(lats)/len(lats), "lng": sum(lngs)/len(lngs)}
         return None
 
+    # ----------------- init -----------------
     def __init__(self, *args, **kwargs):
         request = kwargs.pop('request', None)
         self.request = request
@@ -470,12 +475,51 @@ class TumuloForm(forms.ModelForm):
         if p:
             self.initial["coordenada"] = f"{p['lat']}, {p['lng']}"
 
+    # ----------------- normalizações/validações -----------------
+    def _parse_decimal(self, value, campo, padrao: Decimal) -> Decimal:
+        """Aceita '2,00' ou '2.00'. Se vazio => usa padrão."""
+        if value in (None, ""):
+            return padrao
+        if isinstance(value, Decimal):
+            v = value
+        else:
+            s = str(value).strip().replace(",", ".")
+            try:
+                v = Decimal(s)
+            except (InvalidOperation, ValueError):
+                raise ValidationError({campo: "Valor inválido. Use número, ex.: 2,00"})
+        if v <= 0:
+            raise ValidationError({campo: "Informe um valor maior que zero."})
+        return v
+
+    def clean_comprimento_m(self):
+        val = self.cleaned_data.get("comprimento_m", None)
+        return self._parse_decimal(val, "comprimento_m", Tumulo.PADRAO_COMPRIMENTO_M)
+
+    def clean_largura_m(self):
+        val = self.cleaned_data.get("largura_m", None)
+        return self._parse_decimal(val, "largura_m", Tumulo.PADRAO_LARGURA_M)
+
+    def clean_angulo_graus(self):
+        """Ângulo opcional; aceita vírgula. Intervalo [-360, 360]."""
+        val = self.cleaned_data.get("angulo_graus", None)
+        if val in (None, ""):
+            return None
+        try:
+            v = Decimal(str(val).replace(",", "."))
+        except (InvalidOperation, ValueError):
+            raise ValidationError({"angulo_graus": "Ângulo inválido. Ex.: 12,5"})
+        if v < Decimal("-360") or v > Decimal("360"):
+            raise ValidationError({"angulo_graus": "Informe um valor entre -360 e 360 graus."})
+        return v
+
     def clean(self):
         cleaned = super().clean()
-        # valida formato se foi informado (mas NÃO obriga)
+        # valida formato da coordenada se foi informada (mas NÃO obriga)
         self._coordenada = self._parse_lat_lng(cleaned.get("coordenada"))
         return cleaned
 
+    # ----------------- save -----------------
     def save(self, commit=True):
         tumulo = super().save(commit=False)
 
@@ -484,7 +528,7 @@ class TumuloForm(forms.ModelForm):
         elif self.request and hasattr(self.request, 'cemiterio_ativo'):
             tumulo.cemiterio_id = getattr(self.request.cemiterio_ativo, 'id', None)
 
-        # NÃO grava aqui: quem gera o retângulo e salva o polígono é o admin.save_model()
+        # NÃO grava localizacao aqui: quem usa coordenada é o admin.save_model()
         if commit:
             tumulo.save()
         return tumulo

@@ -219,15 +219,33 @@ class TransladoSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 from rest_framework import serializers
+from .models import Tumulo
+
 
 class TumuloSerializer(serializers.ModelSerializer):
     tem_contrato_ativo = serializers.BooleanField(read_only=True)
     contrato_id = serializers.IntegerField(read_only=True, allow_null=True)
     contrato_numero = serializers.CharField(read_only=True, allow_null=True)
 
+    # Números no JSON (sem string)
+    comprimento_m = serializers.DecimalField(
+        max_digits=4, decimal_places=2, coerce_to_string=False
+    )
+    largura_m = serializers.DecimalField(
+        max_digits=4, decimal_places=2, coerce_to_string=False
+    )
+
+    # Ângulo opcional do túmulo; se vier null, o frontend usa o da quadra
+    angulo_graus = serializers.DecimalField(
+        max_digits=6, decimal_places=2,
+        required=False, allow_null=True,
+        min_value=-360, max_value=360,
+        coerce_to_string=False,
+    )
+
     class Meta:
         model = Tumulo
-        fields = '__all__'
+        fields = "__all__"
 
 
 
