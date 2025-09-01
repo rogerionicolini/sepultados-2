@@ -239,7 +239,7 @@ class QuadraAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
 
     # Campos exibidos NO FORM (cemitério propositalmente fora)
     fieldsets = (
-        (None, {"fields": ("codigo", "poligono_mapa", "grid_params")}),
+        (None, {"fields": ("codigo", "coordenadas", "angulo")}),
     )
 
     # ========== Colunas auxiliares ==========
@@ -363,25 +363,41 @@ from datetime import date
 from dateutil.relativedelta import relativedelta
 from django.urls import reverse
 
+# 👇 ADICIONE estes dois imports
+from django.db import models
+from django.contrib.admin.widgets import AdminTextareaWidget
+
 from .models import Tumulo, ConcessaoContrato, Translado
 from .forms import TumuloForm
 from .mixins import PrefeituraObrigatoriaAdminMixin
+import re, math, json
+
 
 @admin.register(Tumulo)
 class TumuloAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
     form = TumuloForm
     autocomplete_fields = ['quadra']
     search_fields = ['identificador', 'linha', 'quadra__codigo']
+
     list_display = (
         "tipo_estrutura", "identificador", "quadra",
         "status_com_cor", "usar_linha", "linha", "reservado", "link_pdf"
     )
     list_filter = ("status", "quadra", "usar_linha", "reservado")
     readonly_fields = ("status", "painel_sepultados")
+
+    # 👇 Inclui o campo localizacao no formulário
     fields = (
         "tipo_estrutura", "identificador", "capacidade", "quadra",
-        "usar_linha", "linha", "reservado", "motivo_reserva", "status", "painel_sepultados"
+        "usar_linha", "linha",
+        "coordenada",          # <— AQUI
+        "reservado", "motivo_reserva", "status", "painel_sepultados"
     )
+
+    # 👇 Deixa o JSONField confortável para edição
+    formfield_overrides = {
+        models.JSONField: {"widget": AdminTextareaWidget(attrs={"rows": 10, "cols": 120})}
+    }
 
     def link_pdf(self, obj):
         url = reverse('sepultados_gestao:gerar_pdf_sepultados_tumulo', args=[obj.pk])
@@ -390,7 +406,7 @@ class TumuloAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
 
     def get_queryset(self, request):
         qs = super().get_queryset(request)
-        if not request.cemiterio_ativo:
+        if not getattr(request, "cemiterio_ativo", None):
             return qs.none()
         return qs.filter(cemiterio=request.cemiterio_ativo)
 
@@ -414,10 +430,22 @@ class TumuloAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
 
     def get_form(self, request, obj=None, **kwargs):
         form_class = super().get_form(request, obj, **kwargs)
+
         class FormComRequest(form_class):
             def __init__(self2, *args, **kwargs2):
                 kwargs2['request'] = request
                 super().__init__(*args, **kwargs2)
+
+                # 👇 Ajuda de preenchimento no campo localizacao
+                if "localizacao" in self2.fields:
+                    self2.fields["localizacao"].help_text = mark_safe(
+                        "<b>Formatos aceitos</b>:<br>"
+                        "• PONTO: {\"lat\": -23.4, \"lng\": -51.9}<br>"
+                        "• POLÍGONO: [{\"lat\": -23.4, \"lng\": -51.9}, {\"lat\": -23.41, \"lng\": -51.91}, ...]<br>"
+                        "• Alternativo: [[-23.4, -51.9], [-23.41, -51.91], ...] ou {\"centro\": {\"lat\":..., \"lng\":...}}<br>"
+                        "<small>Use vírgula como separador decimal (padrão JSON).</small>"
+                    )
+
         return FormComRequest
 
     def painel_sepultados(self, obj):
@@ -458,11 +486,8 @@ class TumuloAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
         tempo_minimo_meses = obj.quadra.cemiterio.tempo_minimo_exumacao or 0
         linhas = ""
 
-        # Sepultados diretamente ligados ao túmulo
         for s in sepultados:
             status = s.status_display
-
-
             if s.data_sepultamento:
                 data_permitida = s.data_sepultamento + relativedelta(months=tempo_minimo_meses)
                 if date.today() >= data_permitida:
@@ -482,7 +507,6 @@ class TumuloAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
             </tr>
             """
 
-        # Sepultados trasladados para este túmulo
         for t in translados:
             s = t.sepultado
             status = "Exumado (Traslado)"
@@ -518,10 +542,31 @@ class TumuloAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
                 </table>
             </div>
         """)
-
     painel_sepultados.short_description = "Sepultados neste Túmulo"
 
-    
+    def save_model(self, request, obj, form, change):
+        # garante cemitério via quadra
+        if obj.quadra and not obj.cemiterio_id:
+            obj.cemiterio_id = obj.quadra.cemiterio_id
+
+        # pega a coordenada digitada no campo "coordenada"
+        coord_txt = (form.cleaned_data.get("coordenada")
+                     if form and hasattr(form, "cleaned_data") else None) \
+                    or request.POST.get("coordenada", "")
+
+        if coord_txt:
+            txt = coord_txt.strip()
+            txt = re.sub(r'^[\(\[]\s*|\s*[\)\]]$', '', txt)  # remove () []
+            m = re.match(r'^([-+]?\d+(?:\.\d+)?)\s*,\s*([-+]?\d+(?:\.\d+)?)$', txt)
+            if m:
+                lat_c = float(m.group(1))
+                lng_c = float(m.group(2))
+                # ✅ FRONT espera PONTO aqui:
+                obj.localizacao = {"lat": lat_c, "lng": lng_c}
+
+        # salva normalmente
+        super().save_model(request, obj, form, change)
+
 
 
 from django.contrib import admin
@@ -534,6 +579,8 @@ from .mixins import PrefeituraObrigatoriaAdminMixin
 from .forms import SepultadoForm
 from sepultados_gestao.models import Exumacao, Translado
 from .models import Sepultado, Tumulo, Cemiterio
+
+
 
 
 class SepultadoAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
@@ -712,6 +759,8 @@ class SepultadoAdmin(PrefeituraObrigatoriaAdminMixin, admin.ModelAdmin):
         form.base_fields['data_falecimento'].required = True
         form.base_fields['data_sepultamento'].required = True
         return form
+
+    
 
     def link_pdf(self, obj):
         url = reverse('sepultados_gestao:gerar_guia_sepultamento_pdf', args=[obj.pk])

@@ -198,36 +198,39 @@ class QuadraViewSet(ContextoRestritoQuerysetMixin, viewsets.ModelViewSet):
 
 
 
-# --- INÍCIO: trecho para colar no views_api.py ---
-
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
+from django.db.models import Exists, OuterRef, Subquery
+
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from .models import Tumulo
+# MODELOS / SERIALIZERS
+from .models import Tumulo, ConcessaoContrato  # <— garante o import do contrato
 from .serializers import TumuloSerializer
 
-# Importa a MESMA view de PDF usada no admin (no seu views.py)
+# mesma view de PDF usada no admin (views.py)
 from .views import gerar_pdf_sepultados_tumulo as pdf_view
-from django.db.models import Exists, OuterRef, Subquery
 
 
 class TumuloViewSet(viewsets.ModelViewSet):
     """
     ViewSet dos Túmulos com:
       - filtro por quadra/cemitério/prefeitura (via querystring ou sessão)
+      - anotação de informações de contrato (tem_contrato_ativo / id / numero)
       - action GET /api/tumulos/<id>/pdf_sepultados/ para abrir o mesmo PDF do admin
     """
     queryset = Tumulo.objects.all()
     serializer_class = TumuloSerializer
     permission_classes = [IsAuthenticated]
 
+    # campos relacionais para facilitar filtros
     _cemiterio_field = "quadra__cemiterio_id"
     _prefeitura_field = "quadra__cemiterio__prefeitura_id"
 
+    # ----------------- utils -----------------
     def _to_int(self, v):
         try:
             return int(v)
@@ -235,13 +238,16 @@ class TumuloViewSet(viewsets.ModelViewSet):
             return None
 
     def _context_ids(self, request):
-        """Coleta ids de contexto; querystring tem prioridade sobre sessão."""
-        pref_qs   = request.query_params.get("prefeitura") or request.query_params.get("prefeitura_id")
-        cem_qs    = request.query_params.get("cemiterio")  or request.query_params.get("cemiterio_id")
-        quadra_qs = request.query_params.get("quadra")     or request.query_params.get("quadra_id")
+        """
+        Coleta ids de contexto; querystring tem prioridade sobre sessão.
+        Suporta as duas chaves de sessão que você usa: cemiterio_ativo e cemiterio_ativo_id.
+        """
+        pref_qs   = request.query_params.get("prefeitura")  or request.query_params.get("prefeitura_id")
+        cem_qs    = request.query_params.get("cemiterio")   or request.query_params.get("cemiterio_id")
+        quadra_qs = request.query_params.get("quadra")      or request.query_params.get("quadra_id")
 
         pref_sess = request.session.get("prefeitura_ativa_id")
-        cem_sess  = request.session.get("cemiterio_ativo")
+        cem_sess  = request.session.get("cemiterio_ativo") or request.session.get("cemiterio_ativo_id")
 
         pref_id   = self._to_int(pref_qs)   or self._to_int(pref_sess)
         cem_id    = self._to_int(cem_qs)    or self._to_int(cem_sess)
@@ -249,14 +255,16 @@ class TumuloViewSet(viewsets.ModelViewSet):
 
         return pref_id, cem_id, quadra_id
 
+    # ----------------- queryset -----------------
     def get_queryset(self):
         qs = super().get_queryset().select_related("quadra", "quadra__cemiterio")
+
         if not self.request.user.is_authenticated:
             return qs.none()
 
         pref_id, cem_id, quadra_id = self._context_ids(self.request)
 
-        # PRIORIDADE: quadra > cemitério > prefeitura
+        # Prioridade: quadra > cemitério > prefeitura
         if quadra_id:
             qs = qs.filter(quadra_id=quadra_id)
         elif cem_id:
@@ -264,19 +272,21 @@ class TumuloViewSet(viewsets.ModelViewSet):
         elif pref_id:
             qs = qs.filter(**{self._prefeitura_field: pref_id})
         else:
+            # sem contexto, não retorna nada
             return qs.none()
 
-        # 👇 Anota se há contrato e pega o 1º contrato (número/id) para exibir na lista
+        # Anota se há contrato e pega o 1º contrato (id / numero) para listar
         contrato_qs = ConcessaoContrato.objects.filter(tumulo_id=OuterRef("pk")).order_by("-id")
         qs = qs.annotate(
             tem_contrato_ativo=Exists(contrato_qs),
             contrato_id=Subquery(contrato_qs.values("id")[:1]),
+            # ajuste o nome do campo abaixo se no seu modelo for diferente de "numero_contrato"
             contrato_numero=Subquery(contrato_qs.values("numero_contrato")[:1]),
         )
 
         return qs
 
-
+    # ----------------- actions -----------------
     @action(detail=True, methods=["get"], url_path="pdf_sepultados")
     def pdf_sepultados(self, request, pk=None):
         """
@@ -288,11 +298,14 @@ class TumuloViewSet(viewsets.ModelViewSet):
         )
 
         pref_id, cem_id, _ = self._context_ids(request)
+
+        # checagens de escopo/segurança por contexto
         if cem_id and str(tumulo.quadra.cemiterio_id) != str(cem_id):
             return Response({"detail": "Acesso negado para este túmulo (cemitério)."}, status=403)
         if pref_id and str(tumulo.quadra.cemiterio.prefeitura_id) != str(pref_id):
             return Response({"detail": "Acesso negado para este túmulo (prefeitura)."}, status=403)
 
+        # chama a mesma view que o admin usa
         try:
             return pdf_view(request._request, tumulo_pk=tumulo.pk)
         except TypeError:
@@ -308,7 +321,6 @@ class TumuloViewSet(viewsets.ModelViewSet):
                     )
         except Exception as e:
             return Response({"detail": f"Erro ao gerar PDF: {e}"}, status=500)
-
 
 
 # views_api.py

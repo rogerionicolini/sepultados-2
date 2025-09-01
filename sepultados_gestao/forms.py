@@ -101,22 +101,112 @@ class ConcessaoContratoForm(forms.ModelForm):
 
 
 from django import forms
-from .models import Quadra
 from django.core.exceptions import ValidationError
+from django.forms import HiddenInput
 from crum import get_current_request
-from .models import Cemiterio
+import json, re
+
+from .models import Quadra, Cemiterio
 
 class QuadraForm(forms.ModelForm):
+    # Campo pequeno para digitar só o grau (0–360)
+    angulo = forms.IntegerField(
+        label="Ângulo dos Túmulos (0–360)",
+        min_value=0, max_value=360, required=False,
+        help_text="Será salvo dentro de Grid params como {'angulo': X}."
+    )
+
+    # Campo prático para colar as coordenadas “lat, lng”
+    coordenadas = forms.CharField(
+        label="Coordenadas (lat, lng)",
+        required=False,
+        widget=forms.Textarea(attrs={"rows": 3}),
+        help_text=(
+            "Cole pontos como no Google Maps, ex.: -23.4399260983, -51.9283936978. "
+            "Pode ser um por linha ou vários na mesma linha; par a par (lat, lng). "
+            "Aceita parênteses e vírgulas; o form converte para JSON do campo Polígono."
+        )
+    )
+
     class Meta:
         model = Quadra
-        fields = ['codigo']  # cemiterio não está aqui, será setado automaticamente
+        fields = "__all__"  # não escondemos nada, apenas ajustamos widgets
+        widgets = {
+            "grid_params": HiddenInput(),   # fica oculto; preenchido pelo form
+            # "poligono_mapa":  (deixe como está; mostramos para transparência)
+        }
+
+    # ---------- Helpers ----------
+    @staticmethod
+    def _parse_coordenadas(texto: str):
+        """
+        Extrai números (lat/lng) de um texto livre e retorna uma lista
+        de dicts [{'lat': x, 'lng': y}, ...]. Valida faixas.
+        """
+        nums = re.findall(r'[-+]?\d+(?:\.\d+)?', texto or "")
+        if not nums:
+            return []
+
+        if len(nums) % 2 != 0:
+            raise ValidationError({"coordenadas": "Quantidade de números ímpar. Forneça pares (lat, lng)."})
+
+        pontos = []
+        for i in range(0, len(nums), 2):
+            lat = float(nums[i])
+            lng = float(nums[i + 1])
+            if not (-90 <= lat <= 90):
+                raise ValidationError({"coordenadas": f"Latitude fora da faixa (-90..90): {lat}"})
+            if not (-180 <= lng <= 180):
+                raise ValidationError({"coordenadas": f"Longitude fora da faixa (-180..180): {lng}"})
+            pontos.append({"lat": lat, "lng": lng})
+        return pontos
 
     def __init__(self, *args, **kwargs):
         self.request = kwargs.pop('request', get_current_request())
         super().__init__(*args, **kwargs)
 
+        # Esconde 'cemiterio' no form (você seta pela sessão)
+        if 'cemiterio' in self.fields:
+            self.fields['cemiterio'].widget = HiddenInput()
+
+        # ----- Pré-preenche ANGULO a partir de grid_params -----
+        gp = getattr(self.instance, "grid_params", None)
+        data = {}
+        if gp:
+            try:
+                data = gp if isinstance(gp, dict) else json.loads(gp)
+            except Exception:
+                data = {}
+        if self.fields["angulo"].initial is None:
+            self.fields["angulo"].initial = int(data.get("angulo", 0))
+
+        # ----- Pré-preenche COORDENADAS a partir do poligono_mapa -----
+        pm = getattr(self.instance, "poligono_mapa", None)
+        try:
+            lista = pm if isinstance(pm, list) else (json.loads(pm) if pm else [])
+        except Exception:
+            lista = []
+        # Mostra como linhas "lat, lng"
+        if lista and not self.initial.get("coordenadas"):
+            linhas = []
+            for p in lista:
+                try:
+                    linhas.append(f"{p.get('lat')}, {p.get('lng')}")
+                except Exception:
+                    pass
+            self.initial["coordenadas"] = "\n".join(linhas)
+
+        # Dica extra no polígono cru
+        if "poligono_mapa" in self.fields and not self.fields["poligono_mapa"].help_text:
+            self.fields["poligono_mapa"].help_text = (
+                "Se preferir, edite o JSON bruto aqui (lista de objetos {'lat','lng'}). "
+                "Mas o campo 'Coordenadas' acima já converte automaticamente."
+            )
+
     def clean(self):
         cleaned_data = super().clean()
+
+        # ==== sua lógica original: cemitério ativo ====
         cemiterio_id = self.request.session.get("cemiterio_ativo_id")
         if not cemiterio_id:
             raise ValidationError("Selecione um cemitério antes de cadastrar a quadra.")
@@ -124,7 +214,64 @@ class QuadraForm(forms.ModelForm):
             self.instance.cemiterio = Cemiterio.objects.get(id=cemiterio_id)
         except Cemiterio.DoesNotExist:
             raise ValidationError("Cemitério selecionado não encontrado.")
+        # =================================================
+
+        # ----- Valida/normaliza ângulo -----
+        ang = cleaned_data.get("angulo")
+        if ang is None:
+            ang = 0
+        try:
+            ang = int(ang)
+        except (TypeError, ValueError):
+            raise ValidationError({"angulo": "Valor inválido."})
+        if not 0 <= ang <= 360:
+            raise ValidationError({"angulo": "O ângulo deve estar entre 0 e 360."})
+
+        # Atualiza/mescla grid_params
+        try:
+            current_gp = {}
+            gp = getattr(self.instance, "grid_params", None)
+            if gp:
+                current_gp = gp if isinstance(gp, dict) else json.loads(gp)
+        except Exception:
+            current_gp = {}
+        current_gp["angulo"] = ang
+        self._grid_params_dict = current_gp  # para o save()
+
+        # ----- Converte 'coordenadas' para poligono_mapa se fornecido -----
+        coords_txt = cleaned_data.get("coordenadas")
+        if coords_txt:
+            pontos = self._parse_coordenadas(coords_txt)
+            self._poligono_lista = pontos  # para o save()
+        else:
+            self._poligono_lista = None  # mantém o que vier de poligono_mapa
+
         return cleaned_data
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+
+        # grid_params -> JSONField ou TextField
+        gp_data = getattr(self, "_grid_params_dict", {"angulo": int(self.cleaned_data.get("angulo") or 0)})
+        gp_field = instance._meta.get_field("grid_params")
+        try:
+            is_json_gp = gp_field.get_internal_type() == "JSONField"
+        except Exception:
+            is_json_gp = False
+        instance.grid_params = gp_data if is_json_gp else json.dumps(gp_data, ensure_ascii=False)
+
+        # poligono_mapa (se 'coordenadas' foi preenchido, ele tem prioridade)
+        if getattr(self, "_poligono_lista", None) is not None:
+            pm_field = instance._meta.get_field("poligono_mapa")
+            try:
+                is_json_pm = pm_field.get_internal_type() == "JSONField"
+            except Exception:
+                is_json_pm = False
+            instance.poligono_mapa = self._poligono_lista if is_json_pm else json.dumps(self._poligono_lista, ensure_ascii=False)
+
+        if commit:
+            instance.save()
+        return instance
 
 
 
@@ -246,29 +393,83 @@ class LicencaForm(forms.ModelForm):
         self.current_user = user
 
 from django import forms
+from django.core.exceptions import ValidationError
+from django.forms import HiddenInput
+import json, re
 from .models import Tumulo, Quadra
 
 class TumuloForm(forms.ModelForm):
+    coordenada = forms.CharField(
+        label="Coordenada (lat, lng)",
+        required=False,
+        help_text="Ex.: -23.458582390430013, -52.03785445717775"
+    )
+
     class Meta:
         model = Tumulo
-        fields = '__all__'
+        fields = "__all__"
+        widgets = {
+            "localizacao": HiddenInput(),   # não mostramos o JSON cru
+            "cemiterio": HiddenInput(),
+        }
+
+    @staticmethod
+    def _parse_lat_lng(txt: str):
+        if not txt or not txt.strip():
+            return None
+        s = re.sub(r'^[\(\[]\s*|\s*[\)\]]$', '', txt.strip())
+        m = re.match(r'^([-+]?\d+(?:\.\d+)?)\s*,\s*([-+]?\d+(?:\.\d+)?)$', s)
+        if not m:
+            raise ValidationError({"coordenada": "Use o formato: -23.45, -52.03 (somente números e vírgula)."})
+        lat = float(m.group(1)); lng = float(m.group(2))
+        if not (-90 <= lat <= 90):   raise ValidationError({"coordenada": f"Latitude fora de -90..90: {lat}"})
+        if not (-180 <= lng <= 180): raise ValidationError({"coordenada": f"Longitude fora de -180..180: {lng}"})
+        return {"lat": lat, "lng": lng}
+
+    @staticmethod
+    def _point_from_localizacao(loc):
+        if not loc:
+            return None
+        if isinstance(loc, str):
+            try: loc = json.loads(loc)
+            except Exception: return None
+        if isinstance(loc, dict):
+            if "lat" in loc and "lng" in loc:
+                return {"lat": float(loc["lat"]), "lng": float(loc["lng"])}
+            if "centro" in loc and isinstance(loc["centro"], dict):
+                c = loc["centro"]
+                if "lat" in c and "lng" in c:
+                    return {"lat": float(c["lat"]), "lng": float(c["lng"])}
+            return None
+        if isinstance(loc, list) and loc:
+            lats, lngs = [], []
+            for p in loc:
+                if isinstance(p, dict) and "lat" in p and "lng" in p:
+                    lats.append(float(p["lat"])); lngs.append(float(p["lng"]))
+                elif isinstance(p, (list, tuple)) and len(p) == 2:
+                    lats.append(float(p[0])); lngs.append(float(p[1]))
+            if lats and lngs:
+                return {"lat": sum(lats)/len(lats), "lng": sum(lngs)/len(lngs)}
+        return None
 
     def __init__(self, *args, **kwargs):
         request = kwargs.pop('request', None)
         self.request = request
         super().__init__(*args, **kwargs)
 
-        # ✅ Filtra quadras com base no ID do cemitério ativo
         cemiterio_id = getattr(request.cemiterio_ativo, 'id', None) if request else None
-        if cemiterio_id:
-            self.fields['quadra'].queryset = Quadra.objects.filter(cemiterio_id=cemiterio_id)
-        else:
-            self.fields['quadra'].queryset = Quadra.objects.none()
+        self.fields['quadra'].queryset = Quadra.objects.filter(cemiterio_id=cemiterio_id) if cemiterio_id else Quadra.objects.none()
 
-        # ✅ Oculta o campo cemitério (é automático)
-        if 'cemiterio' in self.fields:
-            self.fields['cemiterio'].required = False
-            self.fields['cemiterio'].widget = forms.HiddenInput()
+        # pré-preenche coordenada a partir do que já está salvo (ponto/centro/polígono)
+        p = self._point_from_localizacao(getattr(self.instance, "localizacao", None))
+        if p:
+            self.initial["coordenada"] = f"{p['lat']}, {p['lng']}"
+
+    def clean(self):
+        cleaned = super().clean()
+        # valida formato se foi informado (mas NÃO obriga)
+        self._coordenada = self._parse_lat_lng(cleaned.get("coordenada"))
+        return cleaned
 
     def save(self, commit=True):
         tumulo = super().save(commit=False)
@@ -278,50 +479,10 @@ class TumuloForm(forms.ModelForm):
         elif self.request and hasattr(self.request, 'cemiterio_ativo'):
             tumulo.cemiterio_id = getattr(self.request.cemiterio_ativo, 'id', None)
 
+        # NÃO grava aqui: quem gera o retângulo e salva o polígono é o admin.save_model()
         if commit:
             tumulo.save()
         return tumulo
-
-
-
-
-    
-
-
-from .models import Cemiterio
-
-class SelecionarCemiterioForm(forms.Form):
-    cemiterio = forms.ModelChoiceField(
-        queryset=Cemiterio.objects.none(),
-        label="Cemitério",
-        required=True
-    )
-    password = forms.CharField(
-        label="Confirme sua senha",
-        widget=forms.PasswordInput,
-        required=True
-    )
-
-    def __init__(self, *args, **kwargs):
-        self.user = kwargs.pop('user', None)
-        self.prefeitura = kwargs.pop('prefeitura', None)
-        super().__init__(*args, **kwargs)
-
-        if self.prefeitura:
-            self.fields['cemiterio'].queryset = Cemiterio.objects.filter(prefeitura=self.prefeitura)
-
-    def clean(self):
-        cleaned_data = super().clean()
-        password = cleaned_data.get("password")
-
-        if not self.user.check_password(password):
-            raise forms.ValidationError("Senha incorreta. Tente novamente.")
-
-        return cleaned_data
-
-
-
-
 
 
 
