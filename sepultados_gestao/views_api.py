@@ -2140,6 +2140,19 @@ class ImportSepultadosAPIView(BaseImportAPIView):
             except Exception:
                 return None
 
+        # parse lógico simples
+        def _truthy(v):
+            return str(v or "").strip().lower() in ("sim", "s", "true", "1", "yes", "y")
+
+        # int seguro (aceita float/str, vazio -> None)
+        def _int_or_none(v):
+            try:
+                if pd.isna(v) or v is None or str(v).strip() == "":
+                    return None
+                return int(float(v))
+            except Exception:
+                return None
+
         importados = 0
         erros = []
         tumulos_usados = set()
@@ -2168,17 +2181,25 @@ class ImportSepultadosAPIView(BaseImportAPIView):
                     )
                     continue
 
-                # opcional: atualizar usar_linha/linha a partir da planilha (não vamos salvar ainda)
-                usar_linha_raw = str(row.get("usar_linha") or "").strip().lower()
-                if usar_linha_raw in ("sim", "s", "true", "1"):
-                    tumulo.usar_linha = True
-                elif usar_linha_raw in ("nao", "não", "n", "false", "0"):
-                    tumulo.usar_linha = False
-                if pd.notna(row.get("linha")):
-                    try:
-                        tumulo.linha = int(float(row.get("linha")))
-                    except Exception:
-                        pass  # ignora erro de conversão
+                # ========== VALIDAÇÃO DE LINHA (NOVA) ==========
+                usar_linha_plan = _truthy(row.get("usar_linha"))
+                linha_plan = _int_or_none(row.get("linha"))
+
+                if tumulo.usar_linha:
+                    # se o túmulo usa linha: planilha deve informar e deve bater
+                    if linha_plan is None:
+                        erros.append(
+                            f"Linha {i+2}: Túmulo '{ident_tumulo}' usa linha ({tumulo.linha}), "
+                            "mas a planilha não informou 'linha'."
+                        )
+                        continue
+                    if int(linha_plan) != int(tumulo.linha or 0):
+                        erros.append(
+                            f"Linha {i+2}: Linha informada ({linha_plan}) difere da linha do túmulo ({tumulo.linha})."
+                        )
+                        continue
+                # se o túmulo NÃO usa linha, ignoramos 'usar_linha'/'linha' da planilha
+                # (NÃO alteramos tumulo.usar_linha / tumulo.linha)
 
                 # cria e salva (gera número no save do model)
                 with transaction.atomic():
@@ -2220,6 +2241,7 @@ class ImportSepultadosAPIView(BaseImportAPIView):
                 pass  # não falha a importação por isso
 
         return Response({"importados": importados, "erros": erros}, status=200)
+
 
 # --- CSRF helper (GET) permanece igual ---
 from django.http import JsonResponse, HttpResponseNotAllowed

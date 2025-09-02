@@ -1,8 +1,8 @@
 // src/pages/Receitas.jsx
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useRef } from "react";
 import axios from "axios";
 
-// ✅ novo: exibição de datas dd/mm/aaaa
+// ✅ exibição de datas dd/mm/aaaa
 import DateText from "../components/DateText";
 
 const API_BASE = "http://127.0.0.1:8000/api/";
@@ -110,6 +110,11 @@ export default function Receitas() {
     desconto: "", // strings pt-BR (com vírgula)
     valor_pago: "",
   });
+
+  // 🔒 trava para não abrir duas abas e reutilizar a mesma
+  const [abrindoPdfId, setAbrindoPdfId] = useState(null);
+  const pdfLockRef = useRef(false);
+  const RECIBO_TARGET = "recibo_pdf_tab"; // sempre a mesma aba
 
   const token = localStorage.getItem("accessToken");
   const api = useMemo(
@@ -245,16 +250,32 @@ export default function Receitas() {
   }
   // --------------------------------------------------
 
-  async function abrirPdf(r) {
+  async function abrirPdf(id) {
+    // evita duplicado síncrono e já reserva o ID para desabilitar o botão
+    if (pdfLockRef.current) return;
+    pdfLockRef.current = true;
+    setAbrindoPdfId(id);
+
+    // abre/rehusa a mesma aba ANTES do await (minimiza bloqueio de popup)
+    let popup = null;
     try {
-      const url = qsWith(`${ENDPOINT}${r.id || r.pk}/pdf/`);
+      popup = window.open("about:blank", RECIBO_TARGET);
+    } catch {
+      popup = null;
+    }
+
+    try {
+      const url = qsWith(`${ENDPOINT}${id}/pdf/`);
       const res = await api.get(url, { responseType: "blob" }); // envia Authorization
 
       const blob = new Blob([res.data], { type: "application/pdf" });
       const blobUrl = URL.createObjectURL(blob);
 
-      const w = window.open(blobUrl, "_blank", "noopener,noreferrer");
-      if (!w) {
+      if (popup) {
+        // reutiliza a mesma aba
+        popup.location.href = blobUrl;
+        popup.opener = null;
+      } else {
         // fallback (popup bloqueado): abre via link programático
         const a = document.createElement("a");
         a.href = blobUrl;
@@ -270,6 +291,11 @@ export default function Receitas() {
     } catch (e) {
       console.error("PDF ERRO:", e?.response?.status, e?.response?.data || e);
       alert("Não foi possível abrir o recibo (PDF).");
+      // se o popup ficou aberto em branco, fecha
+      try { if (popup && !popup.closed) popup.close(); } catch {}
+    } finally {
+      setAbrindoPdfId(null);
+      pdfLockRef.current = false;
     }
   }
 
@@ -300,6 +326,18 @@ export default function Receitas() {
       );
     } finally {
       setSalvando(false);
+    }
+  }
+
+  // ✅ Excluir receita (sem mudar mais nada)
+  async function excluirReceita(id) {
+    if (!window.confirm("Excluir esta receita? Essa ação não pode ser desfeita.")) return;
+    try {
+      await api.delete(qsWith(`${ENDPOINT}${id}/`));
+      await carregar();
+    } catch (e) {
+      console.error("excluir ERRO:", e?.response?.status, e?.response?.data || e);
+      alert("Não foi possível excluir.");
     }
   }
 
@@ -432,8 +470,14 @@ export default function Receitas() {
                     <td className="py-2 px-3">
                       <div className="flex gap-2">
                         <button
-                          onClick={() => abrirPdf(r)}
-                          className="px-3 py-1 rounded border border-blue-300 text-blue-800 bg-blue-50 hover:bg-blue-100"
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            abrirPdf(r.id || r.pk);
+                          }}
+                          disabled={abrindoPdfId === (r.id || r.pk)}
+                          className="px-3 py-1 rounded border border-blue-300 text-blue-800 bg-blue-50 hover:bg-blue-100 disabled:opacity-60"
                           title="Abrir recibo (PDF)"
                         >
                           Recibo
@@ -451,6 +495,14 @@ export default function Receitas() {
                           title="Pagar (pré-preenche valor pago)"
                         >
                           Pagar
+                        </button>
+                        {/* ✅ Excluir */}
+                        <button
+                          onClick={() => excluirReceita(r.id || r.pk)}
+                          className="px-3 py-1 rounded bg-[#e05151] text-white hover:opacity-90"
+                          title="Excluir"
+                        >
+                          Excluir
                         </button>
                       </div>
                     </td>
@@ -500,16 +552,13 @@ export default function Receitas() {
                     Data do pagamento
                   </div>
                   <div className="border rounded-lg px-3 py-2 bg-gray-50">
-                    {/* ✅ data em dd/mm/aaaa */}
                     <DateText value={editando.data_pagamento} fallback="-" />
                   </div>
                 </div>
                 <div className="col-span-2">
                   <div className="text-xs text-green-900">Descrição</div>
                   <div className="border rounded-lg px-3 py-2 bg-gray-50">
-                    {editando.descricao_segura ||
-                      editando.descricao ||
-                      "-"}
+                    {editando.descricao_segura || editando.descricao || "-"}
                   </div>
                 </div>
               </div>
@@ -592,7 +641,6 @@ export default function Receitas() {
                 <div>
                   <div className="text-xs text-green-900">Vencimento</div>
                   <div className="border rounded-lg px-3 py-2 bg-gray-50">
-                    {/* ✅ data em dd/mm/aaaa */}
                     <DateText value={editando.data_vencimento} fallback="-" />
                   </div>
                 </div>

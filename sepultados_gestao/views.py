@@ -758,76 +758,106 @@ def importar_sepultados(request):
 
     if request.method == "POST" and request.FILES.get("arquivo"):
         try:
-            planilha = request.FILES["arquivo"]
-            df = pd.read_excel(planilha)
-
-            for i, row in df.iterrows():
-                try:
-                    identificador_tumulo = str(row.get("identificador_tumulo")).strip()
-                    nome_quadra = str(row.get("quadra")).strip()
-                    usar_linha = str(row.get("usar_linha", "")).strip().lower()
-                    linha = row.get("linha")
-
-                    quadra = Quadra.objects.filter(
-                        codigo=nome_quadra,
-                        cemiterio_id=request.session["cemiterio_ativo_id"]
-                    ).first()
-
-                    if not quadra:
-                        erros.append(f"Linha {i+2}: Quadra '{nome_quadra}' não encontrada.")
-                        continue
-
-                    tumulo = Tumulo.objects.filter(
-                        identificador=identificador_tumulo,
-                        quadra=quadra
-                    ).first()
-
-                    if not tumulo:
-                        erros.append(f"Linha {i+2}: Túmulo '{identificador_tumulo}' não encontrado na quadra '{nome_quadra}'.")
-                        continue
-
-                    # Atualiza os campos usar_linha e linha se fornecidos
-                    if usar_linha in ["sim", "s", "true", "1"]:
-                        tumulo.usar_linha = True
-                    elif usar_linha in ["não", "nao", "n", "false", "0"]:
-                        tumulo.usar_linha = False
-
-                    if linha and not pd.isna(linha):
-                        try:
-                            tumulo.linha = int(linha)
-                        except ValueError:
-                            erros.append(f"Linha {i+2}: valor inválido para linha: {linha}")
-
-                    tumulo.save()
-
-                    sep = Sepultado(
-                        nome=row.get("nome") or "",
-                        cpf_sepultado=row.get("cpf_sepultado"),
-                        data_nascimento=row.get("data_nascimento"),
-                        sexo=row.get("sexo") or "NI",
-                        local_nascimento=row.get("local_nascimento"),
-                        local_falecimento=row.get("local_falecimento"),
-                        data_falecimento=row.get("data_falecimento"),
-                        data_sepultamento=row.get("data_sepultamento"),
-                        nome_pai=row.get("nome_pai"),
-                        nome_mae=row.get("nome_mae"),
-                        tumulo=tumulo,
-                        importado=True
-                    )
-                    sep.save(ignorar_validacao_contrato=True)
-                    total += 1
-
-                except Exception as e:
-                    erros.append(f"Linha {i+2}: Erro ao importar - {str(e)}")
-
-            if total:
-                messages.success(request, f"{total} sepultado(s) importado(s) com sucesso.")
-            if erros:
-                for erro in erros:
-                    messages.warning(request, erro)
-
+            # usa o helper que já existe no arquivo (lê csv/xls/xlsx e normaliza colunas)
+            df = read_df(request.FILES["arquivo"])
         except Exception as e:
-            messages.error(request, f"Erro ao processar a planilha: {str(e)}")
+            messages.error(request, f"Erro ao processar a planilha: {e}")
+            return render(request, "admin/importar_base.html", {
+                "title": "Importar Sepultados",
+                "titulo_pagina": "Importar Sepultados",
+                "mostrar_formulario": True,
+                "link_planilha": "/media/planilhas/Planilha de Sepultados.xlsx"
+            })
+
+        for i, row in df.iterrows():
+            try:
+                identificador_tumulo = str(row.get("identificador_tumulo") or "").strip()
+                nome_quadra = str(row.get("quadra") or "").strip()
+
+                usar_linha_raw = str(row.get("usar_linha") or "").strip().lower()
+                usar_linha_plan = usar_linha_raw in ("sim", "s", "true", "1")
+
+                # linha pode vir float no Excel; normaliza para int ou None
+                linha_plan = row.get("linha", None)
+                if pd.isna(linha_plan):
+                    linha_plan = None
+                else:
+                    try:
+                        linha_plan = int(float(linha_plan))
+                    except Exception:
+                        erros.append(f"Linha {i+2}: valor inválido para 'linha': {row.get('linha')}")
+                        continue
+
+                # localiza quadra no cemitério ativo
+                quadra = Quadra.objects.filter(
+                    codigo=nome_quadra,
+                    cemiterio_id=request.session["cemiterio_ativo_id"]
+                ).first()
+
+                if not quadra:
+                    erros.append(f"Linha {i+2}: Quadra '{nome_quadra}' não encontrada.")
+                    continue
+
+                # localiza tumulo por identificador + quadra
+                tumulo = Tumulo.objects.filter(
+                    identificador=identificador_tumulo,
+                    quadra=quadra
+                ).first()
+
+                if not tumulo:
+                    erros.append(f"Linha {i+2}: Túmulo '{identificador_tumulo}' não encontrado na quadra '{nome_quadra}'.")
+                    continue
+
+                # ======= VALIDAÇÕES DE LINHA (NÃO ALTERA O TÚMULO) =======
+                if tumulo.usar_linha:
+                    # precisa informar linha e bater com a do túmulo
+                    if linha_plan is None:
+                        erros.append(
+                            f"Linha {i+2}: O túmulo '{identificador_tumulo}' usa linha (atual: {tumulo.linha}). "
+                            f"Informe a coluna 'linha' na planilha."
+                        )
+                        continue
+                    if linha_plan != tumulo.linha:
+                        erros.append(
+                            f"Linha {i+2}: Linha informada ({linha_plan}) difere da linha do túmulo ({tumulo.linha})."
+                        )
+                        continue
+                else:
+                    # tumulo NÃO usa linha: não pode marcar usar_linha ou informar linha
+                    if usar_linha_plan or linha_plan is not None:
+                        erros.append(
+                            f"Linha {i+2}: O túmulo '{identificador_tumulo}' não usa linha. "
+                            f"Remova 'usar_linha'/'linha' da planilha."
+                        )
+                        continue
+                # ======= FIM DAS VALIDAÇÕES =======
+
+                sep = Sepultado(
+                    nome=row.get("nome") or "",
+                    cpf_sepultado=row.get("cpf_sepultado"),
+                    data_nascimento=row.get("data_nascimento"),
+                    sexo=(row.get("sexo") or "NI"),
+                    local_nascimento=row.get("local_nascimento"),
+                    local_falecimento=row.get("local_falecimento"),
+                    data_falecimento=row.get("data_falecimento"),
+                    data_sepultamento=row.get("data_sepultamento"),
+                    nome_pai=row.get("nome_pai"),
+                    nome_mae=row.get("nome_mae"),
+                    tumulo=tumulo,
+                    importado=True,
+                )
+                # mantém a sua exceção de validação de contrato
+                sep.save(ignorar_validacao_contrato=True)
+                total += 1
+
+            except Exception as e:
+                erros.append(f"Linha {i+2}: Erro ao importar - {e}")
+
+        if total:
+            messages.success(request, f"{total} sepultado(s) importado(s) com sucesso.")
+        if erros:
+            for erro in erros:
+                messages.warning(request, erro)
 
     return render(request, "admin/importar_base.html", {
         "title": "Importar Sepultados",
