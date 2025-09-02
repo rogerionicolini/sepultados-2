@@ -1954,13 +1954,70 @@ class ImportQuadrasAPIView(APIView):
 
 
 
+# --- Substitua sua ImportTumulosAPIView por esta versão compatível ---
+
+import re
+from decimal import Decimal, InvalidOperation
+import pandas as pd
+from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
+from django.db import transaction
+
+from .models import Tumulo, Quadra
+from .views_api import BaseImportAPIView  # se esta classe já está neste arquivo, pode remover esta linha
+
 class ImportTumulosAPIView(BaseImportAPIView):
+    permission_classes = [IsAuthenticated]
+
     MAPA_TIPO = {
         "túmulo": "tumulo", "tumulo": "tumulo",
         "perpétua": "perpetua", "perpetua": "perpetua",
-        "sepultura": "sepultura", "jazigo": "jazigo", "outro": "outro"
+        "sepultura": "sepultura", "jazigo": "jazigo", "gaveta": "gaveta",
+        "outro": "outro"
     }
 
+    # -------- helpers (mesmos do backend) --------
+    _NUM_RE = re.compile(r'[-+]?\d+(?:\.\d+)?')
+
+    @staticmethod
+    def _as_decimal(v, allow_none=True):
+        if v is None or (isinstance(v, float) and pd.isna(v)):
+            return None if allow_none else Decimal("0")
+        s = str(v).strip()
+        if not s:
+            return None if allow_none else Decimal("0")
+        s = s.replace(",", ".")
+        try:
+            return Decimal(s)
+        except InvalidOperation:
+            raise ValueError(f"número inválido: {v!r}")
+
+    @staticmethod
+    def _as_int(v, allow_none=True):
+        if v is None or (isinstance(v, float) and pd.isna(v)) or str(v).strip() == "":
+            return None if allow_none else 0
+        try:
+            return int(float(str(v).replace(",", ".").strip()))
+        except Exception:
+            raise ValueError(f"inteiro inválido: {v!r}")
+
+    @staticmethod
+    def _as_bool(v):
+        s = str(v).strip().lower()
+        return s in {"1", "true", "t", "sim", "s", "yes", "y"}
+
+    def _parse_coord(self, s):
+        if s is None or (isinstance(s, float) and pd.isna(s)) or str(s).strip() == "":
+            return None
+        txt = str(s).strip()
+        txt = re.sub(r'^[\(\[]\s*|\s*[\)\]]$', '', txt)
+        nums = self._NUM_RE.findall(txt.replace(",", " ").replace(";", " ").replace("/", " "))
+        if len(nums) >= 2:
+            lat = float(nums[0]); lng = float(nums[1])
+            return {"lat": lat, "lng": lng}
+        raise ValueError(f"coordenada inválida: {s!r}. Use '-23.44, -51.92'")
+
+    # -------------- POST --------------
     def post(self, request):
         if "arquivo" not in request.FILES:
             return Response({"detail": "Envie o arquivo em 'arquivo'."}, status=400)
@@ -1971,56 +2028,83 @@ class ImportTumulosAPIView(BaseImportAPIView):
 
         try:
             df = self._read_dataframe(request.FILES["arquivo"])
+            df.columns = [str(c).strip().lower() for c in df.columns]
         except Exception as e:
             return Response({"detail": f"Erro ao ler planilha: {e}"}, status=400)
 
-        total, erros = 0, []
+        esperados = {
+            "tipo_estrutura","identificador","capacidade","quadra_codigo",
+            "usar_linha","linha","angulo","comprimento_m","largura_m","coordenada"
+        }
+        faltando = [c for c in esperados if c not in df.columns]
+        if faltando:
+            return Response({"detail": f"Colunas faltando: {', '.join(faltando)}"}, status=400)
+
+        total, atualizados, erros = 0, 0, []
         for i, r in df.iterrows():
+            linha = i + 2  # cabeçalho = linha 1
             try:
-                quadra_codigo = str(r.get("quadra_codigo")).strip()
-                ident        = str(r.get("identificador")).strip()
-                tipo_raw     = str(r.get("tipo_estrutura") or "").strip().lower()
-                tipo         = self.MAPA_TIPO.get(tipo_raw, "tumulo")
-                capacidade   = int(float(r.get("capacidade"))) if pd.notna(r.get("capacidade")) else 1
-                usar_linha   = str(r.get("usar_linha") or "").strip().lower() in ("sim","s","true","1")
-                linha        = int(r.get("linha")) if usar_linha and pd.notna(r.get("linha")) else None
+                ident  = str(r.get("identificador") or "").strip()
+                if not ident:
+                    raise ValueError("identificador vazio")
+
+                qcod = str(r.get("quadra_codigo") or "").strip()
+                if not qcod:
+                    raise ValueError("quadra_codigo vazio")
 
                 quadra_id = Quadra.objects.filter(
-                    codigo__iexact=quadra_codigo,
+                    codigo__iexact=qcod,
                     cemiterio_id=cemiterio_id
                 ).values_list("id", flat=True).first()
-
                 if not quadra_id:
-                    erros.append(f"Linha {i+2}: Quadra '{quadra_codigo}' não encontrada para este cemitério.")
-                    continue
+                    raise ValueError(f"quadra '{qcod}' não encontrada neste cemitério")
 
-                # ✅ AQUI vai o cemiterio_id
-                obj, created = Tumulo.objects.get_or_create(
-                    cemiterio_id=cemiterio_id,
-                    quadra_id=quadra_id,
-                    identificador=ident,
-                    defaults={
-                        "tipo_estrutura": tipo,
-                        "capacidade": capacidade,
-                        "usar_linha": usar_linha,
-                        "linha": linha,
-                        "reservado": False,
-                        "status": "disponivel",  # ajuste ao seu choices
-                    }
-                )
-                if not created:
-                    # opcional: atualizar campos se já existir
-                    obj.tipo_estrutura = tipo
-                    obj.capacidade     = capacidade
-                    obj.usar_linha     = usar_linha
-                    obj.linha          = linha
-                    obj.save(update_fields=["tipo_estrutura", "capacidade", "usar_linha", "linha"])
+                tipo_raw   = str(r.get("tipo_estrutura") or "").strip().lower()
+                tipo       = self.MAPA_TIPO.get(tipo_raw, "tumulo")
+                capacidade = self._as_int(r.get("capacidade")) or 1
+                usar_linha = self._as_bool(r.get("usar_linha"))
+                n_linha    = self._as_int(r.get("linha")) if usar_linha else None
+
+                # novos campos
+                angulo_graus  = self._as_decimal(r.get("angulo"))
+                comprimento_m = self._as_decimal(r.get("comprimento_m"))
+                largura_m     = self._as_decimal(r.get("largura_m"))
+                localizacao   = self._parse_coord(r.get("coordenada"))
+
+                defaults = {
+                    "tipo_estrutura": tipo,
+                    "capacidade": capacidade,
+                    "usar_linha": usar_linha,
+                    "linha": n_linha,
+                    "quadra_id": quadra_id,
+                }
+                if angulo_graus is not None:
+                    defaults["angulo_graus"] = angulo_graus
+                if comprimento_m is not None:
+                    defaults["comprimento_m"] = comprimento_m
+                if largura_m is not None:
+                    defaults["largura_m"] = largura_m
+                if localizacao is not None:
+                    defaults["localizacao"] = localizacao
+
+                with transaction.atomic():
+                    obj, created = Tumulo.objects.update_or_create(
+                        cemiterio_id=cemiterio_id,
+                        identificador=ident,
+                        defaults=defaults
+                    )
+
                 total += 1
+                if not created:
+                    atualizados += 1
 
             except Exception as e:
-                erros.append(f"Linha {i+2}: {e}")
+                erros.append(f"Linha {linha}: {e}")
 
-        return Response({"importados": total, "erros": erros}, status=200)
+        return Response(
+            {"importados": total, "atualizados": atualizados, "erros": erros},
+            status=200
+        )
 
 
 

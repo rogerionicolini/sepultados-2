@@ -37,6 +37,28 @@ function StatusPill({ status }) {
   );
 }
 
+function quadraLabelOf(t, quadras) {
+  // 1) se vier objeto aninhado, use
+  if (t?.quadra && typeof t.quadra === "object") {
+    return t.quadra.codigo || t.quadra.nome || `#${t.quadra.id ?? "-"}`;
+  }
+
+  // 2) se o backend mandou campos avulsos
+  if (t?.quadra_nome || t?.quadra_codigo) {
+    return t.quadra_codigo || t.quadra_nome;
+  }
+
+  // 3) se vier só o id (número ou string), procure na lista carregada
+  const qid = Number(t?.quadra);
+  if (Number.isFinite(qid)) {
+    const q = (quadras || []).find((x) => Number(x.id) === qid);
+    if (q) return q.codigo || q.nome || `#${q.id}`;
+    return `#${qid}`; // fallback simpático
+  }
+
+  return "-";
+}
+
 function QuadraDropdown({ options, value, onChange }) {
   return (
     <select
@@ -431,7 +453,7 @@ export default function Tumulos() {
                       <td className="py-2 px-3">{t.identificador || "-"}</td>
                       <td className="py-2 px-3">{t.tipo_estrutura || "-"}</td>
                       <td className="py-2 px-3">
-                        {t.quadra?.codigo || t.quadra_nome || "-"}
+                        {quadraLabelOf(t, quadras)}
                       </td>
                       <td className="py-2 px-3">{t.contrato_numero || "-"}</td>
                       <td className="py-2 px-3">

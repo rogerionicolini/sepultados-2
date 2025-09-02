@@ -554,105 +554,187 @@ def importar_quadras(request):
     )
 
 
+# --- importar_tumulos (substituir por este bloco) ---------------------------
+import re
+from decimal import Decimal, InvalidOperation
 import pandas as pd
+from django.db import transaction
+from django.contrib.admin.views.decorators import staff_member_required
 from django.contrib import messages
 from django.shortcuts import render
-from django.contrib.admin.views.decorators import staff_member_required
 from sepultados_gestao.models import Tumulo, Quadra
 
+# helpers
+_NUM_RE = re.compile(r'[-+]?\d+(?:\.\d+)?')
+
+def _as_decimal(v, allow_none=True):
+    if v is None or (isinstance(v, float) and pd.isna(v)):
+        return None if allow_none else Decimal("0")
+    s = str(v).strip()
+    if not s:
+        return None if allow_none else Decimal("0")
+    s = s.replace(",", ".")  # aceita vírgula
+    try:
+        return Decimal(s)
+    except InvalidOperation:
+        raise ValueError(f"número inválido: {v!r}")
+
+def _as_int(v, allow_none=True):
+    if v is None or (isinstance(v, float) and pd.isna(v)) or str(v).strip() == "":
+        return None if allow_none else 0
+    try:
+        return int(float(str(v).replace(",", ".").strip()))
+    except Exception:
+        raise ValueError(f"inteiro inválido: {v!r}")
+
+def _as_bool(v):
+    s = str(v).strip().lower()
+    return s in {"1","true","t","sim","s","yes","y"}
+
+def _parse_coord(s):
+    if s is None or (isinstance(s, float) and pd.isna(s)) or str(s).strip() == "":
+        return None
+    txt = str(s).strip()
+    # remove () ou [] nas pontas, se houver
+    txt = re.sub(r'^[\(\[]\s*|\s*[\)\]]$', '', txt)
+    nums = _NUM_RE.findall(txt.replace(",", " ").replace(";", " ").replace("/", " "))
+    if len(nums) >= 2:
+        lat = float(nums[0]); lng = float(nums[1])
+        return {"lat": lat, "lng": lng}
+    raise ValueError(f"coordenada inválida: {s!r}. Use '-23.44, -51.92'")
+
+def _read_df(uploaded_file):
+    name = uploaded_file.name.lower()
+    if name.endswith(".csv"):
+        df = pd.read_csv(uploaded_file)
+    elif name.endswith(".xls") or name.endswith(".xlsx"):
+        df = pd.read_excel(uploaded_file)
+    else:
+        raise ValueError("Formato não suportado. Envie .csv, .xls ou .xlsx.")
+    df.columns = [str(c).strip().lower() for c in df.columns]
+    return df
+
+TIPO_MAP = {
+    "túmulo": "tumulo", "tumulo": "tumulo",
+    "perpétua": "perpetua", "perpetua": "perpetua",
+    "sepultura": "sepultura", "jazigo": "jazigo", "gaveta": "gaveta",
+    "outro": "outro"
+}
 
 @staff_member_required
 def importar_tumulos(request):
-    if not request.session.get("prefeitura_ativa_id") or not request.session.get("cemiterio_ativo_id"):
-        messages.error(request, "Você precisa selecionar uma prefeitura e um cemitério antes de importar.")
+    cem_id = request.session.get("cemiterio_ativo_id")
+    if not request.session.get("prefeitura_ativa_id") or not cem_id:
+        messages.error(request, "Selecione prefeitura e cemitério antes de importar.")
         return render(request, "admin/importar_base.html", {
-            "title": "Importar Túmulos",
-            "long_content": "",
+            "titulo_pagina": "Importar Túmulos",
+            "link_planilha": "/media/planilhas/Planilha de Tumulos.xlsx",
         })
 
-    total = 0
-
     if request.method == "POST" and request.FILES.get("arquivo"):
-        arquivo = request.FILES["arquivo"]
-        extensao = arquivo.name.split(".")[-1].lower()
+        erros = []
+        importados = 0
+        atualizados = 0
 
         try:
-            if extensao == "csv":
-                df = pd.read_csv(arquivo)
-            elif extensao in ["xls", "xlsx"]:
-                df = pd.read_excel(arquivo)
-            else:
-                messages.error(request, "Formato de arquivo não suportado.")
-                return render(request, "admin/importar_base.html", {
-                    "title": "Importar Túmulos",
-                    "long_content": "",
-                })
+            df = _read_df(request.FILES["arquivo"])
         except Exception as e:
-            messages.error(request, f"Erro ao ler o arquivo: {str(e)}")
+            messages.error(request, f"Erro ao ler arquivo: {e}")
             return render(request, "admin/importar_base.html", {
-                "title": "Importar Túmulos",
-                "long_content": "",
+                "titulo_pagina": "Importar Túmulos",
+                "link_planilha": "/media/planilhas/Planilha de Tumulos.xlsx",
             })
 
-        print(f"[DEBUG] Sessão atual: prefeitura_id={request.session.get('prefeitura_ativa_id')} | cemitério_id={request.session.get('cemiterio_ativo_id')}")
-
-        MAPA_TIPO_ESTRUTURA = {
-            'túmulo': 'tumulo',
-            'perpétua': 'perpetua',
-            'sepultura': 'sepultura',
-            'jazigo': 'jazigo',
-            'outro': 'outro',
+        # nomes esperados (em minúsculas)
+        esperados = {
+            "tipo_estrutura","identificador","capacidade","quadra_codigo",
+            "usar_linha","linha","angulo","comprimento_m","largura_m","coordenada"
         }
+        faltando = [c for c in esperados if c not in df.columns]
+        if faltando:
+            messages.error(request, f"Colunas faltando na planilha: {', '.join(faltando)}.")
+            return render(request, "admin/importar_base.html", {
+                "titulo_pagina": "Importar Túmulos",
+                "link_planilha": "/media/planilhas/Planilha de Tumulos.xlsx",
+            })
 
-        for _, linha in df.iterrows():
+        for idx, row in df.iterrows():
+            linha_planilha = idx + 2  # +2 por causa do cabeçalho (linha 1)
             try:
-                quadra_codigo = str(linha["quadra_codigo"]).strip()
-                identificador = str(linha["identificador"]).strip()
+                ident = str(row.get("identificador") or "").strip()
+                if not ident:
+                    raise ValueError("identificador vazio")
 
-                tipo_raw = str(linha["tipo_estrutura"]).strip().lower()
-                tipo_estrutura = MAPA_TIPO_ESTRUTURA.get(tipo_raw, 'tumulo')
+                # quadra
+                qcod = str(row.get("quadra_codigo") or "").strip()
+                if not qcod:
+                    raise ValueError("quadra_codigo vazio")
+                quadra = Quadra.objects.filter(cemiterio_id=cem_id, codigo=qcod).first()
+                if not quadra:
+                    raise ValueError(f"quadra '{qcod}' não encontrada no cemitério")
 
-                capacidade = int(float(linha["capacidade"])) if pd.notna(linha["capacidade"]) else 1
-                usar_linha = str(linha["usar_linha"]).strip().lower() == "sim" if pd.notna(linha["usar_linha"]) else False
-                linha_valor = int(linha["linha"]) if usar_linha and pd.notna(linha["linha"]) else None
+                tipo_raw = str(row.get("tipo_estrutura") or "").strip().lower()
+                tipo = TIPO_MAP.get(tipo_raw, "tumulo")
 
-                print(f"[DEBUG] Buscando quadra: '{quadra_codigo}' no cemitério ID {request.session['cemiterio_ativo_id']}")
+                usar_linha = _as_bool(row.get("usar_linha"))
+                linha = _as_int(row.get("linha")) if usar_linha else None
+                capacidade = _as_int(row.get("capacidade")) or 1
 
-                quadra_id = Quadra.objects.filter(
-                    codigo__iexact=quadra_codigo,
-                    cemiterio_id=request.session["cemiterio_ativo_id"]
-                ).values_list("id", flat=True).first()
+                # novos campos
+                angulo_graus = _as_decimal(row.get("angulo"))  # <- mapeia 'angulo' -> angulo_graus
+                comprimento_m = _as_decimal(row.get("comprimento_m"))
+                largura_m = _as_decimal(row.get("largura_m"))
+                coord = _parse_coord(row.get("coordenada"))
 
-                if not quadra_id:
-                    print(f"❌ Quadra não encontrada: '{quadra_codigo}'")
-                    continue
+                # cria/atualiza
+                defaults = {
+                    "tipo_estrutura": tipo,
+                    "capacidade": capacidade,
+                    "usar_linha": usar_linha,
+                    "linha": linha,
+                    "quadra": quadra,
+                }
+                if angulo_graus is not None:
+                    defaults["angulo_graus"] = angulo_graus
+                if comprimento_m is not None:
+                    defaults["comprimento_m"] = comprimento_m
+                if largura_m is not None:
+                    defaults["largura_m"] = largura_m
+                if coord is not None:
+                    defaults["localizacao"] = coord  # JSONField esperado pelo modelo
 
-                print(f"✅ Quadra encontrada com ID: {quadra_id}")
-
-                Tumulo.objects.create(
-                    quadra_id=quadra_id,
-                    cemiterio_id=request.session["cemiterio_ativo_id"],
-                    identificador=identificador,
-                    tipo_estrutura=tipo_estrutura,
-                    capacidade=capacidade,
-                    usar_linha=usar_linha,
-                    linha=linha_valor,
-                    reservado=False,
-                    status="disponivel",
-                )
-                total += 1
+                with transaction.atomic():
+                    obj, created = Tumulo.objects.update_or_create(
+                        cemiterio_id=cem_id,
+                        identificador=ident,
+                        defaults=defaults
+                    )
+                importados += 1
+                if not created:
+                    atualizados += 1
 
             except Exception as e:
-                print(f"❌ Erro ao importar túmulo da linha: {linha}\nMotivo: {e}")
-                continue
+                erros.append(f"Linha {linha_planilha}: {e}")
 
+        if erros:
+            messages.warning(
+                request,
+                f"Importação concluída com avisos. {len(erros)} linha(s) com erro."
+            )
+        messages.success(request, f"{importados} túmulo(s) importado(s). {atualizados} atualizado(s).")
 
-        messages.success(request, f"{total} túmulo(s) importado(s) com sucesso.")
+        return render(request, "admin/importar_base.html", {
+            "titulo_pagina": "Importar Túmulos",
+            "link_planilha": "/media/planilhas/Planilha de Tumulos.xlsx",
+            "erros_linha": erros,   # o template lista essas linhas
+        })
 
+    # GET
     return render(request, "admin/importar_base.html", {
         "titulo_pagina": "Importar Túmulos",
-        "link_planilha": "/media/planilhas/Planilha de Tumulos.xlsx"
+        "link_planilha": "/media/planilhas/Planilha de Tumulos.xlsx",
     })
+# --- fim: importar_tumulos ---------------------------------------------------
 
 
 
