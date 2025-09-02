@@ -325,8 +325,9 @@ def gerar_pdf_sepultados_tumulo(request, pk):
     return response
 
 
-# -- INÍCIO: helpers (pode colar este mesmo bloco aqui também) --
-import json, re
+# helpers e view para importar quadras
+import json
+import re
 import pandas as pd
 from django.db import transaction
 from django.contrib.admin.views.decorators import staff_member_required
@@ -334,59 +335,88 @@ from django.contrib import messages
 from django.shortcuts import render
 from sepultados_gestao.models import Quadra
 
+# regex de número float
 FLOAT_RE = re.compile(r"[-+]?\d+(?:\.\d+)?")
+# regex para pares "lat,lng" (com vírgula entre lat e lng; aceita espaços ao redor)
+PAIR_RE = re.compile(r'([-+]?\d+(?:\.\d+)?)\s*,\s*([-+]?\d+(?:\.\d+)?)')
+
+# nomes de colunas possíveis para polígono
 POLY_COLUMNS = ("poligono_mapa", "limites", "polygon", "wkt", "latlng", "lat_lng")
 
+
 def _parse_pairs(s: str):
-    s = str(s).replace("|", ";").replace("/", ";").replace("\n", ";")
-    parts = [p.strip() for p in s.split(";") if p.strip()]
+    """
+    Encontra TODOS os pares 'lat,lng' na string (ex.: '-23.43,-51.92 -23.44,-51.93').
+    Funciona mesmo com quebras de linha; ignora qualquer coisa que não for 'lat,lng'.
+    """
     pts = []
-    for p in parts:
-        nums = FLOAT_RE.findall(p)
-        if len(nums) >= 2:
-            lat = float(nums[0]); lng = float(nums[1])
-            pts.append({"lat": lat, "lng": lng})
+    for lat_s, lng_s in PAIR_RE.findall(s or ""):
+        lat = float(lat_s)
+        lng = float(lng_s)
+        pts.append({"lat": lat, "lng": lng})
     return pts
 
+
 def _parse_wkt(s: str):
+    """
+    POLYGON ((lng lat, lng lat, ...)) -> [{'lat':..., 'lng':...}, ...]
+    """
     inside = s.strip()
     if inside.upper().startswith("POLYGON"):
-        inside = inside[inside.find("((")+2: inside.rfind("))")]
+        inside = inside[inside.find("((") + 2 : inside.rfind("))")]
     pairs = [p.strip() for p in inside.split(",") if p.strip()]
     pts = []
     for p in pairs:
         nums = FLOAT_RE.findall(p)
         if len(nums) >= 2:
-            lng = float(nums[0]); lat = float(nums[1])
+            lng = float(nums[0])
+            lat = float(nums[1])
             pts.append({"lat": lat, "lng": lng})
     return pts
 
+
 def parse_polygon_cell(cell):
+    """
+    Aceita:
+      - lista de dicts [{'lat':..,'lng':..}]
+      - lista de listas [[lat,lng], ...]
+      - JSON str (qualquer dos formatos acima)
+      - WKT POLYGON
+      - texto com pares 'lat,lng' (separados por espaço/linha)
+    """
     if cell is None or (isinstance(cell, float) and pd.isna(cell)):
         return []
+
+    # já é lista
     if isinstance(cell, list):
         if cell and isinstance(cell[0], dict) and "lat" in cell[0] and "lng" in cell[0]:
             return [{"lat": float(p["lat"]), "lng": float(p["lng"])} for p in cell]
         if cell and isinstance(cell[0], (list, tuple)) and len(cell[0]) >= 2:
             return [{"lat": float(p[0]), "lng": float(p[1])} for p in cell]
+
+    # string
     s = str(cell).strip()
     if not s:
         return []
+
+    # JSON
     if s.startswith("[") or s.startswith("{"):
         try:
             j = json.loads(s)
             return parse_polygon_cell(j)
         except Exception:
             pass
+
+    # WKT
     if s.upper().startswith("POLYGON"):
         try:
             return _parse_wkt(s)
         except Exception:
             pass
-    try:
-        return _parse_pairs(s)
-    except Exception:
-        return []
+
+    # pares "lat,lng" (com espaço entre pares)
+    return _parse_pairs(s)
+
 
 def read_df(uploaded_file):
     name = uploaded_file.name.lower()
@@ -399,6 +429,23 @@ def read_df(uploaded_file):
     df.columns = [str(c).strip().lower() for c in df.columns]
     return df
 
+
+def _coerce_angle(v):
+    """Converte ângulo para float (0..360) se possível; senão None."""
+    if v is None or (isinstance(v, float) and pd.isna(v)):
+        return None
+    try:
+        ang = float(v)
+    except (TypeError, ValueError):
+        return None
+    # opcional: clamp 0..360
+    while ang < 0:
+        ang += 360.0
+    while ang >= 360.0:
+        ang -= 360.0
+    return ang
+
+
 def process_quadras_df(df, cemiterio_id: int):
     total, atualizados, erros = 0, 0, []
     for idx, row in df.iterrows():
@@ -406,48 +453,77 @@ def process_quadras_df(df, cemiterio_id: int):
             codigo = str(row.get("codigo") or "").strip()
             if not codigo:
                 continue
+
+            # coluna do polígono
             pol_cell = None
             for k in POLY_COLUMNS:
                 if k in df.columns:
                     pol_cell = row.get(k)
                     if pol_cell is not None and not (isinstance(pol_cell, float) and pd.isna(pol_cell)):
                         break
+
             poligono = parse_polygon_cell(pol_cell) if pol_cell is not None else []
+
+            # grid/ângulo
             grid = {}
+
+            # aceita 'angulo' OU 'grid_angulo'
+            ang = None
+            if "angulo" in df.columns:
+                ang = _coerce_angle(row.get("angulo"))
+            if ang is None and "grid_angulo" in df.columns:
+                ang = _coerce_angle(row.get("grid_angulo"))
+            if ang is not None:
+                grid["angulo"] = ang
+
+            # se você usar cols/rows no futuro
             if "grid_cols" in df.columns and pd.notna(row.get("grid_cols")):
-                grid["cols"] = int(float(row.get("grid_cols")))
+                try:
+                    grid["cols"] = int(float(row.get("grid_cols")))
+                except Exception:
+                    pass
             if "grid_rows" in df.columns and pd.notna(row.get("grid_rows")):
-                grid["rows"] = int(float(row.get("grid_rows")))
-            if "grid_angulo" in df.columns and pd.notna(row.get("grid_angulo")):
-                grid["angulo"] = float(row.get("grid_angulo"))
+                try:
+                    grid["rows"] = int(float(row.get("grid_rows")))
+                except Exception:
+                    pass
+
             defaults = {}
             if poligono:
                 defaults["poligono_mapa"] = poligono
             if grid:
                 defaults["grid_params"] = grid
+
             with transaction.atomic():
                 obj, created = Quadra.objects.update_or_create(
                     cemiterio_id=cemiterio_id,
                     codigo=codigo,
                     defaults=defaults or {},
                 )
+
             total += 1
             if not created and defaults:
                 atualizados += 1
+
         except Exception as e:
             erros.append(f"Linha {idx + 2}: {e}")
+
     return total, atualizados, erros
-# -- FIM: helpers --
+
 
 @staff_member_required
 def importar_quadras(request):
     cem_id = request.session.get("cemiterio_ativo_id")
     if not request.session.get("prefeitura_ativa_id") or not cem_id:
         messages.error(request, "Selecione prefeitura e cemitério antes de importar.")
-        return render(request, "admin/importar_base.html", {
-            "titulo_pagina": "Importar Quadras",
-            "link_planilha": "/media/planilhas/Planilha de Quadras.xlsx",
-        })
+        return render(
+            request,
+            "admin/importar_base.html",
+            {
+                "titulo_pagina": "Importar Quadras",
+                "link_planilha": "/media/planilhas/Planilha de Quadras.xlsx",
+            },
+        )
 
     if request.method == "POST" and request.FILES.get("arquivo"):
         try:
@@ -456,18 +532,26 @@ def importar_quadras(request):
             if erros:
                 messages.warning(request, f"Importação concluída com avisos. {len(erros)} linha(s) com erro.")
             messages.success(request, f"{total} quadra(s) importada(s). {atualizados} atualizada(s).")
-            return render(request, "admin/importar_base.html", {
-                "titulo_pagina": "Importar Quadras",
-                "link_planilha": "/media/planilhas/Planilha de Quadras.xlsx",
-                "mensagens_extra": erros,
-            })
+            return render(
+                request,
+                "admin/importar_base.html",
+                {
+                    "titulo_pagina": "Importar Quadras",
+                    "link_planilha": "/media/planilhas/Planilha de Quadras.xlsx",
+                    "mensagens_extra": erros,
+                },
+            )
         except Exception as e:
             messages.error(request, f"Erro ao importar: {e}")
 
-    return render(request, "admin/importar_base.html", {
-        "titulo_pagina": "Importar Quadras",
-        "link_planilha": "/media/planilhas/Planilha de Quadras.xlsx",
-    })
+    return render(
+        request,
+        "admin/importar_base.html",
+        {
+            "titulo_pagina": "Importar Quadras",
+            "link_planilha": "/media/planilhas/Planilha de Quadras.xlsx",
+        },
+    )
 
 
 import pandas as pd

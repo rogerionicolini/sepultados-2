@@ -1752,7 +1752,7 @@ class BaseImportAPIView(APIView):
         raise ValueError("Formato de arquivo não suportado. Use .csv, .xls ou .xlsx.")
 
 
-# --- cole em views_api.py (substituindo a sua ImportQuadrasAPIView) ---
+# sepultados_gestao/views_api.py
 import json
 import re
 import pandas as pd
@@ -1766,18 +1766,17 @@ class ImportQuadrasAPIView(APIView):
     """
     Importa Quadras para o cemitério ativo/da querystring.
 
-    Colunas aceitas na planilha (cabeçalho em minúsculas):
-      - codigo                (obrigatória)
-      - UMA das colunas de polígono (opcional):
-          poligono_mapa | limites | polygon | wkt | latlng | lat_lng
-      - grid_cols, grid_rows, grid_angulo (opcionais)
+    Colunas aceitas (minúsculas):
+      - codigo (obrigatória)
+      - UMA coluna de polígono (opcional): poligono_mapa | limites | polygon | wkt | latlng | lat_lng
+      - grid_cols, grid_rows (opcionais)
+      - angulo (opcional) OU grid_angulo (opcional)
 
-    Formatos aceitos do polígono:
-      1) String: "lat,lng; lat,lng; ..."   (ex.: -23.43,-51.93; -23.44,-51.92)
-      2) JSON:   [{"lat": -23.43, "lng": -51.93}, ...]  ou  [[-23.43, -51.93], ...]
-      3) WKT:    POLYGON((lng lat, lng lat, ...))  (WKT usa LON,LAT)
+    Formatos de polígono aceitos:
+      1) Texto com pares: "lat,lng lat,lng lat,lng" (apenas espaço entre pares) — também aceita ; / e quebras de linha
+      2) JSON: [{"lat":-23.4,"lng":-51.9}, ...] ou [[-23.4, -51.9], ...]
+      3) WKT: POLYGON((lng lat, lng lat, ...))  (atenção: WKT é LON,LAT)
     """
-
     permission_classes = [IsAuthenticated]
 
     _FLOAT_RE = re.compile(r"[-+]?\d+(?:\.\d+)?")
@@ -1797,20 +1796,32 @@ class ImportQuadrasAPIView(APIView):
         return df
 
     def _parse_pairs(self, s: str):
-        s = str(s).replace("|", ";").replace("/", ";").replace("\n", ";")
-        parts = [p.strip() for p in s.split(";") if p.strip()]
+        """
+        Varre TODOS os números e agrupa de 2 em 2 (lat,lng).
+        Funciona quando os pares estão apenas separados por ESPAÇO.
+        Também tolera ; / e quebras de linha.
+        """
+        if s is None:
+            return []
+        # normaliza separadores estranhos em espaço (para não atrapalhar a regex)
+        s = str(s).replace("|", " ").replace(";", " ").replace("/", " ").replace("\n", " ")
+        s = " ".join(s.split())  # colapsa múltiplos espaços
+        nums = self._FLOAT_RE.findall(s)
         pts = []
-        for p in parts:
-            nums = self._FLOAT_RE.findall(p)
-            if len(nums) >= 2:
-                lat = float(nums[0]); lng = float(nums[1])
+        for i in range(0, len(nums) - 1, 2):
+            try:
+                lat = float(nums[i])
+                lng = float(nums[i + 1])
                 pts.append({"lat": lat, "lng": lng})
+            except Exception:
+                # ignora par quebrado no final
+                pass
         return pts
 
     def _parse_wkt(self, s: str):
         txt = s.strip()
         if txt.upper().startswith("POLYGON"):
-            txt = txt[txt.find("((")+2 : txt.rfind("))")]
+            txt = txt[txt.find("((") + 2 : txt.rfind("))")]
         pairs = [p.strip() for p in txt.split(",") if p.strip()]
         pts = []
         for p in pairs:
@@ -1821,11 +1832,11 @@ class ImportQuadrasAPIView(APIView):
         return pts
 
     def _parse_polygon_cell(self, cell):
-        """Retorna list[{'lat','lng'}] ou []. Aceita string, JSON, WKT."""
+        """Retorna list[{'lat','lng'}] ou []. Aceita lista, JSON, WKT ou texto com pares."""
         if cell is None or (isinstance(cell, float) and pd.isna(cell)):
             return []
 
-        # já é lista carregada?
+        # lista já estruturada
         if isinstance(cell, list):
             if cell and isinstance(cell[0], dict) and "lat" in cell[0] and "lng" in cell[0]:
                 return [{"lat": float(p["lat"]), "lng": float(p["lng"])} for p in cell]
@@ -1836,7 +1847,7 @@ class ImportQuadrasAPIView(APIView):
         if not s:
             return []
 
-        # JSON
+        # JSON string
         if s.startswith("[") or s.startswith("{"):
             try:
                 j = json.loads(s)
@@ -1851,11 +1862,8 @@ class ImportQuadrasAPIView(APIView):
             except Exception:
                 pass
 
-        # pares "lat,lng; ..."
-        try:
-            return self._parse_pairs(s)
-        except Exception:
-            return []
+        # Texto livre (pares separados por espaço/;///\n)
+        return self._parse_pairs(s)
 
     def _process_df(self, df, cemiterio_id: int):
         total, atualizados, erros = 0, 0, []
@@ -1865,24 +1873,43 @@ class ImportQuadrasAPIView(APIView):
                 if not codigo:
                     continue
 
-                # primeira coluna de polígono encontrada e não vazia
+                # 1) pega a primeira coluna de polígono existente e não vazia
                 pol_cell = None
                 for k in self._POLY_COLUMNS:
                     if k in df.columns:
                         pol_cell = row.get(k)
                         if pol_cell is not None and not (isinstance(pol_cell, float) and pd.isna(pol_cell)):
                             break
-
                 poligono = self._parse_polygon_cell(pol_cell) if pol_cell is not None else []
 
+                # 2) grid (cols/rows/angulo)
                 grid = {}
                 if "grid_cols" in df.columns and pd.notna(row.get("grid_cols")):
-                    grid["cols"] = int(float(row.get("grid_cols")))
+                    try:
+                        grid["cols"] = int(float(row.get("grid_cols")))
+                    except Exception:
+                        pass
                 if "grid_rows" in df.columns and pd.notna(row.get("grid_rows")):
-                    grid["rows"] = int(float(row.get("grid_rows")))
-                if "grid_angulo" in df.columns and pd.notna(row.get("grid_angulo")):
-                    grid["angulo"] = float(row.get("grid_angulo"))
+                    try:
+                        grid["rows"] = int(float(row.get("grid_rows")))
+                    except Exception:
+                        pass
 
+                # ângulo: prioriza 'angulo'; se não tiver, usa 'grid_angulo'
+                ang_val = None
+                if "angulo" in df.columns and pd.notna(row.get("angulo")) and str(row.get("angulo")) != "":
+                    ang_val = float(row.get("angulo"))
+                elif "grid_angulo" in df.columns and pd.notna(row.get("grid_angulo")) and str(row.get("grid_angulo")) != "":
+                    ang_val = float(row.get("grid_angulo"))
+                if ang_val is not None:
+                    # normaliza para 0..360 (opcional)
+                    while ang_val < 0:
+                        ang_val += 360.0
+                    while ang_val >= 360.0:
+                        ang_val -= 360.0
+                    grid["angulo"] = ang_val
+
+                # 3) defaults para update_or_create
                 defaults = {}
                 if poligono:
                     defaults["poligono_mapa"] = poligono
@@ -1923,7 +1950,7 @@ class ImportQuadrasAPIView(APIView):
             return Response({"importados": total, "atualizados": atualizados, "erros": erros}, status=200)
         except Exception as e:
             return Response({"detail": f"Erro ao importar: {e}"}, status=400)
-# --- fim da classe ---
+
 
 
 
