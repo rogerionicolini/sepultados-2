@@ -10,18 +10,18 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [react()],
     resolve: {
+      // 👇 IMPORTANTÍSSIMO pro import "@/..."
       alias: { '@': path.resolve(__dirname, './src') },
     },
     server: {
-      host: '127.0.0.1',     // <-- aqui!
       port: 5173,
-      strictPort: true,
-      hmr: { host: '127.0.0.1', port: 5173 },  // evita problemas no WS do HMR
+      host: true,
       proxy: {
+        // tudo que começa com /api vai para o Django (sem CORS)
         '/api': {
           target: BACKEND,
           changeOrigin: true,
-          // secure: false, // se usar HTTPS self-signed
+          secure: false,
         },
       },
     },

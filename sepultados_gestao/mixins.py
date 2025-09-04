@@ -136,12 +136,14 @@ class ContextoRestritoQuerysetMixin:
 class PrefeituraRestritaQuerysetMixin:
     """
     Restringe o queryset à prefeitura:
-      1) request.prefeitura_ativa (middleware), OU
-      2) ?prefeitura=<id> / ?prefeitura_id=<id>, OU
-      3) ?cemiterio=<id> / ?cemiterio_id=<id>  (resolve a prefeitura do cemitério)
+      1) request.prefeitura_ativa (middleware) OU session 'prefeitura_ativa_id';
+      2) ?prefeitura=<id> / ?prefeitura_id=<id>;
+      3) Cabeçalho X-Prefeitura-Id / X-Prefeitura;
+      4) ?cemiterio=<id> / ?cemiterio_id=<id> (ou cabeçalho X-Cemiterio-Id / X-Cemiterio) para resolver a prefeitura via cemitério;
+      5) Fallback: atributo do usuário (user.prefeitura_id ou user.prefeitura.id).
     Se nada disso existir, retorna vazio.
     """
-    prefeitura_field = "prefeitura"  # se sua FK for *_id, pode ajustar para "prefeitura_id"
+    prefeitura_field = "prefeitura"
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -150,36 +152,60 @@ class PrefeituraRestritaQuerysetMixin:
         if not request or not user or not user.is_authenticated:
             return qs.none()
 
-        # 1) prefeitura da sessão/middleware
         pref_id = None
-        pref_ativa = getattr(request, "prefeitura_ativa", None)
-        if pref_ativa and getattr(pref_ativa, "id", None):
-            pref_id = int(pref_ativa.id)
 
-        # 2) querystring explícita (?prefeitura= / ?prefeitura_id=)
+        # 1) middleware/sessão
+        pref = getattr(request, "prefeitura_ativa", None)
+        if getattr(pref, "id", None):
+            try: pref_id = int(pref.id)
+            except Exception: pref_id = None
         if pref_id is None:
-            pref_qs = request.query_params.get("prefeitura") or request.query_params.get("prefeitura_id")
-            if pref_qs:
-                try:
-                    pref_id = int(pref_qs)
-                except Exception:
-                    pref_id = None
+            try:
+                sid = request.session.get("prefeitura_ativa_id")
+                if sid: pref_id = int(sid)
+            except Exception:
+                pref_id = None
 
-        # 3) fallback por cemitério (?cemiterio= / ?cemiterio_id=)
+        # 2) querystring
         if pref_id is None:
-            cem_qs = request.query_params.get("cemiterio") or request.query_params.get("cemiterio_id")
-            if cem_qs:
+            v = request.query_params.get("prefeitura") or request.query_params.get("prefeitura_id")
+            if v:
+                try: pref_id = int(v)
+                except Exception: pref_id = None
+
+        # 3) cabeçalho
+        if pref_id is None:
+            v = request.headers.get("X-Prefeitura-Id") or request.headers.get("X-Prefeitura")
+            if v:
+                try: pref_id = int(v)
+                except Exception: pref_id = None
+
+        # 4) via cemitério
+        if pref_id is None:
+            v = (
+                request.query_params.get("cemiterio") or request.query_params.get("cemiterio_id")
+                or request.headers.get("X-Cemiterio-Id") or request.headers.get("X-Cemiterio")
+            )
+            if v:
                 try:
-                    from .models import Cemiterio  # import local p/ evitar ciclos
-                    cem = Cemiterio.objects.only("id", "prefeitura_id").get(pk=int(cem_qs))
+                    from .models import Cemiterio
+                    cem = Cemiterio.objects.only("prefeitura_id").get(pk=int(v))
                     pref_id = int(cem.prefeitura_id)
                 except Exception:
                     pref_id = None
 
+        # 5) fallback usuário
+        if pref_id is None:
+            try:
+                u_pref = getattr(user, "prefeitura_id", None) or getattr(user, "prefeitura", None)
+                if isinstance(u_pref, int): pref_id = u_pref
+                elif getattr(u_pref, "id", None): pref_id = int(u_pref.id)
+            except Exception:
+                pref_id = None
+
         if pref_id is None:
             return qs.none()
 
-        # filtra sempre por ID (funciona mesmo que prefeitura_field seja FK sem _id)
         field = getattr(self, "prefeitura_field", "prefeitura")
         key = field if field.endswith("_id") else f"{field}_id"
         return qs.filter(**{key: pref_id})

@@ -2,30 +2,52 @@
 import React, { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 
-const API_BASE = "http://127.0.0.1:8000/api/";
+const API_BASE = "/api/"; // usa o proxy do Vite (mesma origem)
 
 // ===== Helpers token / prefeitura =====
 const getToken = () => localStorage.getItem("accessToken") || "";
 
+// Prioridade: canônicas > objeto salvo > legadas > token
 function getPrefeituraAtivaIdLocal() {
   try {
+    // 1) chaves canônicas
+    const can =
+      localStorage.getItem("prefeitura_ativa_id") ||
+      localStorage.getItem("prefeituraAtivaId");
+    if (can) return Number(can);
+
+    // 2) objeto salvo (algumas telas guardam isso)
     const raw = localStorage.getItem("prefeituraAtiva");
     if (raw) {
       const o = JSON.parse(raw);
       if (o?.id) return Number(o.id);
     }
+
+    // 3) legadas
+    const legacy =
+      localStorage.getItem("prefeituraId") || localStorage.getItem("prefeitura_id");
+    if (legacy) return Number(legacy);
+
+    // 4) token (fallback)
+    const tok = localStorage.getItem("accessToken") || "";
+    if (tok.includes(".")) {
+      try {
+        const p = JSON.parse(atob(tok.split(".")[1]));
+        const pid = p?.prefeitura_id || p?.prefeitura;
+        if (pid) return Number(pid);
+      } catch {}
+    }
   } catch {}
-  const id = localStorage.getItem("prefeituraAtivaId");
-  return id ? Number(id) : null;
+  return null;
 }
 
 async function fetchPrefeituraLogada(api) {
   try {
     const { data } = await api.get("prefeitura-logada/");
-    // aceita {id, ...} ou {prefeitura: {id, ...}}
     const pid = data?.id ?? data?.prefeitura?.id ?? null;
     if (pid) {
-      localStorage.setItem("prefeituraAtivaId", String(pid));
+      localStorage.setItem("prefeituraAtivaId", String(pid));          // compat
+      localStorage.setItem("prefeitura_ativa_id", String(pid));        // canônica
       localStorage.setItem(
         "prefeituraAtiva",
         JSON.stringify({ id: pid, nome: data?.nome || data?.prefeitura?.nome || "" })
@@ -43,16 +65,11 @@ const toISO = (d) => {
   return Number.isNaN(dt.getTime()) ? "" : dt.toISOString().slice(0, 10);
 };
 
-// ⬇️ Agora exibe dd/mm/aaaa na tabela
 const fmtDate = (d) => {
   if (!d) return "-";
   const s = String(d);
-
-  // Se já vier como 'YYYY-MM-DD' (ou 'YYYY-MM-DDTHH:MM...')
   const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (m) return `${m[3]}/${m[2]}/${m[1]}`;
-
-  // Fallback: tentar Date()
   const dt = new Date(s);
   if (Number.isNaN(dt.getTime())) return "-";
   const dd = String(dt.getDate()).padStart(2, "0");
@@ -65,11 +82,9 @@ const fmtMoney = (n) =>
   Number(n || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
 // ===== normalizadores =====
-// status: apenas 'aberto' | 'pago' (e 'todos' no filtro)
 const statusOf = (r) => {
   const s = String(r.status || r.situacao || "").toLowerCase();
   if (s === "pago" || s === "aberto") return s;
-  // fallback: alguns payloads trazem booleano
   if (r.pago === true) return "pago";
   return "aberto";
 };
@@ -140,13 +155,13 @@ export default function RelatorioReceitas() {
       return;
     }
 
-    const params = { prefeitura: pid };
-    const paths = ["receitas/", "relatorios/receitas/"];
-    let arr = [];
+    const params = { prefeitura: pid }; // <- filtro oficial via querystring
+    const paths = ["receitas/", "relatorios/receitas/"]; // 1ª é a correta; 2ª é fallback
 
+    let arr = [];
     for (const path of paths) {
       try {
-        const res = await api.get(path, { params });
+        const res = await api.get(path, { params }); // <-- sem header custom (evita CORS)
         const data = res.data;
         arr = Array.isArray(data) ? data : data?.results ?? [];
         if (arr.length) break;
@@ -178,7 +193,7 @@ export default function RelatorioReceitas() {
     return ["todas", ...Array.from(set)];
   }, [rows]);
 
-  // aplicar filtros
+  // aplicar filtros no cliente (com base nos rows)
   const filtrados = useMemo(() => {
     const q = busca.trim().toLowerCase();
     const ini = dataInicio ? new Date(dataInicio) : null;
@@ -236,19 +251,18 @@ export default function RelatorioReceitas() {
     if (busca) params.q = busca;
 
     try {
-      const { data } = await api.get("relatorios/receitas/pdf-url/", { params });
+      const { data } = await api.get("relatorios/receitas/pdf-url/", { params }); // <-- sem header custom
       if (data?.pdf_url) {
         window.open(data.pdf_url, "_blank");
         return;
       }
       throw new Error("Sem pdf_url");
     } catch {
-      // fallback ABSOLUTO
-      const backendRoot = API_BASE.replace(/\/api\/?$/, ""); // http://127.0.0.1:8000
+      // fallback absoluto: abre rotas conhecidas
       const qs = new URLSearchParams(params).toString();
       const candidates = [
-        `${backendRoot}/relatorios/receitas/pdf/?${qs}`,
-        `${backendRoot}/relatorios/relatorio_receitas_pdf/?${qs}`,
+        `/relatorios/receitas/pdf/?${qs}`,
+        `/relatorios/relatorio_receitas_pdf/?${qs}`,
       ];
       for (const url of candidates) {
         const w = window.open(url, "_blank");
@@ -321,7 +335,7 @@ export default function RelatorioReceitas() {
               onChange={(e) => setForma(e.target.value)}
               className="w-full border border-[#bcd2a7] rounded-lg px-3 py-2 bg-white"
             >
-              {formasOpts.map((f) => (
+              {["todas", ...formasOpts.slice(1)].map((f) => (
                 <option key={f} value={f}>
                   {f.charAt(0).toUpperCase() + f.slice(1)}
                 </option>

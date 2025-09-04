@@ -2,8 +2,36 @@
 import React, { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 
-const API_BASE = "http://127.0.0.1:8000/api/";
+const API_BASE = "/api/"; // <- usa o proxy do Vite (mesma origem)
+
+// Auth helpers
 const getToken = () => localStorage.getItem("accessToken") || "";
+
+function getPrefeituraIdFromToken() {
+  const tok = getToken();
+  if (!tok || !tok.includes(".")) return null;
+  try {
+    const payload = JSON.parse(atob(tok.split(".")[1]));
+    return payload.prefeitura_id || payload.prefeitura || null;
+  } catch {
+    return null;
+  }
+}
+
+// >>> PRIORIDADE AJUSTADA: canônicas > token > legadas
+function getPrefeituraId() {
+  const canonical =
+    localStorage.getItem("prefeitura_ativa_id") ||
+    localStorage.getItem("prefeituraAtivaId");
+  if (canonical) return canonical;
+
+  const fromToken = getPrefeituraIdFromToken();
+  if (fromToken) return fromToken;
+
+  const legacy =
+    localStorage.getItem("prefeituraId") || localStorage.getItem("prefeitura_id");
+  return legacy || null;
+}
 
 // helpers
 const fmtDateTime = (s) => {
@@ -18,7 +46,7 @@ const fmtDateTime = (s) => {
   return `${dd}/${mm}/${yyyy}, ${hh}:${mi}`;
 };
 
-// normaliza ação para PT-BR (não usa mais o label cru)
+// normaliza ação pt-br
 const acaoPT = (value) => {
   const r = String(value || "").toLowerCase();
   if (["add", "adição", "adicao", "create", "criação", "criacao"].includes(r)) return "Adição";
@@ -28,8 +56,8 @@ const acaoPT = (value) => {
   return value || "-";
 };
 
-
 export default function RelatorioAuditorias() {
+  // axios preparado com Authorization
   const api = useMemo(
     () =>
       axios.create({
@@ -57,6 +85,9 @@ export default function RelatorioAuditorias() {
     setErro("");
     try {
       const params = {};
+      const prefId = getPrefeituraId();
+      if (prefId) params.prefeitura = prefId; // querystring ESSENCIAL
+
       if (dataInicio) params.data_inicio = dataInicio;
       if (dataFim) params.data_fim = dataFim;
       if (acao && acao !== "todas") params.acao = acao;
@@ -64,10 +95,13 @@ export default function RelatorioAuditorias() {
       if (entidade && entidade !== "todas") params.entidade = entidade;
       if (busca) params.q = busca;
 
-      const { data } = await api.get("auditorias/", { params });
+      // envia também no header para máxima segurança
+      const headers = { "X-Prefeitura-Id": prefId ?? "" };
+
+      const { data } = await api.get("auditorias/", { params, headers });
       const arr = Array.isArray(data) ? data : data?.results || [];
       setRows(arr);
-    } catch {
+    } catch (e) {
       setErro("Não foi possível carregar as auditorias.");
     } finally {
       setLoading(false);
@@ -85,7 +119,8 @@ export default function RelatorioAuditorias() {
     rows.forEach((r) => {
       const id = r.usuario_id || r.usuario;
       if (id != null) {
-        const label = r.usuario_email || r.usuario_username || r.usuario_nome || String(id);
+        const label =
+          r.usuario_email || r.usuario_username || r.usuario_nome || String(id);
         map.set(String(id), label);
       }
     });
@@ -114,6 +149,8 @@ export default function RelatorioAuditorias() {
   // PDF
   async function gerarPDF() {
     const params = {};
+    const prefId = getPrefeituraId();
+    if (prefId) params.prefeitura = prefId;
     if (dataInicio) params.data_inicio = dataInicio;
     if (dataFim) params.data_fim = dataFim;
     if (acao && acao !== "todas") params.acao = acao;
@@ -122,15 +159,14 @@ export default function RelatorioAuditorias() {
     if (busca) params.q = busca;
 
     try {
-      // pede ao backend a URL ABSOLUTA do PDF com os filtros preservados
-      const { data } = await api.get("auditorias/pdf-url/", { params });
+      const headers = { "X-Prefeitura-Id": prefId ?? "" };
+      const { data } = await api.get("auditorias/pdf-url/", { params, headers });
       if (data?.pdf_url) {
         window.open(data.pdf_url, "_blank");
         return;
       }
       throw new Error("sem pdf_url");
     } catch {
-      // fallback: tenta abrir direto as rotas de PDF/HTML
       const backendRoot = API_BASE.replace(/\/api\/?$/, "");
       const qs = new URLSearchParams(params).toString();
       const tries = [
@@ -155,10 +191,7 @@ export default function RelatorioAuditorias() {
           <button onClick={carregar} className="bg-[#688f53] text-white px-4 py-2 rounded-xl shadow hover:opacity-90">
             Atualizar
           </button>
-          <button
-            onClick={gerarPDF}
-            className="bg-green-800 text-white px-4 py-2 rounded-xl shadow hover:bg-green-700"
-          >
+          <button onClick={gerarPDF} className="bg-green-800 text-white px-4 py-2 rounded-xl shadow hover:bg-green-700">
             Imprimir
           </button>
         </div>
@@ -278,7 +311,6 @@ export default function RelatorioAuditorias() {
                   <th className="py-2 px-3">Ação</th>
                   <th className="py-2 px-3">Entidade</th>
                   <th className="py-2 px-3">Objeto</th>
-                  {/* coluna IP removida */}
                   <th className="py-2 px-3 rounded-r-lg">Detalhes</th>
                 </tr>
               </thead>
@@ -298,7 +330,7 @@ export default function RelatorioAuditorias() {
                 {rows.length === 0 && (
                   <tr>
                     <td colSpan={6} className="py-6 px-3 text-gray-600">
-                      Nenhum resultado com os filtros atuais.
+                      Nenhum resultado com los filtros atuais.
                     </td>
                   </tr>
                 )}

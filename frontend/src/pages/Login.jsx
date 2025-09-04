@@ -34,8 +34,18 @@ function LoginPage() {
       if (usuario?.nome)  localStorage.setItem('nome_usuario', usuario.nome);
 
       const prefeituraId = usuario?.prefeitura?.id;
+
+      // --- limpeza mínima para não vazar prefeitura antiga ---
+      try {
+        localStorage.removeItem('prefeituraId');   // legado
+        localStorage.removeItem('prefeitura_id');  // legado
+      } catch {}
+
       if (prefeituraId) {
-        localStorage.setItem('prefeitura_ativa_id', prefeituraId);
+        // grava chaves atuais (e alias compatível)
+        localStorage.setItem('prefeitura_ativa_id', String(prefeituraId));
+        localStorage.setItem('prefeituraAtivaId', String(prefeituraId)); // alias usado em telas antigas
+
         if (usuario.prefeitura?.nome)
           localStorage.setItem('prefeitura_nome', usuario.prefeitura.nome);
         if (usuario.prefeitura?.brasao_url)
