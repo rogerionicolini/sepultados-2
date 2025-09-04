@@ -408,7 +408,6 @@ export default function Receitas() {
           >
             <option value="">Status: Todos</option>
             <option value="aberto">Abertos</option>
-            <option value="parcial">Parciais</option>
             <option value="pago">Pagos</option>
           </select>
         </div>
