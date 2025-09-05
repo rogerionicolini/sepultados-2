@@ -174,9 +174,19 @@ export default function MapaCemiterio({ cemiterioId, height = 650 }) {
         (t.latitude && t.longitude ? { lat: t.latitude, lng: t.longitude } : null);
       const center = p ? { lat: Number(p.lat), lng: Number(p.lng) } : null;
       if (!center) return null;
+
+      // 🔹 título com linha e quadra quando existirem
+      const base = t.identificador || t.codigo || t.nome || `${t.id}`;
+      const linhaTxt =
+        (t.usar_linha && (t.linha ?? null) !== null)
+          ? `L ${String(t.linha).padStart(2, "0")}`
+          : null;
+      const quadraTxt = t.quadra?.codigo ? `Q ${t.quadra.codigo}` : null;
+
       return {
         id: t.id,
-        codigo: t.identificador || t.codigo || t.nome || `${t.id}`,
+        // Ex.: "102 — L 05 — Q A"
+        codigo: [base, linhaTxt, quadraTxt].filter(Boolean).join(" — "),
         status: t.status || "desconhecido",
         center,
         quadraId: t.quadra?.id ?? t.quadra ?? null,
@@ -385,7 +395,7 @@ export default function MapaCemiterio({ cemiterioId, height = 650 }) {
                       <li key={s.id} style={{ marginBottom: 2 }}>
                         {s.nome}{s.data ? ` — ${fmtDataBR(s.data)}` : ""}
                         {s.status_display ? ` — ${s.status_display}` :
-                          ((s.exumado && " — Exumado") || (s.trasladado && " — Trasladado") || "")}
+                          ((s.trasladado && " — Transladado") || (s.exumado && " — Exumado") || "")}
                       </li>
                     ))}
                   </ul>
